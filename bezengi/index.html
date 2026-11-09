@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Глэмпинг Безенги — домики с видом на Безенгийскую стену</title>
+  <meta name="description" content="Двухэтажные домики с террасой и видом на Безенгийскую стену. Кафе с домашней кухней, экскурсии на джипе, квадроциклы. Круглый год. 5.0 на Яндекс Картах.">
+  <meta name="theme-color" content="#14171a">
+
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:title" content="Глэмпинг Безенги — домики с видом на Безенгийскую стену">
+  <meta property="og:description" content="Новые домики с террасой у подножия Кавказского хребта. Домашняя кухня, экскурсии на джипе к ледникам и водопадам. 5.0 на Яндекс Картах.">
+  <meta property="og:image" content="https://danielbrantleysoz608-dot.github.io/fabrika-demo/bezengi/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2314171a'/%3E%3Cpath d='M6 50 24 22l8 11 8-15 18 32z' fill='%238fd3ea'/%3E%3Cpath d='m36 26 4-8 4 8-4-2z' fill='%23fff'/%3E%3C/svg%3E">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Unbounded:wght@500;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --graphite: #14171a;
+      --graphite-2: #1b1f23;
+      --stone: #262b30;
+      --stone-2: #323840;
+      --line: rgba(255,255,255,.09);
+      --text: #eef1f3;
+      --muted: #9aa3ab;
+      --ice: #8fd3ea;
+      --ice-deep: #4fa9c9;
+      --sunset: #ff8a3d;
+      --sunset-2: #ffb25e;
+      --wa: #25d366;
+      --radius: 22px;
+      --gutter: 20px;
+      --head: "Unbounded", system-ui, sans-serif;
+      --body: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0;
+      background: var(--graphite);
+      color: var(--text);
+      font: 16px/1.6 var(--body);
+      overflow-x: hidden;
+    }
+    img, svg { display: block; max-width: 100%; }
+    a { color: inherit; }
+    h1, h2, h3 { font-family: var(--head); line-height: 1.12; margin: 0; letter-spacing: -.01em; }
+    p { margin: 0; }
+    .wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 var(--gutter); }
+    section { padding: 84px 0; scroll-margin-top: 40px; }
+    .eyebrow {
+      font: 600 12px/1 var(--body); letter-spacing: .16em; text-transform: uppercase;
+      color: var(--ice); margin-bottom: 16px; display: block;
+    }
+    .h2 { font-size: clamp(30px, 7.4vw, 54px); font-weight: 700; }
+    .lead { color: var(--muted); font-size: 17px; margin-top: 18px; max-width: 620px; }
+    .demo-tag {
+      display: inline-block; vertical-align: middle;
+      font: 700 10px/1 var(--body); letter-spacing: .1em; text-transform: uppercase;
+      color: var(--sunset); border: 1px solid rgba(255,138,61,.45);
+      border-radius: 99px; padding: 4px 7px; margin-left: 6px;
+    }
+
+    /* Demo bar */
+    .demo-bar {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--sunset); color: #1a0f06;
+      font: 600 13px/1.35 var(--body); text-align: center;
+      padding: 8px var(--gutter);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+      min-height: 54px; padding: 0 26px; border-radius: 99px; border: 0;
+      font: 700 16px/1 var(--body); text-decoration: none; cursor: pointer;
+      transition: transform .15s ease, background .2s ease, box-shadow .2s ease;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn-primary { background: var(--sunset); color: #1a0f06; box-shadow: 0 10px 30px -10px rgba(255,138,61,.7); }
+    .btn-primary:hover { background: var(--sunset-2); }
+    .btn-ghost { background: rgba(255,255,255,.08); color: var(--text); border: 1px solid rgba(255,255,255,.22); backdrop-filter: blur(6px); }
+    .btn-ghost:hover { background: rgba(255,255,255,.14); }
+    .btn svg { width: 20px; height: 20px; flex: none; }
+
+    /* Photo placeholders */
+    .ph {
+      position: relative; overflow: hidden; border-radius: var(--radius);
+      background:
+        radial-gradient(120% 80% at 70% 0%, var(--ph-sky, #5b7f95) 0%, transparent 60%),
+        linear-gradient(180deg, var(--ph-top, #3d5566) 0%, var(--ph-bottom, #1d2328) 100%);
+      aspect-ratio: 4 / 3;
+      isolation: isolate;
+    }
+    .ph .mtn { position: absolute; inset: auto 0 0 0; width: 100%; height: 72%; }
+    .ph::after {
+      content: ""; position: absolute; inset: 0; z-index: 1;
+      background: linear-gradient(180deg, transparent 50%, rgba(10,12,14,.55));
+    }
+    .ph figcaption, .cap {
+      position: absolute; left: 14px; bottom: 14px; z-index: 2;
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(12,14,16,.72); backdrop-filter: blur(6px);
+      border: 1px solid var(--line); border-radius: 99px;
+      padding: 7px 12px; font: 600 13px/1 var(--body); color: var(--text);
+    }
+    .cap, .ph figcaption { white-space: nowrap; }
+    .cap svg, .ph figcaption svg { width: 15px; height: 15px; opacity: .8; }
+    .ph.warm { --ph-sky: #e48b52; --ph-top: #7a5a55; --ph-bottom: #23201f; }
+    .ph.ice  { --ph-sky: #bfe8f5; --ph-top: #5f8ca3; --ph-bottom: #1f2a31; }
+    .ph.green{ --ph-sky: #a9c98e; --ph-top: #4f6b52; --ph-bottom: #1b231d; }
+    .ph.night{ --ph-sky: #3d4f7a; --ph-top: #222c45; --ph-bottom: #111419; }
+    .ph.snow { --ph-sky: #e9f4f8; --ph-top: #a7bcc7; --ph-bottom: #3a4650; }
+    .ph.inside { --ph-sky: #d7a46f; --ph-top: #6b5240; --ph-bottom: #2a211b; }
+    .ph.gold { --ph-sky: #f0b55c; --ph-top: #8a6234; --ph-bottom: #2a2017; }
+
+    /* Hero */
+    .hero {
+      position: relative; min-height: calc(100svh - 36px);
+      display: flex; align-items: flex-end;
+      padding: 120px 0 56px; overflow: hidden;
+      background:
+        radial-gradient(90% 60% at 80% 10%, rgba(255,138,61,.35), transparent 60%),
+        radial-gradient(70% 50% at 10% 20%, rgba(143,211,234,.18), transparent 60%),
+        linear-gradient(180deg, #2c3a46 0%, #1a2128 55%, var(--graphite) 100%);
+    }
+    .hero .mtn-hero { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 78%; }
+    .hero .wrap { position: relative; z-index: 2; }
+    .hero-photo-cap { top: 24px; right: var(--gutter); left: auto !important; bottom: auto !important; }
+    .hero h1 { font-size: clamp(26px, 7.4vw, 88px); font-weight: 800; max-width: 900px; }
+    .hero h1 em { font-style: normal; color: var(--ice); }
+    .hero p.sub { margin-top: 20px; font-size: 18px; color: #c9d1d7; max-width: 540px; }
+    .hero-cta { display: flex; flex-direction: column; gap: 12px; margin-top: 32px; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 12px;
+      margin-bottom: 26px; padding: 10px 16px 10px 10px;
+      background: rgba(12,14,16,.6); backdrop-filter: blur(8px);
+      border: 1px solid var(--line); border-radius: 99px; text-decoration: none;
+    }
+    .badge .ya {
+      width: 34px; height: 34px; border-radius: 50%; background: #fc3f1d; color: #fff;
+      display: grid; place-items: center; font: 800 18px/1 var(--body);
+    }
+    .badge b { font: 700 18px/1 var(--head); }
+    .badge .stars { color: #ffc93d; letter-spacing: 1px; font-size: 14px; }
+    .badge small { display: block; color: var(--muted); font-size: 12px; line-height: 1.2; margin-top: 3px; }
+
+    /* Facts strip */
+    .facts { padding: 28px 0; border-bottom: 1px solid var(--line); }
+    .facts ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; }
+    .facts li { font-size: 14px; color: var(--muted); }
+    .facts li b { display: block; color: var(--text); font: 700 17px/1.25 var(--head); margin-bottom: 4px; }
+
+    /* Houses */
+    .houses-grid { display: grid; gap: 18px; margin-top: 40px; }
+    .houses-grid .ph:first-child { aspect-ratio: 4 / 3.4; }
+    .card {
+      background: var(--graphite-2); border: 1px solid var(--line);
+      border-radius: var(--radius); padding: 26px;
+    }
+    .inside-list { list-style: none; margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .inside-list li { display: flex; gap: 10px; align-items: center; font-weight: 500; font-size: 15px; }
+    .ico {
+      flex: none; width: 36px; height: 36px; border-radius: 11px;
+      display: grid; place-items: center;
+      background: rgba(143,211,234,.1); color: var(--ice);
+    }
+    .ico svg { width: 19px; height: 19px; }
+    .price-row {
+      display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 14px;
+      margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--line);
+    }
+    .price { font: 700 28px/1 var(--head); }
+    .price small { font: 500 15px/1 var(--body); color: var(--muted); }
+
+    /* Excursions */
+    .host-note {
+      display: flex; gap: 16px; align-items: flex-start; margin-top: 32px;
+      padding: 20px; border-radius: var(--radius);
+      background: linear-gradient(135deg, rgba(255,138,61,.14), rgba(255,138,61,.03));
+      border: 1px solid rgba(255,138,61,.25);
+    }
+    .host-note .ico { background: rgba(255,138,61,.16); color: var(--sunset); width: 44px; height: 44px; }
+    .host-note p { color: #d6dbdf; font-size: 15px; }
+    .host-note b { color: var(--text); }
+    .tours {
+      display: grid; grid-auto-flow: column; grid-auto-columns: 82%; gap: 14px;
+      overflow-x: auto; scroll-snap-type: x mandatory; margin: 32px calc(var(--gutter) * -1) 0;
+      padding: 4px var(--gutter) 16px; scrollbar-width: none;
+    }
+    .tours::-webkit-scrollbar { display: none; }
+    .tour {
+      scroll-snap-align: start; display: flex; flex-direction: column;
+      background: var(--graphite-2); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+    }
+    .tour .ph { border-radius: 0; aspect-ratio: 16 / 11; }
+    .tour-body { padding: 20px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+    .tour h3 { font-size: 20px; font-weight: 700; }
+    .tour p { color: var(--muted); font-size: 15px; flex: 1; }
+    .tour .meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 14px; }
+    .tour .meta b { font: 700 17px/1 var(--head); }
+    .swipe-hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+    /* Cafe */
+    .cafe { background: var(--graphite-2); }
+    .cafe-grid { display: grid; gap: 28px; }
+    .dishes { list-style: none; padding: 0; margin: 26px 0 0; display: grid; gap: 12px; }
+    .dishes li {
+      display: flex; gap: 14px; align-items: center; padding: 16px 18px;
+      border: 1px solid var(--line); border-radius: 18px; background: var(--graphite);
+    }
+    .dishes li span { color: var(--muted); font-size: 14px; display: block; line-height: 1.4; }
+    .dishes li b { font-size: 16px; }
+    .dishes .ico { background: rgba(255,138,61,.12); color: var(--sunset); }
+    .cafe-photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .cafe-photos .ph { aspect-ratio: 1; }
+    .cafe-photos .ph:first-child { grid-column: 1 / -1; aspect-ratio: 16 / 10; }
+
+    /* Activities */
+    .acts { display: grid; gap: 14px; margin-top: 36px; }
+    .act {
+      position: relative; padding: 26px; border-radius: var(--radius);
+      background: var(--graphite-2); border: 1px solid var(--line); overflow: hidden;
+    }
+    .act .ico { width: 52px; height: 52px; border-radius: 16px; margin-bottom: 18px; }
+    .act .ico svg { width: 26px; height: 26px; }
+    .act h3 { font-size: 22px; }
+    .act p { color: var(--muted); margin-top: 10px; font-size: 15px; }
+    .act .season { position: absolute; top: 22px; right: 22px; font-size: 12px; font-weight: 700; color: var(--muted); border: 1px solid var(--line); border-radius: 99px; padding: 5px 10px; }
+    .detox {
+      margin-top: 14px; padding: 28px; border-radius: var(--radius);
+      background:
+        radial-gradient(80% 120% at 100% 0%, rgba(143,211,234,.22), transparent 60%),
+        var(--stone);
+      border: 1px solid rgba(143,211,234,.25);
+    }
+    .detox h3 { font-size: 24px; }
+    .detox p { color: #c6ced4; margin-top: 10px; }
+    .signal { display: inline-flex; gap: 3px; align-items: flex-end; height: 18px; margin-bottom: 14px; }
+    .signal i { width: 5px; border-radius: 2px; background: var(--ice); }
+    .signal i:nth-child(1) { height: 30%; } .signal i:nth-child(2) { height: 55%; opacity: .3; }
+    .signal i:nth-child(3) { height: 80%; opacity: .3; } .signal i:nth-child(4) { height: 100%; opacity: .3; }
+
+    /* Seasons */
+    .season-tabs { display: flex; gap: 8px; margin-top: 32px; overflow-x: auto; scrollbar-width: none; }
+    .season-tabs button {
+      flex: none; min-height: 46px; padding: 0 20px; border-radius: 99px; cursor: pointer;
+      border: 1px solid var(--line); background: transparent; color: var(--muted);
+      font: 700 15px/1 var(--body);
+    }
+    .season-tabs button[aria-selected="true"] { background: var(--text); color: var(--graphite); border-color: var(--text); }
+    .season-panel { display: grid; gap: 22px; margin-top: 22px; }
+    .season-panel[hidden] { display: none; }
+    .season-panel .ph { aspect-ratio: 16 / 10; }
+    .season-panel h3 { font-size: 26px; }
+    .season-panel .when { color: var(--ice); font-weight: 600; font-size: 14px; margin-top: 8px; }
+    .checks { list-style: none; padding: 0; margin: 18px 0 0; display: grid; gap: 12px; }
+    .checks li { padding-left: 30px; position: relative; color: #d2d8dc; }
+    .checks li::before {
+      content: ""; position: absolute; left: 0; top: 4px; width: 18px; height: 18px; border-radius: 50%;
+      background: rgba(143,211,234,.15) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238fd3ea' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 12.5l4 4 8-9'/%3E%3C/svg%3E") center / 12px no-repeat;
+    }
+
+    /* Reviews */
+    .reviews { background: var(--graphite-2); }
+    .rating-big { display: flex; align-items: center; gap: 18px; margin-top: 28px; }
+    .rating-big b { font: 800 64px/1 var(--head); }
+    .rating-big .stars { color: #ffc93d; font-size: 20px; letter-spacing: 2px; }
+    .rating-big small { color: var(--muted); display: block; font-size: 14px; }
+    .rev-grid { display: grid; gap: 14px; margin-top: 32px; }
+    .rev { padding: 24px; border-radius: var(--radius); background: var(--graphite); border: 1px solid var(--line); }
+    .rev .stars { color: #ffc93d; letter-spacing: 2px; font-size: 14px; }
+    .rev p { margin-top: 12px; font-size: 16px; color: #dde2e5; }
+    .rev .who { margin-top: 16px; color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+
+    /* Route */
+    .routes { display: grid; gap: 14px; margin-top: 36px; }
+    .route { padding: 24px; border-radius: var(--radius); background: var(--graphite-2); border: 1px solid var(--line); }
+    .route .from { display: flex; align-items: center; gap: 12px; }
+    .route h3 { font-size: 19px; }
+    .route .km { margin-top: 16px; display: flex; gap: 22px; }
+    .route .km b { display: block; font: 700 22px/1.1 var(--head); }
+    .route .km span { color: var(--muted); font-size: 13px; }
+    .route p { color: var(--muted); font-size: 15px; margin-top: 14px; }
+    .route.transfer { background: linear-gradient(135deg, rgba(143,211,234,.14), rgba(143,211,234,.03)); border-color: rgba(143,211,234,.3); }
+    .map {
+      margin-top: 14px; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line);
+      position: relative; background: var(--stone); aspect-ratio: 4 / 3.6;
+    }
+    .map iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+    .map-link { display: inline-flex; margin-top: 14px; color: var(--ice); font-weight: 600; text-decoration: none; gap: 8px; align-items: center; }
+    .map-link:hover { text-decoration: underline; }
+
+    /* Booking */
+    .booking {
+      background:
+        radial-gradient(70% 50% at 100% 0%, rgba(255,138,61,.16), transparent 60%),
+        radial-gradient(60% 50% at 0% 100%, rgba(143,211,234,.12), transparent 60%),
+        var(--stone);
+    }
+    form { margin-top: 32px; display: grid; gap: 16px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label.f { display: grid; gap: 7px; font-size: 13px; font-weight: 600; color: #c4ccd2; min-width: 0; }
+    .f input, .f select {
+      width: 100%; min-width: 0; min-height: 54px; padding: 0 16px; border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14); background: rgba(10,12,14,.45);
+      color: var(--text); font: 500 16px/1.2 var(--body); color-scheme: dark;
+      -webkit-appearance: none; appearance: none;
+    }
+    .f select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa3ab' stroke-width='2.4' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 14px center; background-size: 18px; padding-right: 40px;
+    }
+    .f input:focus, .f select:focus { outline: 2px solid var(--ice); outline-offset: 1px; border-color: transparent; }
+    .f input[aria-invalid="true"] { border-color: #ff6b6b; }
+    .toggles { display: grid; gap: 10px; }
+    .toggle {
+      display: flex; align-items: center; gap: 14px; padding: 14px 16px; min-height: 58px;
+      border-radius: 14px; border: 1px solid rgba(255,255,255,.14); background: rgba(10,12,14,.3);
+      cursor: pointer; font-weight: 600; font-size: 15px;
+    }
+    .toggle small { display: block; color: var(--muted); font-weight: 500; font-size: 13px; }
+    .toggle input { width: 22px; height: 22px; accent-color: var(--sunset); flex: none; margin: 0; }
+    .consent { display: flex; gap: 12px; align-items: flex-start; font-size: 13px; color: var(--muted); line-height: 1.5; cursor: pointer; }
+    .consent input { width: 22px; height: 22px; accent-color: var(--sunset); flex: none; margin: 0; }
+    .consent a { color: var(--ice); }
+    .form-error { color: #ff8e8e; font-size: 14px; font-weight: 600; min-height: 1px; }
+    form .btn { width: 100%; }
+    .form-note { color: var(--muted); font-size: 13px; text-align: center; }
+
+    /* Footer */
+    footer { padding: 56px 0 120px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+    .foot-grid { display: grid; gap: 28px; }
+    .logo { display: flex; align-items: center; gap: 12px; color: var(--text); font: 700 18px/1.1 var(--head); text-decoration: none; }
+    .logo svg { width: 38px; height: 38px; }
+    footer h4 { margin: 0 0 10px; color: var(--text); font-size: 14px; }
+    footer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    footer a { text-decoration: none; }
+    footer a:hover { color: var(--text); }
+    .fineprint { margin-top: 36px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.6; }
+
+    /* Floating WhatsApp */
+    .fab {
+      position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 60;
+      width: 60px; height: 60px; border-radius: 50%; background: var(--wa); color: #fff;
+      display: grid; place-items: center; box-shadow: 0 10px 30px -6px rgba(37,211,102,.6);
+      transition: transform .2s ease, opacity .2s ease;
+    }
+    .fab svg { width: 30px; height: 30px; }
+    .fab.hide { transform: scale(.6); opacity: 0; pointer-events: none; }
+
+    /* Reveal */
+    .rv { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+    .rv.in { opacity: 1; transform: none; }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .rv { opacity: 1; transform: none; transition: none; }
+    }
+
+    /* ≥ 640 */
+    @media (min-width: 640px) {
+      :root { --gutter: 32px; }
+      .hero-cta { flex-direction: row; }
+      .facts ul { grid-template-columns: repeat(4, 1fr); }
+      .tours { grid-auto-columns: 46%; }
+      .acts { grid-template-columns: 1fr 1fr; }
+      .rev-grid { grid-template-columns: 1fr 1fr; }
+      .routes { grid-template-columns: 1fr 1fr; }
+      .routes .transfer { grid-column: 1 / -1; }
+      .toggles { grid-template-columns: 1fr 1fr; }
+      .map { aspect-ratio: 16 / 9; }
+    }
+    /* ≥ 960 */
+    @media (min-width: 960px) {
+      section { padding: 120px 0; }
+      .hero { padding-bottom: 90px; }
+      .houses-grid { grid-template-columns: 1.2fr 1fr; align-items: stretch; }
+      .houses-grid .ph:first-child { grid-row: span 2; aspect-ratio: auto; min-height: 520px; }
+      .tours {
+        grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); grid-auto-columns: auto;
+        overflow: visible; margin: 40px 0 0; padding: 0;
+      }
+      .swipe-hint { display: none; }
+      .cafe-grid { grid-template-columns: 1fr 1fr; align-items: center; gap: 56px; }
+      .acts { grid-template-columns: repeat(3, 1fr); }
+      .season-panel { grid-template-columns: 1.1fr 1fr; align-items: center; gap: 48px; }
+      .rev-grid { grid-template-columns: repeat(4, 1fr); }
+      .routes { grid-template-columns: 1fr 1fr 1fr; }
+      .routes .transfer { grid-column: auto; }
+      .booking-grid { display: grid; grid-template-columns: 1fr 1.2fr; gap: 64px; align-items: start; }
+      .booking-grid form { margin-top: 0; }
+      .foot-grid { grid-template-columns: 1.4fr 1fr 1fr; }
+      .fab { display: none; }
+      footer { padding-bottom: 56px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Иконки и силуэт гор (используются через <use>) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="mtn" viewBox="0 0 1200 500" preserveAspectRatio="xMidYMax slice">
+      <path d="M0 500V300l90-70 70 40 110-130 60 50 90-120 80 70 70-60 110 140 60-40 120 110 90-80 110 90 80-50 60 40v260z" fill="rgba(255,255,255,.10)"/>
+      <path d="M330 170l-30 50 40-20 25 25zM420 110l-25 45 35-15 25 20zM740 190l-30 40 35-10 20 25z" fill="rgba(255,255,255,.55)"/>
+      <path d="M0 500V380l120-60 100 50 140-90 120 70 110-50 150 80 120-60 140 70 100-30 100 40v170z" fill="rgba(0,0,0,.22)"/>
+      <path d="M0 500V440l180-40 160 30 200-40 180 40 200-30 280 40v60z" fill="rgba(0,0,0,.35)"/>
+    </symbol>
+    <symbol id="i-cam" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24" fill="currentColor"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91C21.95 6.45 17.5 2 12.04 2zm5.8 14.02c-.24.68-1.42 1.31-1.95 1.36-.5.05-.97.23-3.27-.68-2.77-1.09-4.52-3.92-4.66-4.1-.13-.18-1.1-1.47-1.1-2.8 0-1.33.7-1.99.95-2.26.24-.27.53-.34.71-.34l.51.01c.16.01.38-.06.6.46.22.53.75 1.85.82 1.98.07.13.11.29.02.47-.09.18-.13.29-.27.45-.13.16-.28.35-.4.47-.13.13-.27.28-.12.54.16.27.7 1.15 1.5 1.86 1.03.92 1.9 1.2 2.17 1.34.27.13.42.11.58-.07.16-.18.67-.78.85-1.05.18-.27.36-.22.6-.13.25.09 1.56.74 1.83.87.27.13.45.2.51.31.07.11.07.65-.17 1.32z"/></symbol>
+    <symbol id="i-bath" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18v2a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5z"/><path d="M6 12V5a2 2 0 0 1 3.5-1.3M7 19l-1 2m11-2 1 2"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/></symbol>
+    <symbol id="i-bed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18V6m0 7h18v5M3 13h18m0 0v-2a3 3 0 0 0-3-3h-7v5"/><circle cx="7" cy="10" r="1.6"/></symbol>
+    <symbol id="i-cup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5zM17 10h1.5a2.5 2.5 0 0 1 0 5H17M8 3v3m4-3v3"/></symbol>
+    <symbol id="i-dish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15h18M5 15a7 7 0 0 1 14 0M12 6V5M2 19h20"/></symbol>
+    <symbol id="i-balcony" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h18M5 14v7m4.7-7v7m4.6-7v7M19 14v7M3 21h18M7 14V5h10v9"/></symbol>
+    <symbol id="i-mtn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 20 7-12 4 6 3-4 6 10z"/><path d="m7.5 10.5 1.5 1 1.3-1.2"/></symbol>
+    <symbol id="i-jeep" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V11l2-5h10l2 5h3v5"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M3 11h17"/></symbol>
+    <symbol id="i-quad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="16.5" r="3"/><circle cx="18.5" cy="16.5" r="3"/><path d="M8.5 16.5h7M7 12l3-4h4l3 4M10 8V5h3"/></symbol>
+    <symbol id="i-snow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4.9 6.5l14.2 11M4.9 17.5l14.2-11M9.5 3.8 12 6l2.5-2.2M9.5 20.2 12 18l2.5 2.2"/></symbol>
+    <symbol id="i-walk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="4" r="2"/><path d="m9 21 2-6 3 3v3M7 12l3-4 4 1 2 4 3 1M10 8l1 7"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-plane" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16l20-6-2-2-7 2-5-6-2 1 3 6-5 1.5-2-2-2 .5z"/><path d="M3 21h18"/></symbol>
+    <symbol id="i-fire" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-3 3-5 5-5 8a7 7 0 0 0 7 7z"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v-4l2-5h12l2 5v4zM4 12h16"/><circle cx="7.5" cy="16.5" r="1.8"/><circle cx="16.5" cy="16.5" r="1.8"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  </defs>
+</svg>
+
+<div class="demo-bar" role="note">Демо-версия сайта. Цены, отзывы и фото — заглушки</div>
+
+<!-- 1. HERO -->
+<header class="hero" id="top">
+  <svg class="mtn-hero" aria-hidden="true"><use href="#mtn"/></svg>
+  <span class="cap hero-photo-cap"><svg><use href="#i-cam"/></svg>Вид с террасы</span>
+  <div class="wrap">
+    <!-- 2. Бейдж рейтинга -->
+    <a class="badge" href="#reviews" aria-label="Рейтинг 5.0 на Яндекс Картах, 69 оценок">
+      <span class="ya">Я</span>
+      <span>
+        <b>5.0</b> <span class="stars">★★★★★</span>
+        <small>на Яндекс Картах · 69 оценок</small>
+      </span>
+    </a>
+    <h1>Домики с видом на&nbsp;<em>Безенгийскую стену</em></h1>
+    <p class="sub">Глэмпинг в Безенги, Кабардино-Балкария. Тёплые двухэтажные домики с террасой, домашняя кухня и поездки к ледникам с хозяином. Круглый год.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#booking">Забронировать</a>
+      <a class="btn btn-ghost js-wa" href="#" data-msg="Здравствуйте! Пишу с сайта глэмпинга в Безенги. Хочу узнать о свободных датах.">
+        <svg><use href="#i-wa"/></svg>Написать в WhatsApp
+      </a>
+    </div>
+  </div>
+</header>
+
+<div class="facts">
+  <div class="wrap">
+    <ul>
+      <li><b>Круглый год</b>лето, осень, зима</li>
+      <li><b>Вид на хребет</b>с террасы каждого домика</li>
+      <li><b>Своё кафе</b>хычины, шашлык, домашняя кухня</li>
+      <li><b>Трансфер</b>и парковка на территории</li>
+    </ul>
+  </div>
+</div>
+
+<main>
+
+<!-- 3. ДОМИКИ -->
+<section id="houses">
+  <div class="wrap">
+    <span class="eyebrow">Домики</span>
+    <h2 class="h2 rv">Просыпаться и&nbsp;видеть ледники</h2>
+    <p class="lead rv">Новые двухэтажные домики с балконом или террасой. Утренний кофе — прямо напротив Кавказского хребта и Безенгийской стены.</p>
+
+    <div class="houses-grid">
+      <figure class="ph warm rv" style="margin:0">
+        <svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg>
+        <figcaption><svg><use href="#i-cam"/></svg>Домик снаружи</figcaption>
+      </figure>
+
+      <div class="card rv">
+        <h3 style="font-size:22px">Что внутри</h3>
+        <ul class="inside-list">
+          <li><span class="ico"><svg><use href="#i-bath"/></svg></span>Своя ванная</li>
+          <li><span class="ico"><svg><use href="#i-drop"/></svg></span>Горячая вода</li>
+          <li><span class="ico"><svg><use href="#i-bed"/></svg></span>Удобные кровати и бельё</li>
+          <li><span class="ico"><svg><use href="#i-dish"/></svg></span>Посуда</li>
+          <li><span class="ico"><svg><use href="#i-cup"/></svg></span>Чай и кофе</li>
+          <li><span class="ico"><svg><use href="#i-balcony"/></svg></span>Балкон или терраса</li>
+        </ul>
+        <div class="price-row">
+          <div class="price">от X XXX ₽ <small>/ ночь</small><span class="demo-tag">демо</span></div>
+          <a class="btn btn-primary" href="#booking" style="min-height:48px">Выбрать даты</a>
+        </div>
+      </div>
+
+      <figure class="ph inside rv" style="margin:0">
+        <svg class="mtn" aria-hidden="true" style="opacity:.35"><use href="#mtn"/></svg>
+        <figcaption><svg><use href="#i-cam"/></svg>Домик внутри</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- 4. ЭКСКУРСИИ -->
+<section id="tours" style="padding-top:0">
+  <div class="wrap">
+    <span class="eyebrow">Экскурсии</span>
+    <h2 class="h2 rv">Ущелье с&nbsp;тем, кто здесь вырос</h2>
+    <p class="lead rv">Поездки на джипе или УАЗе по Безенгийскому ущелью. Маршрут подстраиваем под вас: можно собрать несколько точек за день.</p>
+
+    <div class="host-note rv">
+      <span class="ico"><svg><use href="#i-user"/></svg></span>
+      <p><b>Возит хозяин — Тахир.</b> Рассказывает истории ущелья и делает ваши фото на лучших точках — гости в отзывах отмечают это чаще всего.</p>
+    </div>
+
+    <div class="tours" aria-label="Экскурсии">
+      <article class="tour">
+        <div class="ph ice"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Язык тролля</span></div>
+        <div class="tour-body">
+          <h3>Язык тролля</h3>
+          <p>Скальный выступ над обрывом — самое известное фото Безенги. Внизу ущелье, впереди — ледники.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph green"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Девичьи слёзы</span></div>
+        <div class="tour-body">
+          <h3>Водопад «Девичьи слёзы»</h3>
+          <p>Вода тонкими струями стекает по скале. Тихое место, чтобы остановиться и послушать ущелье.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph ice"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Брызги шампанского</span></div>
+        <div class="tour-body">
+          <h3>Водопад «Брызги шампанского»</h3>
+          <p>Шумный поток, который разбивается о камни в облако брызг. Летом в солнце — с радугой.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph snow"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Безенгийский ледник</span></div>
+        <div class="tour-body">
+          <h3>Безенгийский ледник</h3>
+          <p>Один из самых больших ледников Кавказа. Подъезд к языку ледника и прогулка по морене.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph gold"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Замок Жабоевых</span></div>
+        <div class="tour-body">
+          <h3>Замок Жабоевых</h3>
+          <p>Старинное родовое укрепление из камня над ущельем. История балкарских фамилий из первых уст.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph warm"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Качели над ущельем</span></div>
+        <div class="tour-body">
+          <h3>Качели над ущельем</h3>
+          <p>Качели на краю обрыва с видом на хребет. Для смелых — и для очень красивых фото.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+      <article class="tour">
+        <div class="ph night"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Альплагерь Безенги</span></div>
+        <div class="tour-body">
+          <h3>Альплагерь Безенги</h3>
+          <p>Легендарная база альпинистов у подножия Безенгийской стены. Ближе к пятитысячникам на машине не подъехать.</p>
+          <div class="meta"><b>от X XXX ₽</b><span class="demo-tag">демо</span></div>
+        </div>
+      </article>
+    </div>
+    <p class="swipe-hint">← листайте карточки →</p>
+  </div>
+</section>
+
+<!-- 5. КАФЕ -->
+<section class="cafe" id="cafe">
+  <div class="wrap cafe-grid">
+    <div>
+      <span class="eyebrow">Кафе на территории</span>
+      <h2 class="h2 rv">Домашняя кухня, как у&nbsp;бабушки в&nbsp;горах</h2>
+      <p class="lead rv">Готовим по запросу гостей — скажите заранее, что хотите на ужин, и к возвращению с экскурсии всё будет на столе.</p>
+      <ul class="dishes">
+        <li class="rv"><span class="ico"><svg><use href="#i-fire"/></svg></span><div><b>Хычины</b><span>с сыром, картофелем, мясом — горячие, со сковороды</span></div></li>
+        <li class="rv"><span class="ico"><svg><use href="#i-fire"/></svg></span><div><b>Шашлык</b><span>на углях, на террасе с видом на горы</span></div></li>
+        <li class="rv"><span class="ico"><svg><use href="#i-cup"/></svg></span><div><b>Домашние завтраки и ужины</b><span>простая сытная еда после дня в горах</span></div></li>
+      </ul>
+    </div>
+    <div class="cafe-photos">
+      <div class="ph gold rv"><svg class="mtn" aria-hidden="true" style="opacity:.4"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Хычины</span></div>
+      <div class="ph warm rv"><span class="cap"><svg><use href="#i-cam"/></svg>Шашлык</span></div>
+      <div class="ph inside rv"><span class="cap"><svg><use href="#i-cam"/></svg>Кафе</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. АКТИВНОСТИ -->
+<section id="activities">
+  <div class="wrap">
+    <span class="eyebrow">Активности</span>
+    <h2 class="h2 rv">Чем заняться между завтраком и&nbsp;закатом</h2>
+    <div class="acts">
+      <div class="act rv">
+        <span class="season">весна — осень</span>
+        <span class="ico"><svg><use href="#i-quad"/></svg></span>
+        <h3>Квадроциклы</h3>
+        <p>Покатушки по горным дорогам ущелья. Подходит и тем, кто за рулём квадроцикла впервые.</p>
+      </div>
+      <div class="act rv">
+        <span class="season">зима</span>
+        <span class="ico"><svg><use href="#i-snow"/></svg></span>
+        <h3>Ватрушки</h3>
+        <p>Снежные склоны прямо рядом. Детям — восторг, взрослым — тоже.</p>
+      </div>
+      <div class="act rv">
+        <span class="season">круглый год</span>
+        <span class="ico"><svg><use href="#i-walk"/></svg></span>
+        <h3>Прогулки</h3>
+        <p>Тропы по ущелью, вдоль реки, к смотровым точкам. Подскажем маршрут под ваш уровень.</p>
+      </div>
+    </div>
+    <div class="detox rv">
+      <div class="signal" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+      <h3>Цифровой детокс включён</h3>
+      <p>Интернет здесь слабый — и это лучшее, что может случиться с отпуском. Вместо ленты — звёзды, вместо уведомлений — шум реки. Позвонить близким получится, залипнуть в телефон — нет.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 7. СЕЗОНЫ -->
+<section id="seasons" style="padding-top:0">
+  <div class="wrap">
+    <span class="eyebrow">Сезоны</span>
+    <h2 class="h2 rv">Безенги разный в&nbsp;каждый сезон</h2>
+    <div class="season-tabs" role="tablist" aria-label="Сезоны">
+      <button role="tab" id="t-summer" aria-controls="p-summer" aria-selected="true">Лето</button>
+      <button role="tab" id="t-autumn" aria-controls="p-autumn" aria-selected="false" tabindex="-1">Осень</button>
+      <button role="tab" id="t-winter" aria-controls="p-winter" aria-selected="false" tabindex="-1">Зима</button>
+    </div>
+
+    <div class="season-panel" role="tabpanel" id="p-summer" aria-labelledby="t-summer">
+      <div class="ph green"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Ущелье летом</span></div>
+      <div>
+        <h3>Лето</h3>
+        <p class="when">июнь — август</p>
+        <ul class="checks">
+          <li>Полноводные водопады — «Брызги шампанского» в самой силе</li>
+          <li>Дорога к Безенгийскому леднику и альплагерю открыта</li>
+          <li>Квадроциклы и долгие прогулки по зелёным склонам</li>
+          <li>Шашлык на террасе до поздних сумерек</li>
+        </ul>
+      </div>
+    </div>
+    <div class="season-panel" role="tabpanel" id="p-autumn" aria-labelledby="t-autumn" hidden>
+      <div class="ph gold"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Осень в горах</span></div>
+      <div>
+        <h3>Осень</h3>
+        <p class="when">сентябрь — ноябрь</p>
+        <ul class="checks">
+          <li>Золотые склоны и первый снег на вершинах</li>
+          <li>Прозрачный воздух — стена видна во всех деталях</li>
+          <li>Меньше туристов на Языке тролля и качелях</li>
+          <li>Горячие хычины после прохладного дня</li>
+        </ul>
+      </div>
+    </div>
+    <div class="season-panel" role="tabpanel" id="p-winter" aria-labelledby="t-winter" hidden>
+      <div class="ph snow"><svg class="mtn" aria-hidden="true"><use href="#mtn"/></svg><span class="cap"><svg><use href="#i-cam"/></svg>Зимнее утро</span></div>
+      <div>
+        <h3>Зима</h3>
+        <p class="when">декабрь — март</p>
+        <ul class="checks">
+          <li>Ватрушки и снежные горки для всей семьи</li>
+          <li>Заснеженное ущелье и тишина, какой не бывает в городе</li>
+          <li>Тёплый домик и горячий чай с видом на белый хребет</li>
+          <li>Новогодние и зимние каникулы вдали от суеты</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. ОТЗЫВЫ -->
+<section class="reviews" id="reviews">
+  <div class="wrap">
+    <span class="eyebrow">Отзывы</span>
+    <h2 class="h2 rv">Что говорят гости</h2>
+    <div class="rating-big rv">
+      <b>5.0</b>
+      <div><span class="stars">★★★★★</span><small>69 оценок на Яндекс Картах</small></div>
+    </div>
+    <div class="rev-grid">
+      <div class="rev rv"><span class="stars">★★★★★</span><p>Вид с балкона такой, что первое утро просто сидели с кофе и молчали. Домик новый, чисто, горячая вода без перебоев.</p><div class="who"><span>Пара, лето</span><span class="demo-tag">демо</span></div></div>
+      <div class="rev rv"><span class="stars">★★★★★</span><p>Тахир за день показал всё: Язык тролля, водопады, ледник. Рассказывал про каждое место и сделал нам кучу отличных фото.</p><div class="who"><span>Компания друзей</span><span class="demo-tag">демо</span></div></div>
+      <div class="rev rv"><span class="stars">★★★★★</span><p>Хычины — лучшие за всю поездку по Кавказу. Попросили шашлык к вечеру — приготовили, пока мы были на экскурсии.</p><div class="who"><span>Семья с детьми</span><span class="demo-tag">демо</span></div></div>
+      <div class="rev rv"><span class="stars">★★★★★</span><p>Интернет почти не ловит — и это было прекрасно. Дети катались на ватрушках, мы наконец выспались.</p><div class="who"><span>Семья, зима</span><span class="demo-tag">демо</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 9. КАК ДОБРАТЬСЯ -->
+<section id="route">
+  <div class="wrap">
+    <span class="eyebrow">Как добраться</span>
+    <h2 class="h2 rv">Дорога в&nbsp;ущелье</h2>
+    <p class="lead rv">Безенги — высокогорное село в Черекском районе Кабардино-Балкарии. Последний участок — горная дорога, подходит и обычный легковой автомобиль.</p>
+
+    <div class="routes">
+      <div class="route rv">
+        <div class="from"><span class="ico"><svg><use href="#i-pin"/></svg></span><h3>Из Нальчика</h3></div>
+        <div class="km"><div><b>≈ 90 км</b><span>расстояние</span></div><div><b>≈ 2 ч</b><span>в пути</span></div></div>
+        <p>Через Кашхатау и Бабугент, дальше по Безенгийскому ущелью.</p>
+      </div>
+      <div class="route rv">
+        <div class="from"><span class="ico"><svg><use href="#i-plane"/></svg></span><h3>Из аэропорта Минвод</h3></div>
+        <div class="km"><div><b>≈ 200 км</b><span>расстояние</span></div><div><b>≈ 3,5–4 ч</b><span>в пути</span></div></div>
+        <p>Через Нальчик по трассе Р-217, затем в сторону Черекского района.</p>
+      </div>
+      <div class="route transfer rv">
+        <div class="from"><span class="ico"><svg><use href="#i-car"/></svg></span><h3>Трансфер</h3></div>
+        <p style="color:#d2dade">Встретим в аэропорту Минеральных Вод, в Нальчике или на вокзале. Отметьте трансфер в заявке — согласуем время и цену. На территории есть парковка.</p>
+        <div class="meta" style="margin-top:14px"><b style="font:700 18px/1 var(--head)">от X XXX ₽</b><span class="demo-tag">демо</span></div>
+      </div>
+    </div>
+
+    <div class="map rv" id="map">
+      <iframe title="Карта: Безенги на Яндекс Картах" loading="lazy"
+        src="https://yandex.ru/map-widget/v1/?ll=43.337%2C43.218&z=11&pt=43.337%2C43.218%2Cpm2rdl&l=map"
+        allowfullscreen></iframe>
+    </div>
+    <a class="map-link" href="https://yandex.ru/maps/?text=%D0%93%D0%BB%D1%8D%D0%BC%D0%BF%D0%B8%D0%BD%D0%B3%20%D0%91%D0%B5%D0%B7%D0%B5%D0%BD%D0%B3%D0%B8" target="_blank" rel="noopener">
+      <svg width="18" height="18"><use href="#i-pin"/></svg>Открыть в Яндекс Картах и построить маршрут
+    </a>
+  </div>
+</section>
+
+<!-- 10. ФОРМА БРОНИ -->
+<section class="booking" id="booking">
+  <div class="wrap booking-grid">
+    <div>
+      <span class="eyebrow">Бронирование</span>
+      <h2 class="h2 rv">Оставьте заявку — ответим в&nbsp;WhatsApp</h2>
+      <p class="lead rv">Заполните форму: по кнопке откроется WhatsApp с готовым текстом заявки. Останется только нажать «Отправить».</p>
+    </div>
+
+    <form id="bookForm" novalidate>
+      <div class="row2">
+        <label class="f">Заезд<input type="date" name="checkin" id="checkin" required></label>
+        <label class="f">Выезд<input type="date" name="checkout" id="checkout" required></label>
+      </div>
+      <div class="row2">
+        <label class="f">Взрослых
+          <select name="adults">
+            <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8+</option>
+          </select>
+        </label>
+        <label class="f">Детей
+          <select name="kids">
+            <option selected>0</option><option>1</option><option>2</option><option>3</option><option>4+</option>
+          </select>
+        </label>
+      </div>
+      <div class="toggles">
+        <label class="toggle"><input type="checkbox" name="tour"><span>Нужна экскурсия<small>на джипе с Тахиром</small></span></label>
+        <label class="toggle"><input type="checkbox" name="transfer"><span>Нужен трансфер<small>из Минвод или Нальчика</small></span></label>
+      </div>
+      <label class="f">Имя<input type="text" name="name" autocomplete="given-name" placeholder="Как к вам обращаться" required></label>
+      <label class="f">Телефон<input type="tel" name="phone" autocomplete="tel" inputmode="tel" placeholder="+7 900 000-00-00" required></label>
+      <label class="consent"><input type="checkbox" name="consent" required><span>Согласен(на) на обработку персональных данных для связи по заявке. <a href="#privacy">Подробнее</a></span></label>
+      <p class="form-error" id="formError" role="alert"></p>
+      <button class="btn btn-primary" type="submit"><svg><use href="#i-wa"/></svg>Отправить заявку в WhatsApp</button>
+      <p class="form-note">Бронь подтверждается после ответа хозяина</p>
+    </form>
+  </div>
+</section>
+
+</main>
+
+<!-- 11. ФУТЕР -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="logo" href="#top">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#262b30"/><path d="M6 50 24 22l8 11 8-15 18 32z" fill="#8fd3ea"/><path d="m36 26 4-8 4 8-4-2z" fill="#fff"/></svg>
+          Глэмпинг Безенги
+        </a>
+        <p style="margin-top:14px;max-width:340px">Домики с видом на Безенгийскую стену. Кабардино-Балкария, Черекский район, с. Безенги.</p>
+      </div>
+      <div>
+        <h4>Связаться</h4>
+        <ul>
+          <li><a class="js-tel" href="#">[ВСТАВЬ НОМЕР С ЯНДЕКС КАРТ]</a></li>
+          <li><a class="js-wa" href="#" data-msg="Здравствуйте! Пишу с сайта глэмпинга в Безенги.">WhatsApp</a></li>
+          <li>Работаем круглый год</li>
+        </ul>
+      </div>
+      <div>
+        <h4>На сайте</h4>
+        <ul>
+          <li><a href="#houses">Домики</a></li>
+          <li><a href="#tours">Экскурсии</a></li>
+          <li><a href="#cafe">Кафе</a></li>
+          <li><a href="#route">Как добраться</a></li>
+          <li><a href="#booking">Бронирование</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="fineprint" id="privacy">
+      Демо-версия сайта. Цены, тексты отзывов и изображения — заглушки, данные о рейтинге взяты с Яндекс Карт.
+      Данные из формы не сохраняются на сайте: они только подставляются в сообщение WhatsApp, которое вы отправляете сами.
+    </p>
+  </div>
+</footer>
+
+<a class="fab js-wa" href="#" aria-label="Написать в WhatsApp" data-msg="Здравствуйте! Пишу с сайта глэмпинга в Безенги.">
+  <svg><use href="#i-wa"/></svg>
+</a>
+
+<script>
+  // ▼ Номер с Яндекс Карт — только цифры, с 7 в начале, например '79281234567'.
+  //   Пока пусто, WhatsApp откроется с выбором чата, а заявка будет уже в тексте.
+  const PHONE = '';
+  const PHONE_LABEL = '[ВСТАВЬ НОМЕР С ЯНДЕКС КАРТ]';
+
+  const waUrl = (text) => 'https://wa.me/' + PHONE + '?text=' + encodeURIComponent(text);
+
+  document.querySelectorAll('.js-wa').forEach(a => {
+    a.href = waUrl(a.dataset.msg || '');
+    a.target = '_blank';
+    a.rel = 'noopener';
+  });
+  document.querySelectorAll('.js-tel').forEach(a => {
+    a.textContent = PHONE ? '+' + PHONE.replace(/^(\d)(\d{3})(\d{3})(\d{2})(\d{2})$/, '$1 $2 $3-$4-$5') : PHONE_LABEL;
+    a.href = PHONE ? 'tel:+' + PHONE : '#booking';
+  });
+
+  // Season tabs
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  function selectTab(tab) {
+    tabs.forEach(t => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on);
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => selectTab(t));
+    t.addEventListener('keydown', e => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      selectTab(next); next.focus();
+    });
+  });
+  // Open current season by default
+  const m = new Date().getMonth();
+  selectTab(tabs[m >= 5 && m <= 7 ? 0 : m >= 8 && m <= 10 ? 1 : 2]);
+
+  // Dates
+  const ci = document.getElementById('checkin'), co = document.getElementById('checkout');
+  const iso = d => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+  const today = new Date();
+  ci.min = iso(today);
+  co.min = iso(new Date(today.getTime() + 864e5));
+  ci.addEventListener('change', () => {
+    if (!ci.value) return;
+    const next = new Date(ci.value); next.setDate(next.getDate() + 1);
+    co.min = iso(next);
+    if (!co.value || co.value <= ci.value) co.value = iso(next);
+  });
+
+  // Booking → WhatsApp
+  const form = document.getElementById('bookForm');
+  const err = document.getElementById('formError');
+  const ru = v => v.split('-').reverse().join('.');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const f = form.elements;
+    [...form.querySelectorAll('input')].forEach(i => i.removeAttribute('aria-invalid'));
+    const problems = [];
+    const bad = (el, msg) => { el.setAttribute('aria-invalid', 'true'); problems.push(msg); };
+    if (!f.checkin.value) bad(f.checkin, 'дату заезда');
+    if (!f.checkout.value) bad(f.checkout, 'дату выезда');
+    if (f.checkin.value && f.checkout.value && f.checkout.value <= f.checkin.value) bad(f.checkout, 'выезд позже заезда');
+    if (!f.name.value.trim()) bad(f.name, 'имя');
+    if (f.phone.value.replace(/\D/g, '').length < 10) bad(f.phone, 'телефон');
+    if (problems.length) { err.textContent = 'Укажите: ' + problems.join(', ') + '.'; return; }
+    if (!f.consent.checked) { err.textContent = 'Нужно согласие на обработку персональных данных.'; return; }
+    err.textContent = '';
+
+    const nights = Math.round((new Date(f.checkout.value) - new Date(f.checkin.value)) / 864e5);
+    const text = [
+      'Здравствуйте! Заявка на бронирование с сайта глэмпинга в Безенги.',
+      '',
+      'Даты: ' + ru(f.checkin.value) + ' — ' + ru(f.checkout.value) + ' (' + nights + ' ноч.)',
+      'Гости: взрослых ' + f.adults.value + ', детей ' + f.kids.value,
+      'Экскурсия: ' + (f.tour.checked ? 'нужна' : 'не нужна'),
+      'Трансфер: ' + (f.transfer.checked ? 'нужен' : 'не нужен'),
+      'Имя: ' + f.name.value.trim(),
+      'Телефон: ' + f.phone.value.trim()
+    ].join('\n');
+    window.open(waUrl(text), '_blank', 'noopener');
+  });
+
+  // Hide floating button over the booking form
+  const fab = document.querySelector('.fab');
+  if ('IntersectionObserver' in window) {
+    // Hide while the hero (with its own WhatsApp button) or the booking form is on screen
+    const seen = new Map();
+    const fo = new IntersectionObserver(entries => {
+      entries.forEach(en => seen.set(en.target, en.isIntersecting));
+      fab.classList.toggle('hide', [...seen.values()].some(Boolean));
+    }, { threshold: .15 });
+    fo.observe(document.getElementById('booking'));
+    fo.observe(document.querySelector('.hero-cta'));
+
+    const io = new IntersectionObserver(entries => entries.forEach(en => {
+      if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); }
+    }), { rootMargin: '0px 0px -8% 0px' });
+    document.querySelectorAll('.rv').forEach(el => io.observe(el));
+  } else {
+    document.querySelectorAll('.rv').forEach(el => el.classList.add('in'));
+  }
+</script>
+</body>
+</html>
