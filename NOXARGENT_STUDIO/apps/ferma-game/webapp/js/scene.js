@@ -184,6 +184,13 @@ function barn(m) {
 }
 
 function field(m, st) {
+  if (st.flags?.fieldSold) {
+    return `<g id="field"><polygon points="206,420 440,420 456,560 190,560" fill="#c9a36a" stroke="#5a3a24" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M215 470 H440 M210 510 H448" stroke="#b28c55" stroke-width="3"/>
+      <g transform="translate(323 470)"><rect x="-3" y="0" width="6" height="34" fill="#7b5236"/>
+      <rect x="-46" y="-18" width="92" height="22" rx="4" fill="#f8efd9" stroke="#8a5a3c" stroke-width="2.5"/>
+      <text y="-3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="800" font-size="11" fill="#5b3a26">УЧАСТОК СОСЕДА</text></g></g>`;
+  }
   const cleared = st.fieldClear;
   const poly = '206,420 440,420 456,560 190,560';
   let s = `<polygon points="${poly}" fill="${cleared ? '#9b6c45' : '#8f7d4f'}" stroke="#5a3a24" stroke-width="3" stroke-linejoin="round"/>`;
@@ -427,46 +434,61 @@ function readyBadge(id, amount) {
 
 /* ---------- Сборка сцены ---------- */
 
-export function renderScene(svg, st, catalog) {
+// Слои: bg (меняется раз в месяц), obj (постройки/мусор/слоты — при изменении состояния),
+// ready (значки сбора — каждую секунду), fx (эффекты). Так анимации не перезапускаются на каждом тике.
+export function renderScene(svg, st, catalog, layers = 'all') {
   const m = MONTHS[st.month];
+  if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
+  if (svg.dataset.month !== String(st.month)) {
+    svg.dataset.month = st.month;
+    let s = background(m);
+    s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
+    s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
+    s += house(m) + barn(m);
+    svg.querySelector('#bg').innerHTML = s;
+    layers = 'all';
+  }
   const b = st.built;
   const clean = st.clean >= 1;
-  let s = background(m);
-  s += tree(8, 470, m.trees, .9);
-  s += tree(225, 404, m.trees);
-  s += tree(458, 520, m.trees, .8);
-  // тропинка от дома к дороге
-  s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
-  s += house(m) + barn(m);
-  s += field(m, st);
-  if (b.cow) s += cow();
-  if (b.greenhouse) s += greenhouse(m, st);
-  if (b.omshanik) s += omshanik(m);
-  if (b.coop) s += coop(m, st);
-  if (b.coop) s += hens(st);
-  if (b.fence) s += fence();
-  if (b.apiary) s += apiary(m, st);
-  if (b.stall) s += stall(m);
-  // осенние листья
-  if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
-  if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
-  // мусор
-  if (!clean) s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
-  // слоты
-  if (clean) {
-    for (const id of ['greenhouse', 'garden', 'coop', 'fence', 'omshanik', 'apiary', 'stall', 'cow', 'stove']) {
-      const c = catalog[id];
-      if (b[id]) continue;
-      if (c.requires && !b[c.requires]) continue;
-      s += slot(id, c.name.split(' ')[0], c.price, id === 'stove');
+  if (layers === 'all') {
+    let s = field(m, st);
+    if (b.cow) s += cow();
+    if (b.greenhouse) s += greenhouse(m, st);
+    if (b.omshanik) s += omshanik(m);
+    if (b.coop) s += coop(m, st) + hens(st);
+    if (b.fence) s += fence();
+    if (b.apiary) s += apiary(m, st);
+    if (b.stall) s += stall(m);
+    if (st.fox) s += fox();
+    if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
+    if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
+    if (!clean) s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
+    if (clean && st.canBuild) {
+      for (const id of ['greenhouse', 'garden', 'coop', 'fence', 'omshanik', 'apiary', 'stall', 'cow', 'stove']) {
+        const c = catalog[id];
+        if (b[id] || (c.requires && !b[c.requires])) continue;
+        if (id === 'garden' && st.flags?.fieldSold) continue;
+        s += slot(id, c.name.split(' ')[0], c.price, id === 'stove');
+      }
     }
-    for (const id of Object.keys(READY_POS)) {
-      const amt = Math.floor(st.stock[id] || 0);
-      if (b[id] && amt > 0) s += readyBadge(id, amt);
-    }
+    svg.querySelector('#obj').innerHTML = s;
   }
-  s += '<g id="fx"></g>';
-  svg.innerHTML = s;
+  let r = '';
+  if (clean) for (const id of Object.keys(READY_POS)) {
+    const amt = Math.floor(st.stock[id] || 0);
+    if (b[id] && amt > 0) r += readyBadge(id, amt);
+  }
+  const rl = svg.querySelector('#ready');
+  if (rl.dataset.html !== r) { rl.innerHTML = r; rl.dataset.html = r; }
+}
+
+function fox() {
+  return `<g id="fox" transform="translate(246 600)"><g class="fox-sneak">
+    <path d="M-22 4 q-14 -4 -18 -14 q10 2 18 6z" fill="#e8742a" ${OLt}/><path d="M-40 -10 l-4 -2 l5 5z" fill="#fff"/>
+    <ellipse cx="-6" cy="2" rx="16" ry="8" fill="#e8742a" ${OLt}/>
+    <path d="M6 -2 l12 -4 l4 6 l-8 6z" fill="#e8742a" ${OLt}/><path d="M18 -6 l3 -8 l3 9z M10 -6 l1 -8 l5 6z" fill="#e8742a" ${OLt}/>
+    <path d="M22 2 l-6 2 l3 2z" fill="#fff"/><circle cx="15" cy="-1" r="1.4" fill="#2b2b2b"/>
+    <path d="M-14 9 v6 M-4 9 v6 M2 8 v6" stroke="#3b2a1f" stroke-width="2.4" stroke-linecap="round"/></g></g>`;
 }
 
 // плавающий текст «+12 яиц» над точкой сцены

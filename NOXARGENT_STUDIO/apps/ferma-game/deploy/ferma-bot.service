@@ -1,0 +1,20 @@
+# /etc/systemd/system/ferma-bot.service
+[Unit]
+Description=Ferma deda: Telegram bot + game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ferma
+WorkingDirectory=/opt/ferma-game/bot
+ExecStart=/opt/ferma-game/bot/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+# база и логи живут в /opt/ferma-game/bot/data
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

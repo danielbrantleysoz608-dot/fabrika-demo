@@ -49,28 +49,12 @@
     <button class="btn side" id="btnBook"><i class="ic-book"></i><span>Тетрадь</span></button>
   </nav>
 
-  <!-- Шторка -->
-  <div class="sheet-wrap" id="sheetWrap" hidden>
-    <div class="sheet" id="sheet"></div>
-  </div>
-
-  <!-- Событие месяца -->
-  <div class="event-wrap" id="eventWrap" hidden></div>
-
-  <!-- Панель прототипа (только для проверки, в игре не будет) -->
-  <div class="proto" id="proto">
-    <button id="pToggle">ПРОТОТИП ▾</button>
-    <div class="proto-body" hidden>
-      <button data-p="season">Сезон →</button>
-      <button data-p="clean">Убрать всё</button>
-      <button data-p="money">+100 000 ₽</button>
-      <button data-p="all">Построить всё</button>
-      <button data-p="reset">Сначала</button>
-    </div>
-  </div>
+  <!-- Оверлеи: заставка, шторки, событие, итоги, концовка -->
+  <div id="layer" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 </div>
-<script type="module" src="js/proto.js"></script>
+<script src="config.js"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

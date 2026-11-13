@@ -1,17 +1,32 @@
 # Ферма деда — Telegram Mini App
 
-Игра по сериалу «Ферма с нуля». План и схема экранов: [docs/PLAN.md](docs/PLAN.md).
+Игра по сериалу «Ферма с нуля»: заброшенная ферма деда, 10 000 ₽ и цель — 1 000 000 ₽ за игровой год (12 ходов).
 
-## Статус
-- [x] План и схема экранов
-- [x] Прототип главного экрана (`webapp/`)
-- [ ] Вся механика, бот (aiogram 3) + SQLite, деплой
+- **План и схема экранов:** [docs/PLAN.md](docs/PLAN.md)
+- **Как создать бота и запустить:** [docs/LAUNCH.md](docs/LAUNCH.md)
 
-## Посмотреть прототип локально
-```bash
-cd webapp
-python3 -m http.server 8080
-# открыть http://localhost:8080/#proto  (в DevTools включить мобильный экран 390×844)
+## Что внутри
+
 ```
-Панель «ПРОТОТИП» справа нужна только для проверки: смена сезона, «убрать всё», деньги, «построить всё».
-В Telegram она скрыта (открывается добавлением `#proto` к ссылке).
+webapp/            SPA без фреймворков + Telegram WebApp SDK
+  js/data.js       постройки, цены, расходы, концовки
+  js/events.js     17 событий месяца (сезонные, 2 варианта)
+  js/engine.js     логика игры (чистые функции, детерминированный seed)
+  js/scene.js      SVG-сцена фермы, 4 сезона
+  js/app.js        экраны, тапы, Telegram, сохранение
+  js/api.js        сервер + localStorage
+bot/               Python: aiogram 3 + aiohttp + SQLite
+  main.py          бот (/start → «Играть») + веб-сервер
+  web.py           API: /api/save, /api/result, раздача игры
+  auth.py          проверка подписи Telegram initData
+  db.py            users, saves, results (+ задел purchases)
+  tests/           pytest
+deploy/            systemd, nginx, бэкап
+tools/sim.mjs      симуляция баланса (node tools/sim.mjs 300)
+```
+
+## Быстрый старт на ПК
+```bash
+cd webapp && python3 -m http.server 8080   # http://localhost:8080
+```
+Подробно (сервер, бот, VPS) — в [docs/LAUNCH.md](docs/LAUNCH.md).
