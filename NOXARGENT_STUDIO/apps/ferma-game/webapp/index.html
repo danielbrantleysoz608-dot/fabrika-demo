@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Ферма деда</title>
+  <meta name="theme-color" content="#55b0f1">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;800;900&family=Marck+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Сцена фермы -->
+  <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <!-- Шапка-счётчики как в серии -->
+  <header class="hud">
+    <div class="chips">
+      <div class="chip"><span class="lbl">МЕСЯЦ</span><span class="val month"><i id="seasonIcon"></i><b id="monthName">Март</b></span></div>
+      <div class="chip"><span class="lbl">ДЕНЬГИ</span><span class="val money" id="money">10 000 ₽</span></div>
+      <div class="chip"><span class="lbl">КУРЫ</span><span class="val"><i class="ic-hen"></i><b id="hudHens">0</b></span></div>
+      <div class="chip"><span class="lbl">УЛЬИ</span><span class="val"><i class="ic-hive"></i><b id="hudHives">0</b></span></div>
+    </div>
+    <div class="bar goal">
+      <span class="bar-lbl">ДО МИЛЛИОНА</span>
+      <span class="track"><span class="fill" id="goalFill"></span><i></i><i></i><i></i></span>
+      <span class="bar-num" id="goalNum">10 000 / 1 000 000 ₽</span>
+    </div>
+    <div class="bar clean" id="cleanBar">
+      <span class="bar-lbl">ЧИСТОТА</span>
+      <span class="track"><span class="fill" id="cleanFill"></span><i></i><i></i><i></i></span>
+      <span class="bar-num" id="cleanNum">0%</span>
+    </div>
+  </header>
+
+  <!-- Помощник -->
+  <div class="helper" id="helper">
+    <div class="farmer" id="farmer"></div>
+    <div class="bubble" id="bubble"></div>
+  </div>
+
+  <!-- Нижняя панель -->
+  <nav class="dock">
+    <button class="btn side" id="btnBuild"><i class="ic-hammer"></i><span>Стройка</span></button>
+    <button class="btn primary" id="btnNext"><span id="nextLbl">Следующий месяц</span></button>
+    <button class="btn side" id="btnBook"><i class="ic-book"></i><span>Тетрадь</span></button>
+  </nav>
+
+  <!-- Шторка -->
+  <div class="sheet-wrap" id="sheetWrap" hidden>
+    <div class="sheet" id="sheet"></div>
+  </div>
+
+  <!-- Событие месяца -->
+  <div class="event-wrap" id="eventWrap" hidden></div>
+
+  <!-- Панель прототипа (только для проверки, в игре не будет) -->
+  <div class="proto" id="proto">
+    <button id="pToggle">ПРОТОТИП ▾</button>
+    <div class="proto-body" hidden>
+      <button data-p="season">Сезон →</button>
+      <button data-p="clean">Убрать всё</button>
+      <button data-p="money">+100 000 ₽</button>
+      <button data-p="all">Построить всё</button>
+      <button data-p="reset">Сначала</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+</div>
+<script type="module" src="js/proto.js"></script>
+</body>
+</html>
