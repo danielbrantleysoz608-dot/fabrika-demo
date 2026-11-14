@@ -10,23 +10,27 @@
 ```
 webapp/            SPA без фреймворков + Telegram WebApp SDK
   js/data.js       постройки, цены, расходы, концовки
-  js/events.js     17 событий месяца (сезонные, 2 варианта)
-  js/engine.js     логика игры (чистые функции, детерминированный seed)
+  js/events.js     19 событий месяца (сезонные, 2 варианта, суммы под размер фермы)
+  js/engine.js     логика: реальное время, уровни, цели, капитал (чистые функции)
+  js/rating.js     экран рейтинга
+  js/sfx.js        звуки (Web Audio, без файлов)
   js/scene.js      SVG-сцена фермы, 4 сезона
   js/app.js        экраны, тапы, Telegram, сохранение
   js/api.js        сервер + localStorage
 bot/               Python: aiogram 3 + aiohttp + SQLite
   main.py          бот (/start → «Играть») + веб-сервер
-  web.py           API: /api/save, /api/result, раздача игры
+  web.py           API: сохранения, рейтинг (/api/score, /api/leaderboard), раздача игры
   auth.py          проверка подписи Telegram initData
-  db.py            users, saves, results (+ задел purchases)
+  db.py            users, saves, results, players/scores/weekly (+ задел purchases)
   tests/           pytest
 deploy/            systemd, nginx, бэкап
-tools/sim.mjs      симуляция баланса (node tools/sim.mjs 300)
+tools/sim.mjs      симуляция баланса: node tools/sim.mjs (trace / income)
 ```
 
 ## Быстрый старт на ПК
 ```bash
-cd webapp && python3 -m http.server 8080   # http://localhost:8080
+cd bot && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python main.py --web-only          # игра + рейтинг: http://localhost:8080
 ```
+Только игра без рейтинга: `cd webapp && python3 -m http.server 8080`.
 Подробно (сервер, бот, VPS) — в [docs/LAUNCH.md](docs/LAUNCH.md).

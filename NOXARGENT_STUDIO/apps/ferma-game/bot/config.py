@@ -19,6 +19,7 @@ class Config:
     webapp_dir: Path
     init_data_ttl: int  # секунды
     dev_mode: bool  # разрешить запросы без Telegram (только для локального теста!)
+    allow_anon: bool  # рейтинг по временному id без Telegram (заглушка, пока нет бота)
 
 
 def load() -> Config:
@@ -35,4 +36,5 @@ def load() -> Config:
         webapp_dir=path("WEBAPP_DIR", "../webapp"),
         init_data_ttl=int(float(os.getenv("INIT_DATA_TTL_HOURS", "24")) * 3600),
         dev_mode=os.getenv("DEV_MODE", "0") == "1",
+        allow_anon=os.getenv("ALLOW_ANON", "1") == "1",
     )

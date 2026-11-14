@@ -122,13 +122,13 @@ python3 -m http.server 8080
 ```
 Откройте `http://localhost:8080`, в DevTools (F12) включите мобильный экран. Прогресс хранится в браузере.
 
-**Игра + сервер сохранений:**
+**Игра + сервер сохранений и рейтинга (временный id игрока, без бота):**
 ```bash
 cd NOXARGENT_STUDIO/apps/ferma-game/bot
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 DEV_MODE=1 .venv/bin/python main.py --web-only
 ```
-Откройте `http://localhost:8080`.
+Откройте `http://localhost:8080`. Рейтинг работает по временному id из браузера (переменная `ALLOW_ANON=1`, по умолчанию). Когда бот запущен — поставьте в `.env` `ALLOW_ANON=0`, и в рейтинге останутся только игроки из Telegram; их прежние результаты перенесутся на Telegram id при первом входе.
 
 **Настоящий бот с ПК** (без VPS): нужен https-туннель, например `cloudflared tunnel --url http://localhost:8080`. Он выдаст адрес `https://….trycloudflare.com` — впишите его в `WEBAPP_URL` и запустите `python main.py`.
 

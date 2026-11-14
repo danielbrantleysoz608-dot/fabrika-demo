@@ -86,3 +86,74 @@ async def test_too_large(client):
     h = {"X-Telegram-Init-Data": init_data()}
     r = await client.put("/api/save", data=json.dumps({"x": "a" * 300_000}), headers={**h, "Content-Type": "application/json"})
     assert r.status == 413
+
+
+# ---------- Рейтинг ----------
+def anon(pid, name=None):
+    h = {"X-Player-Id": pid}
+    if name:
+        from urllib.parse import quote
+        h["X-Player-Name"] = quote(name)
+    return h
+
+
+async def test_leaderboard_anon_ranking(client):
+    for i, cap in enumerate([5_000_000, 120_000, 2_000_000_000]):
+        r = await client.post("/api/score", json={"capital": cap, "tier": 1, "year": 1}, headers=anon(f"player-{i:04d}", f"Игрок {i}"))
+        assert r.status == 200
+    board = await (await client.get("/api/leaderboard", headers=anon("player-0001"))).json()
+    assert [t["value"] for t in board["top"]] == [2_000_000_000, 5_000_000, 120_000]
+    assert board["me"]["rank"] == 3 and board["me"]["name"] == "Игрок 1"
+    assert board["top"][2]["me"] is True and board["total"] == 3
+    # лучший результат не уменьшается, а отправка без имени не стирает имя
+    await client.post("/api/score", json={"capital": 50_000}, headers=anon("player-0001"))
+    board = await (await client.get("/api/leaderboard", headers=anon("player-0001"))).json()
+    assert board["me"]["value"] == 120_000 and board["me"]["name"] == "Игрок 1"
+    # новый игрок без имени получает «Фермер XXXX»
+    await client.post("/api/score", json={"capital": 1}, headers=anon("noname-7777"))
+    board = await (await client.get("/api/leaderboard", headers=anon("noname-7777"))).json()
+    assert board["me"]["name"] == "Фермер 7777"
+
+
+async def test_stars_coins_not_in_rating(client):
+    # клиент сообщает о купленных монетах — они вычитаются
+    r = await (await client.post("/api/score", json={"capital": 1_000_000, "paid": 300_000}, headers=anon("payer-00001"))).json()
+    assert r["rating"] == 700_000
+    # покупки из базы (Telegram Stars) вычитаются, даже если клиент «забыл» их указать
+    h = {"X-Telegram-Init-Data": init_data(55)}
+    await client.get("/api/save", headers=h)
+    db = client.app[__import__("web").DBK]
+    await db.conn.execute("INSERT INTO purchases(user_id,item,stars,charge_id,created_at) VALUES(55,'coins_pack',250000,'c1',0)")
+    await db.conn.commit()
+    r = await (await client.post("/api/score", json={"capital": 1_000_000, "paid": 0}, headers=h)).json()
+    assert r["rating"] == 750_000
+
+
+async def test_week_gain_and_tg_link(client):
+    import db as dbmod
+    database = client.app[__import__("web").DBK]
+    # прошлая неделя: капитал 1 млн
+    t0 = 1_700_000_000
+    await database.submit_score("anon:link-test-1", "Аноним", 1_000_000, 0, 0, 1, now=t0)
+    # эта неделя: с 1 млн до 3 млн → прирост 2 млн
+    t1 = t0 + 8 * 86400
+    await database.submit_score("anon:link-test-1", "Аноним", 1_000_000, 0, 0, 1, now=t1)
+    await database.submit_score("anon:link-test-1", "Аноним", 3_000_000, 0, 0, 1, now=t1 + 60)
+    week = await database.leaderboard("week", "anon:link-test-1", now=t1 + 120)
+    assert week["me"]["value"] == 2_000_000 and dbmod.current_week(t1) != dbmod.current_week(t0)
+    # игрок открыл игру из Telegram с тем же временным id — запись переезжает на tg id
+    h = {"X-Telegram-Init-Data": init_data(77), **anon("link-test-1")}
+    r = await client.post("/api/score", json={"capital": 3_500_000}, headers=h)
+    assert r.status == 200
+    board = await (await client.get("/api/leaderboard", headers=h)).json()
+    assert board["me"]["name"] == "Внук" and board["me"]["value"] == 3_500_000
+    assert all(t["name"] != "Аноним" for t in board["top"])
+
+
+async def test_anon_disabled(aiohttp_client, tmp_path):
+    cfg = replace(load(), bot_token=TOKEN, db_path=tmp_path / "t2.db", allow_anon=False,
+                  webapp_dir=Path(__file__).resolve().parents[2] / "webapp")
+    d = DB(cfg.db_path); await d.open()
+    c = await aiohttp_client(make_app(cfg, d))
+    assert (await c.post("/api/score", json={"capital": 1}, headers=anon("someone-123"))).status == 401
+    await d.close()

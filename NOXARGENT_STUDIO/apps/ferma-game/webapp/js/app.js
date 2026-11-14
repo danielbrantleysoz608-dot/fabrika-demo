@@ -194,20 +194,21 @@ function collect(id) {
 /* ================= Реальное время ================= */
 const tickReady = {};
 setInterval(() => {
-  if (!st || st.phase === 'clean') return;
+  if (!st || !profile.game || st.phase === 'clean') return;
   const r = E.tick(st);
   if (r.changed) render('ready');
   hud();
   afterGain();
+  submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
   // напоминание: месяц прошёл
   if (E.monthReady(st) && !tickReady.done) { tickReady.done = true; notify('success'); if (layer.hidden) hint(); }
   if (!E.monthReady(st)) tickReady.done = false;
 }, 1000);
-setInterval(() => st && st.phase !== 'clean' && persist(), 10000);
+setInterval(() => profile.game && st.phase !== 'clean' && persist(), 10000);
 
 // Вернулся в игру — показать, сколько накопилось за время отсутствия
 function welcomeBack() {
-  if (!st || st.phase === 'clean') return;
+  if (!st || !profile.game || st.phase === 'clean') return;
   const sum = () => E.PRODUCERS.reduce((a, id) => a + (st.acc[id] || 0), 0) + st.money;
   const before = sum();
   const r = E.tick(st);
@@ -218,7 +219,7 @@ function welcomeBack() {
     say(`Пока тебя не было ${mins >= 60 ? Math.floor(mins / 60) + ' ч ' + (mins % 60) + ' мин' : mins + ' мин'}, ферма наработала <b>${short(got)}</b>${r.offline >= 7200000 ? ' (больше 2 часов не копится)' : ''}. Собирай!`, 'happy', 8000);
   }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') welcomeBack(); else if (st) persist(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') welcomeBack(); else if (profile.game) persist(true); });
 
 // Новые цели и открытки — поздравляем, когда ничего не открыто
 function afterGain() {

@@ -7,10 +7,26 @@ const LS_KEY = 'ferma-deda-save-v1';
 const API = (window.FERMA_CONFIG && window.FERMA_CONFIG.apiBase) || '';
 export const online = !!initData;
 
-async function request(method, path, body) {
+// Временный id игрока (для рейтинга без Telegram). В Telegram сервер берёт user id из initData,
+// а этот id нужен, чтобы перенести на него рейтинг, набранный до бота.
+export function playerId() {
+  try {
+    let id = localStorage.getItem('ferma-player-id');
+    if (!id) { id = 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); localStorage.setItem('ferma-player-id', id); }
+    return id;
+  } catch { return 'p-nostorage-' + Math.floor(Math.random() * 1e9); }
+}
+export const tgName = () => tg?.initDataUnsafe?.user?.first_name || '';
+export function playerName() { try { return localStorage.getItem('ferma-player-name') || ''; } catch { return ''; } }
+export function setPlayerName(v) { try { localStorage.setItem('ferma-player-name', v); } catch { /* */ } }
+
+export async function request(method, path, body) {
   const res = await fetch(API + path, {
     method,
-    headers: { 'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData },
+    headers: {
+      'Content-Type': 'application/json', 'X-Telegram-Init-Data': initData,
+      'X-Player-Id': playerId(), 'X-Player-Name': encodeURIComponent(playerName()),
+    },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(`${method} ${path}: ${res.status}`);

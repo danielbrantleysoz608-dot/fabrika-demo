@@ -2,7 +2,7 @@
 // плоский вектор, тёмные контуры, вид сбоку-сверху, смена сезонов.
 // viewBox 460×890 — вертикальный кадр; важное держим в x 25..435.
 
-import { MONTHS } from './data.js';
+import { monthOf } from './data.js';
 
 export const W = 460, H = 890;
 const OL = 'stroke="#3b2a1f" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"';
@@ -65,6 +65,7 @@ function background(m) {
   <g stroke="#ffffff" stroke-width="2.4"><path d="M330 292 H460 M330 286 H460"/>
     ${Array.from({ length: 11 }, (_, i) => `<path d="M${334 + i * 12} 282 V296"/>`).join('')}</g>
   <g transform="translate(438 270)"><rect x="-2" y="6" width="5" height="14" fill="#2f3b4a"/><circle cx="0" cy="3" r="3.5" fill="#2f3b4a"/></g>`;
+  const far = s; s = ''; // дальний план (небо, холмы) отдельно — между ним и землёй рисуем город и завод
   // земля
   s += `<rect x="-200" y="292" width="${W + 400}" height="${H}" fill="${p.ground}"/>`;
   for (let i = 0; i < 8; i++) {
@@ -108,7 +109,7 @@ function background(m) {
   g += ` L${W + 20} ${H}z`;
   const tall = winter ? '#c9d5de' : m.season === 'autumn' || m.season === 'late' ? '#9a9548' : m.season === 'early' ? '#7f8f4d' : '#3f8f31';
   s += `<path d="${g}" fill="${tall}"/>`;
-  return s;
+  return { far, near: s };
 }
 
 function snowPatches(list, fill = '#f6fafc') {
@@ -367,6 +368,91 @@ function cow() {
   </g>`;
 }
 
+
+/* ---------- Постройки после целей: луг, холмы, горизонт ---------- */
+
+// Сыроварня — на лугу у дороги
+function cheese(m) {
+  const winter = m.season === 'winter';
+  return `<g id="cheese" data-tap="bld" data-id="cheese">
+    <ellipse cx="180" cy="776" rx="56" ry="5" fill="#000" opacity=".12"/>
+    <rect x="138" y="726" width="84" height="48" fill="#f7f1e2" ${OL}/>
+    <path d="M128 730 L180 698 L232 730z" fill="#3f78c9" ${OL}/>
+    ${winter ? '<path d="M131 728 L180 699 L229 728 L220 727 L180 705 L140 727z" fill="#fff"/>' : ''}
+    <rect x="168" y="746" width="24" height="28" fill="#a8693c" ${OLt}/>
+    <rect x="146" y="740" width="16" height="14" fill="#cfe9f6" ${OLt}/><rect x="198" y="740" width="16" height="14" fill="#cfe9f6" ${OLt}/>
+    <g transform="translate(180 716)"><path d="M-13 6 L13 6 L13 -2 L-9 -8z" fill="#ffd23f" ${OLt}/><circle cx="-2" cy="0" r="2" fill="#e8a21a"/><circle cx="6" cy="2" r="1.6" fill="#e8a21a"/></g>
+    <rect x="148" y="760" width="12" height="8" rx="3" fill="#ffd23f" ${OLt}/>
+  </g>`;
+}
+
+// Пасека-поле — поле медоносов с рядом ульев
+function honeyfield(m) {
+  const r = rng(21); let fl = '';
+  const col = m.season === 'winter' ? '#fff' : m.season === 'summer' || m.trees === 'blossom' ? '#ffd23f' : m.season === 'autumn' ? '#d9a84a' : '#b9d97a';
+  for (let i = 0; i < 70; i++) fl += `<circle cx="${252 + r() * 180}" cy="${712 + r() * 70}" r="${2 + r() * 1.6}" fill="${col}"/>`;
+  const colors = ['#f2c84b', '#6fa8dc', '#ef8a6a', '#9ccc65', '#f2c84b', '#6fa8dc'];
+  let hives = '';
+  for (let i = 0; i < 6; i++) {
+    const x = 262 + i * 28, y = 746 + (i % 2) * 6;
+    hives += `<g transform="translate(${x} ${y})"><rect x="0" y="0" width="17" height="10" fill="${colors[i]}" ${OLt}/><rect x="0" y="10" width="17" height="10" fill="${colors[i]}" ${OLt}/><rect x="-2" y="-4" width="21" height="5" fill="#8b5a36" ${OLt}/></g>`;
+  }
+  return `<g id="honeyfield" data-tap="bld" data-id="honeyfield">
+    <path d="M248 708 H436 L440 792 H244z" fill="${m.season === 'winter' ? '#e8eff4' : '#7bbf4f'}" stroke="#5a3a24" stroke-width="2.5" stroke-linejoin="round"/>
+    ${fl}${hives}
+    ${m.season === 'summer' ? `<g class="bees">${[0, 1, 2, 3, 4].map(i => `<circle cx="${280 + i * 30}" cy="${730 - (i % 2) * 8}" r="2" fill="#2b2b2b" style="animation-delay:${-i * .3}s"/>`).join('')}</g>` : ''}
+  </g>`;
+}
+
+// Трактор на дороге (едет туда-сюда)
+function tractorVehicle() {
+  return `<g class="tractor-drive" transform="translate(0 0)"><g transform="translate(300 652)">
+    <rect x="0" y="0" width="34" height="16" rx="3" fill="#d6463a" ${OL}/>
+    <rect x="18" y="-14" width="16" height="16" fill="#d6463a" ${OL}/><rect x="21" y="-11" width="10" height="9" fill="#cfe9f6"/>
+    <rect x="4" y="-8" width="4" height="8" fill="#555"/>
+    <circle cx="27" cy="18" r="9" fill="#2f2f33" ${OL}/><circle cx="27" cy="18" r="3" fill="#f2c84b"/>
+    <circle cx="6" cy="20" r="6" fill="#2f2f33" ${OL}/><circle cx="6" cy="20" r="2" fill="#f2c84b"/>
+  </g></g>`;
+}
+
+// Дальний план: поля на холмах, город, щит марки, завод
+function farItems(m, st) {
+  const b = st.built; let s = '';
+  if (b.shop) {
+    s += `<g id="shop" data-tap="bld" data-id="shop">
+      <rect x="30" y="236" width="26" height="54" fill="#c9d3dc" ${OLt}/><rect x="58" y="214" width="30" height="76" fill="#e8d3b4" ${OLt}/>
+      <rect x="92" y="244" width="24" height="46" fill="#b7c4cf" ${OLt}/><rect x="118" y="228" width="28" height="62" fill="#e2c7c1" ${OLt}/>
+      ${[0, 1, 2, 3, 4].map(i => `<rect x="${63 + (i % 2) * 12}" y="${222 + Math.floor(i / 2) * 14}" width="7" height="8" fill="#ffd96b"/>`).join('')}
+      <rect x="52" y="200" width="44" height="14" rx="3" fill="#d8392d" stroke="#3b2a1f" stroke-width="1.5"/>
+      <text x="74" y="210" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="7.5" fill="#fff">ФЕРМА ДЕДА</text>
+    </g>`;
+  }
+  if (b.factory) {
+    s += `<g id="factory" data-tap="bld" data-id="factory">
+      <rect x="352" y="168" width="12" height="70" fill="#a8412f" ${OLt}/><rect x="372" y="180" width="12" height="58" fill="#a8412f" ${OLt}/>
+      <path d="M352 168 h12 M372 180 h12" stroke="#fff" stroke-width="3"/>
+      <path d="M318 290 V238 L342 222 V238 L366 222 V238 L390 222 V238 L414 222 V290z" fill="#8f9aa5" ${OL}/>
+      ${[0, 1, 2, 3].map(i => `<rect x="${326 + i * 22}" y="252" width="12" height="10" fill="#ffd96b" stroke="#3b2a1f" stroke-width="1"/>`).join('')}
+      <g class="smoke"><circle cx="358" cy="156" r="7"/><circle cx="364" cy="140" r="9"/><circle cx="378" cy="168" r="6"/></g>
+    </g>`;
+  }
+  if (b.tractor) {
+    const c = m.season === 'winter' ? ['#f4f8fb', '#e3ebf1'] : m.season === 'summer' ? ['#e9c24a', '#d9a93a'] : m.season === 'autumn' || m.season === 'late' ? ['#b88a52', '#a3773f'] : ['#8fd068', '#6fb94e'];
+    let rows = '';
+    for (let i = 0; i < 6; i++) rows += `<path d="M${168 + i * 6} ${292} L${196 + i * 22} 262" stroke="${c[1]}" stroke-width="5"/>`;
+    s += `<g id="tractor" data-tap="bld" data-id="tractor"><path d="M160 294 L190 262 H322 L340 294z" fill="${c[0]}" stroke="#5a3a24" stroke-width="2" stroke-linejoin="round"/>${rows}</g>`;
+  }
+  if (b.brand) {
+    s += `<g id="brand" data-tap="bld" data-id="brand">
+      <rect x="206" y="226" width="5" height="34" fill="#7b5236" ${OLt}/><rect x="252" y="226" width="5" height="34" fill="#7b5236" ${OLt}/>
+      <rect x="186" y="196" width="92" height="38" rx="5" fill="#f8efd9" stroke="#8a5a3c" stroke-width="3"/>
+      <text x="232" y="214" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="12" fill="#c8362b">ФЕРМА ДЕДА</text>
+      <text x="232" y="227" text-anchor="middle" font-family="'Marck Script', cursive" font-size="10" fill="#5b3a26">с 1956 года</text>
+    </g>`;
+  }
+  return s;
+}
+
 /* ---------- Мусор (уборка) ---------- */
 
 function trashItem(t) {
@@ -398,6 +484,12 @@ const SLOTS = {
   stall:      { x: 396, y: 596, area: 'M344 560 H448 V640 H344z' },
   cow:        { x: 362, y: 394, area: 'M326 372 H402 V418 H326z' },
   stove:      { x: 120, y: 428, area: null },
+  cheese:     { x: 180, y: 738, area: 'M128 730 L180 698 L232 730 V776 H128z' },
+  honeyfield: { x: 340, y: 748, area: 'M248 708 H436 L440 792 H244z' },
+  tractor:    { x: 250, y: 276, area: 'M160 294 L190 262 H322 L340 294z' },
+  shop:       { x: 88,  y: 246, area: 'M30 200 H146 V290 H30z' },
+  brand:      { x: 232, y: 214, area: 'M186 196 H278 V260 H186z' },
+  factory:    { x: 366, y: 252, area: 'M318 170 H414 V292 H318z' },
 };
 
 function slot(id, label, price, small = false) {
@@ -414,7 +506,8 @@ function slot(id, label, price, small = false) {
 }
 
 /* ---------- Значок уровня постройки ---------- */
-const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], apiary: [262, 606], cow: [334, 384], stall: [350, 566] };
+const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], apiary: [262, 606], cow: [334, 384], stall: [350, 566],
+  cheese: [140, 724], honeyfield: [262, 716], tractor: [176, 280], shop: [42, 228], brand: [192, 200], factory: [326, 232] };
 function levelTag([x, y], L, id) {
   return `<g class="lvl-badge" data-tap="bld" data-id="${id}"><rect x="${x - 13}" y="${y - 9}" width="26" height="17" rx="8.5" fill="#2f8a2f" stroke="#1f5e2a" stroke-width="2"/>
     <text class="lvl-tag" x="${x}" y="${y + 3.5}" text-anchor="middle">ур.${L}</text></g>`;
@@ -422,13 +515,19 @@ function levelTag([x, y], L, id) {
 
 /* ---------- Значки «готово к сбору» ---------- */
 
-const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], apiary: [232, 590], cow: [362, 360] };
+const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], apiary: [232, 590], cow: [362, 360],
+  cheese: [214, 704], honeyfield: [400, 716], tractor: [286, 250], shop: [128, 238], factory: [398, 206] };
 const READY_ICON = {
   coop: '<ellipse cx="0" cy="0" rx="5.5" ry="7" fill="#f6ead3" stroke="#3b2a1f" stroke-width="1.4"/>',
   greenhouse: '<rect x="-3.5" y="-8" width="7" height="16" rx="3.5" fill="#3e9a4e" stroke="#3b2a1f" stroke-width="1.4"/>',
   garden: '<circle r="6" fill="#e5322b" stroke="#3b2a1f" stroke-width="1.4"/><path d="M-3 -6 l3 2 l3 -2" stroke="#3e9a4e" stroke-width="2" fill="none"/>',
   apiary: '<path d="M-5 -7 h10 v3 h-10z M-6 -4 h12 v11 h-12z" fill="#f2b632" stroke="#3b2a1f" stroke-width="1.4"/>',
   cow: '<path d="M-5 -7 h10 l-1 14 h-8z" fill="#fff" stroke="#3b2a1f" stroke-width="1.4"/>',
+  cheese: '<path d="M-7 5 L7 5 L7 -2 L-5 -6z" fill="#ffd23f" stroke="#3b2a1f" stroke-width="1.4"/>',
+  honeyfield: '<path d="M-5 -7 h10 v3 h-10z M-6 -4 h12 v11 h-12z" fill="#f2b632" stroke="#3b2a1f" stroke-width="1.4"/>',
+  tractor: '<path d="M-6 6 L0 -7 L6 6z" fill="#e9c24a" stroke="#3b2a1f" stroke-width="1.4"/>',
+  shop: '<rect x="-6" y="-6" width="12" height="12" rx="2" fill="#d8392d" stroke="#3b2a1f" stroke-width="1.4"/>',
+  factory: '<rect x="-6" y="-5" width="12" height="10" fill="#8f9aa5" stroke="#3b2a1f" stroke-width="1.4"/>',
 };
 const kfmt = (a) => (a >= 1e9 ? (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? Math.round(a / 1e3) + 'к' : a >= 1000 ? (a / 1e3).toFixed(1) + 'к' : a).toString().replace('.', ',');
 function readyBadge(id, amount) {
@@ -446,15 +545,17 @@ function readyBadge(id, amount) {
 // Слои: bg (меняется раз в месяц), obj (постройки/мусор/слоты — при изменении состояния),
 // ready (значки сбора — каждую секунду), fx (эффекты). Так анимации не перезапускаются на каждом тике.
 export function renderScene(svg, st, catalog, layers = 'all') {
-  const m = MONTHS[st.month];
-  if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
+  const m = monthOf(st.month);
+  if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="far"></g><g id="near"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
   if (svg.dataset.month !== String(st.month)) {
     svg.dataset.month = st.month;
-    let s = background(m);
+    const bg = background(m);
+    let s = bg.near;
     s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
     s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
     s += house(m) + barn(m);
-    svg.querySelector('#bg').innerHTML = s;
+    svg.querySelector('#bg').innerHTML = bg.far;
+    svg.querySelector('#near').innerHTML = s;
     layers = 'all';
   }
   const b = st.built;
@@ -468,12 +569,16 @@ export function renderScene(svg, st, catalog, layers = 'all') {
     if (b.fence) s += fence();
     if (b.apiary) s += apiary(m, st);
     if (b.stall) s += stall(m);
+    if (b.cheese) s += cheese(m);
+    if (b.honeyfield) s += honeyfield(m);
+    if (b.tractor) s += tractorVehicle();
+    svg.querySelector('#far').innerHTML = farItems(m, st);
     if (st.fox) s += fox();
     if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
     if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
     if (!clean) s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
     if (clean && st.canBuild) {
-      for (const id of ['greenhouse', 'garden', 'coop', 'fence', 'omshanik', 'apiary', 'stall', 'cow', 'stove']) {
+      for (const id of Object.keys(SLOTS)) {
         const c = catalog[id];
         if (b[id] || (c.requires && !b[c.requires]) || (c.tier || 0) > (st.tier || 0)) continue;
         if (id === 'garden' && st.flags?.fieldSold) continue;

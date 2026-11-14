@@ -306,3 +306,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .confetti i { position: absolute; top: -10px; left: var(--x); width: 8px; height: 12px; background: var(--c); border-radius: 2px; animation: confetti 2.2s var(--d) ease-in infinite; }
 @keyframes confetti { 0% { transform: translateY(0) rotate(0); opacity: 1 } 100% { transform: translateY(600px) rotate(540deg); opacity: 0 } }
 .lvl-tag { font-family: Rubik, sans-serif; font-weight: 900; font-size: 10px; fill: #fff; }
+.tractor-drive { animation: drive 26s linear infinite; pointer-events: none; }
+@keyframes drive { 0% { transform: translateX(-380px) } 48% { transform: translateX(160px) } 50% { transform: translateX(160px) scaleX(1) } 100% { transform: translateX(-380px) } }
+#far .smoke circle { fill: #e9eef2; stroke: #c3cfd8; }
+
+/* ===== Рейтинг ===== */
+.rating { display: flex; flex-direction: column; max-height: 88%; }
+.r-list { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.r-top { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; min-height: 120px; }
+.r-top li, .r-me li { display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 6px; padding: 9px 6px; border-bottom: 2px dashed #e3d3b4; font-weight: 800; color: var(--brown); }
+.r-top li.me, .r-me li { background: #fff5d6; border-radius: 10px; }
+.rk { font-size: 17px; text-align: center; font-weight: 900; color: var(--label); }
+.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm small { display: block; font-size: 11px; color: #9a8670; font-weight: 700; }
+.r-top b, .r-me b { color: var(--gold); white-space: nowrap; }
+.r-me { position: sticky; bottom: 0; background: var(--cream); border-top: 3px solid var(--line); margin: 6px -14px 0; padding: 8px 14px 4px; }
+.r-me ol { list-style: none; margin: 0; padding: 0; }
+.r-me-lbl { font-size: 11px; font-weight: 900; letter-spacing: .06em; color: var(--label); text-transform: uppercase; margin-bottom: 4px; }
+.r-name { display: flex; gap: 8px; margin-top: 8px; }
+.r-name input { flex: 1; min-width: 0; font: inherit; font-weight: 700; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; background: #fff; color: var(--brown); }
+.r-name .btn { min-height: 44px; padding: 0 16px; flex-direction: row; }
+.note code { background: #fff; padding: 1px 4px; border-radius: 4px; }

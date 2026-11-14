@@ -4,11 +4,14 @@ GET  /                 — игра
 GET  /config.js        — настройки фронтенда (имя бота)
 GET  /api/save         — сохранение игрока      (заголовок X-Telegram-Init-Data)
 PUT  /api/save         — записать сохранение
-POST /api/result       — итог забега (для будущего рейтинга)
+POST /api/result       — итог забега
+POST /api/score        — капитал фермы для рейтинга
+GET  /api/leaderboard  — топ-100 (?period=all|week) + своё место
 GET  /health           — проверка живости
 """
 import json
 import logging
+import re
 
 from aiohttp import web
 
@@ -33,6 +36,57 @@ def current_user(request: web.Request) -> dict:
         return validate_init_data(init_data, cfg.bot_token, cfg.init_data_ttl)
     except AuthError as e:
         raise web.HTTPUnauthorized(text=json.dumps({"error": str(e)}), content_type="application/json")
+
+
+ANON_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+
+
+def player_identity(request: web.Request) -> tuple[str, str, str | None]:
+    """Кто играет: (player_key, имя, anon_key).
+    В Telegram — "tg:<id>" из подписанного initData. Без Telegram (заглушка) — "anon:<id>" из заголовка X-Player-Id.
+    Переход на Telegram ничего не ломает: тот же код, просто появляется initData."""
+    cfg = request.app[CFG]
+    anon_id = request.headers.get("X-Player-Id", "")
+    anon_key = f"anon:{anon_id}" if ANON_RE.match(anon_id) else None
+    init_data = request.headers.get("X-Telegram-Init-Data", "")
+    if init_data:
+        user = current_user(request)
+        name = " ".join(x for x in (user.get("first_name"), (user.get("last_name") or "")[:1]) if x) or "Фермер"
+        return f"tg:{user['id']}", name, anon_key
+    if cfg.allow_anon and anon_key:
+        raw = request.headers.get("X-Player-Name", "")
+        try:
+            from urllib.parse import unquote
+            raw = unquote(raw)
+        except Exception:  # noqa: BLE001
+            raw = ""
+        name = re.sub(r"[<>\n\r\t]", "", raw).strip()[:24]
+        return anon_key, name, None  # пустое имя — сервер оставит прежнее (или даст «Фермер XXXX»)
+    raise web.HTTPUnauthorized(text=json.dumps({"error": "no identity"}), content_type="application/json")
+
+
+async def post_score(request: web.Request) -> web.Response:
+    key, name, anon_key = player_identity(request)
+    try:
+        body = await request.json()
+        capital, paid = int(body.get("capital", 0)), int(body.get("paid", 0))
+        tier, year = int(body.get("tier", 0)), int(body.get("year", 1))
+    except (ValueError, TypeError, AttributeError, json.JSONDecodeError):
+        raise web.HTTPBadRequest(text="bad score")
+    db = request.app[DBK]
+    if anon_key and key.startswith("tg:"):
+        await db.link_anon(anon_key, key)
+    rating = await db.submit_score(key, name, capital, paid, tier, year)
+    return web.json_response({"ok": True, "rating": rating})
+
+
+async def get_leaderboard(request: web.Request) -> web.Response:
+    period = "week" if request.query.get("period") == "week" else "all"
+    try:
+        key, _, _ = player_identity(request)
+    except web.HTTPUnauthorized:
+        key = None
+    return web.json_response(await request.app[DBK].leaderboard(period, key))
 
 
 async def get_save(request: web.Request) -> web.Response:
@@ -100,5 +154,7 @@ def make_app(cfg: Config, db: DB, bot_username: str = "") -> web.Application:
     app.router.add_get("/api/save", get_save)
     app.router.add_put("/api/save", put_save)
     app.router.add_post("/api/result", post_result)
+    app.router.add_post("/api/score", post_score)
+    app.router.add_get("/api/leaderboard", get_leaderboard)
     app.router.add_static("/", cfg.webapp_dir, show_index=False)
     return app
