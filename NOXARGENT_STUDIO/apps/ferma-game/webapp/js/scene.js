@@ -381,9 +381,9 @@ function trashItem(t) {
     case 'bags': g = `<g ${OLt}><path d="M${x - 16} ${y} q-4 -18 6 -20 q10 2 8 20z" fill="#cbb48a"/><path d="M${x - 2} ${y} q-2 -14 8 -16 q10 2 8 16z" fill="#b89f73"/></g>`; break;
     case 'bucket': g = `<g ${OLt}><path d="M${x - 8} ${y - 14} h16 l-3 14 h-10z" fill="#9aa3a8"/></g><path d="M${x - 8} ${y - 14} q8 -10 16 0" fill="none" stroke="#3b2a1f" stroke-width="1.4"/>`; break;
   }
-  const cracked = t.hp < t.maxHp ? ' cracked' : '';
-  return `<g class="trash${cracked}" data-tap="trash" data-id="${t.id}">
-    <circle cx="${x}" cy="${y - 8}" r="24" fill="transparent"/>${g}</g>`;
+  return `<g class="trash ${t.type === 'weeds' ? 'is-weeds' : 'is-junk'}" data-tap="trash" data-id="${t.id}">
+    <circle class="tap-ring" cx="${x}" cy="${y - 10}" r="19"/>
+    <circle cx="${x}" cy="${y - 8}" r="24" fill="transparent"/><g class="trash-art">${g}</g></g>`;
 }
 
 /* ---------- Слоты под стройку ---------- */
@@ -413,6 +413,13 @@ function slot(id, label, price, small = false) {
   </g>`;
 }
 
+/* ---------- Значок уровня постройки ---------- */
+const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], apiary: [262, 606], cow: [334, 384], stall: [350, 566] };
+function levelTag([x, y], L, id) {
+  return `<g class="lvl-badge" data-tap="bld" data-id="${id}"><rect x="${x - 13}" y="${y - 9}" width="26" height="17" rx="8.5" fill="#2f8a2f" stroke="#1f5e2a" stroke-width="2"/>
+    <text class="lvl-tag" x="${x}" y="${y + 3.5}" text-anchor="middle">ур.${L}</text></g>`;
+}
+
 /* ---------- Значки «готово к сбору» ---------- */
 
 const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], apiary: [232, 590], cow: [362, 360] };
@@ -423,7 +430,9 @@ const READY_ICON = {
   apiary: '<path d="M-5 -7 h10 v3 h-10z M-6 -4 h12 v11 h-12z" fill="#f2b632" stroke="#3b2a1f" stroke-width="1.4"/>',
   cow: '<path d="M-5 -7 h10 l-1 14 h-8z" fill="#fff" stroke="#3b2a1f" stroke-width="1.4"/>',
 };
+const kfmt = (a) => (a >= 1e9 ? (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? Math.round(a / 1e3) + 'к' : a >= 1000 ? (a / 1e3).toFixed(1) + 'к' : a).toString().replace('.', ',');
 function readyBadge(id, amount) {
+  amount = kfmt(amount);
   const [x, y] = READY_POS[id];
   return `<g class="ready" data-tap="bld" data-id="${id}" transform="translate(${x} ${y})">
     <g class="bob"><path d="M0 16 l-6 -8 h12z" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="1.8"/>
@@ -466,11 +475,12 @@ export function renderScene(svg, st, catalog, layers = 'all') {
     if (clean && st.canBuild) {
       for (const id of ['greenhouse', 'garden', 'coop', 'fence', 'omshanik', 'apiary', 'stall', 'cow', 'stove']) {
         const c = catalog[id];
-        if (b[id] || (c.requires && !b[c.requires])) continue;
+        if (b[id] || (c.requires && !b[c.requires]) || (c.tier || 0) > (st.tier || 0)) continue;
         if (id === 'garden' && st.flags?.fieldSold) continue;
         s += slot(id, c.name.split(' ')[0], c.price, id === 'stove');
       }
     }
+    if (st.lv) for (const [id, L] of Object.entries(st.lv)) if (L > 0 && LEVEL_POS[id] && catalog[id].kind !== 'once') s += levelTag(LEVEL_POS[id], L, id);
     svg.querySelector('#obj').innerHTML = s;
   }
   let r = '';

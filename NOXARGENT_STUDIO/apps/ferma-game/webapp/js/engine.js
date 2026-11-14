@@ -1,15 +1,17 @@
-// Логика игры — чистые функции над объектом состояния. Без DOM.
-// Детерминированный рандом (seed) — задел для серверной проверки результата в рейтинге.
+// Логика игры v2 — чистые функции над объектом состояния. Без DOM (работает и в Node для симуляции).
+// Время — реальное: продукция копится по минутам, 1 игровой месяц = MONTH_MS.
 import {
-  SCHEMA_VERSION, START_MONEY, GOAL, MONTHS, BUILDINGS, UNITS, PRODUCTS, COSTS, TRASH, FIELD_WEEDS,
-  MONTH_FILL_SEC, UNCOLLECTED_SHARE, SCRAP_BONUS, ASSET_SHARE, HEN_VALUE, HIVE_VALUE, isWinter, isSummer,
+  SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
+  LOAN_RATE, LEVEL_INC_MULT, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
+export { PRODUCERS };
 export const fmt = (n) => `${Math.round(n).toLocaleString('ru-RU').replace(/[ ,]/g, ' ')} ₽`;
+// 2 значащие цифры: 12 345 → 12 000
+export const nice = (n) => { if (n < 100) return Math.round(n); const p = 10 ** (Math.floor(Math.log10(n)) - 1); return Math.round(n / p) * p; };
 
-// mulberry32: хорошо перемешивает даже соседние seed
-export function rng(seed) {
+export function rng(seed) { // mulberry32
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6D2B79F5) >>> 0;
@@ -24,15 +26,17 @@ export function rng(seed) {
 export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) {
   return {
     v: SCHEMA_VERSION, seed, startedAt: now, lastTick: now,
-    month: 0, phase: 'clean',              // clean → play → (event → report) → … → end
-    money: START_MONEY, debt: 0, hens: 0, hives: 0,
+    month: 0, monthMs: 0, phase: 'clean',   // clean → play ⇄ event
     trash: TRASH.map(t => ({ id: t.id, hp: t.hp })),
-    built: {}, made: {}, barn: {},
+    money: START_MONEY, debt: 0,
+    lv: {}, acc: {},                         // уровни построек и накопленная продукция (в ₽)
     flags: {}, mods: {}, nextMods: {},
+    tier: 0,                                 // индекс текущей цели (0 = 1 млн)
+    ach: {}, achNew: [],                     // открытки этой фермы + очередь «показать поздравление»
+    paid: { coins: 0 },                      // задел: монеты за Telegram Stars (не идут в рейтинг)
     usedEvents: [], event: null, report: null,
-    negMonths: 0, ending: null, finalCapital: null,
-    history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
-    ledger: [], taps: 0,
+    monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
+    ledger: [], taps: 0, offline: 0,
   };
 }
 
@@ -46,60 +50,134 @@ export function hitTrash(st, id) {
   const t = st.trash.find(x => x.id === id);
   if (!t || t.hp <= 0 || st.phase !== 'clean') return null;
   t.hp--; st.taps++;
-  const removed = t.hp <= 0;
   const done = cleanLevel(st) >= 1;
   if (done) {
     st.phase = 'play';
     st.money += SCRAP_BONUS;
     st.history.push({ m: st.month, t: `Убрали весь хлам. Сдали дедов металлолом: +${fmt(SCRAP_BONUS)}.` });
   }
-  return { removed, done, share: trashDef[id].hp / cleanTotal() };
+  return { removed: t.hp <= 0, done, share: trashDef[id].hp / cleanTotal() };
 }
 
-/* ---------- Стройка ---------- */
+/* ---------- Доход ---------- */
+export const level = (st, id) => st.lv[id] || 0;
+// доход постройки на уровне L (₽/мин без сезона и бонусов)
+export const baseIncome = (id, L) => (L > 0 ? BUILDINGS[id].inc * L * LEVEL_INC_MULT ** (L - 1) : 0);
+
+export function globalMult(st, withMods = true) {
+  let k = 1;
+  for (const id of ['stall', 'brand']) k *= 1 + (BUILDINGS[id].boost || 0) * level(st, id);
+  if (withMods) {
+    k *= st.mods.sales ?? 1;
+    if (st.flags.contract) k *= 1.3;
+  }
+  return k;
+}
+export const seasonMult = (st, id, m = st.month) => BUILDINGS[id].season(((m % 12) + 12) % 12, st);
+// текущая скорость, ₽/мин
+export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
+export const totalRate = (st) => PRODUCERS.reduce((a, id) => a + rate(st, id), 0);
+// вместимость склада: 2 часа номинального производства
+export const storageCap = (st, id) => baseIncome(id, level(st, id)) * globalMult(st, false) * 1.5 * STORAGE_MIN;
+// «масштаб» экономики для событий: доход за месяц без сезонов
+export const monthScale = (st) => Math.max(15000, PRODUCERS.reduce((a, id) => a + baseIncome(id, level(st, id)), 0) * globalMult(st, false) * MONTH_MS / 60000);
+
+/* ---------- Реальное время ---------- */
+export function tick(st, now = Date.now()) {
+  const real = Math.max(0, now - st.lastTick);
+  st.lastTick = now;
+  if (st.phase === 'clean') return { changed: false, offline: 0 };
+  const dt = Math.min(real, OFFLINE_CAP_MS);
+  st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
+  let changed = false;
+  for (const id of PRODUCERS) {
+    if (!level(st, id)) continue;
+    const before = Math.floor(st.acc[id] || 0);
+    const add = rate(st, id) * dt / 60000;
+    if (st.flags.helper) { gain(st, add); continue; } // Ваня собирает сам
+    st.acc[id] = Math.min(storageCap(st, id), (st.acc[id] || 0) + add);
+    if (Math.floor(st.acc[id]) !== before) changed = true;
+  }
+  checkGoals(st);
+  return { changed, offline: real > 60000 ? dt : 0 };
+}
+export const ready = (st, id) => Math.floor(st.acc[id] || 0);
+export const unitsReady = (st, id) => Math.floor((st.acc[id] || 0) / BUILDINGS[id].price);
+
+function gain(st, sum) { st.money += sum; st.monthIncome += sum; }
+
+export function collect(st, id) {
+  const amt = ready(st, id);
+  if (amt <= 0 || st.phase === 'clean') return 0;
+  st.acc[id] -= amt;
+  gain(st, amt);
+  st.taps++;
+  checkGoals(st);
+  return amt;
+}
+export const collectAll = (st) => PRODUCERS.reduce((a, id) => a + collect(st, id), 0);
+
+/* ---------- Стройка и улучшения ---------- */
 export function priceOf(st, id) {
-  let p = BUILDINGS[id].price;
-  if (id === 'greenhouse' && st.flags.greenhouseDiscount) p -= st.flags.greenhouseDiscount;
-  return p;
+  const b = BUILDINGS[id], L = level(st, id);
+  let p = b.cost * (b.costMult || LEVEL_COST_MULT) ** L;
+  const disc = st.flags.disc?.[id];
+  if (disc) p *= 1 - disc;
+  return Math.round(p);
+}
+// сколько стоят постройки сейчас (всё, что вложено в уровни)
+export function buildingsValue(st) {
+  let v = 0;
+  for (const id of Object.keys(st.lv)) {
+    const b = BUILDINGS[id], L = level(st, id);
+    const k = b.costMult || LEVEL_COST_MULT;
+    v += b.kind === 'once' ? b.cost * L : b.cost * (k ** L - 1) / (k - 1);
+  }
+  return v;
 }
 
-export function canBuild(st, id) {
+export function canBuy(st, id) {
   const b = BUILDINGS[id];
-  if (st.built[id]) return 'уже построено';
   if (st.phase === 'clean') return 'сначала уборка';
-  if (st.phase === 'end') return 'игра окончена';
+  if (b.tier > st.tier) return `откроется после цели ${tierName(b.tier - 1)}`;
+  if (b.requires && !level(st, b.requires)) return 'нужно: ' + BUILDINGS[b.requires].name;
   if (id === 'garden' && st.flags.fieldSold) return 'поле продано соседу';
-  if (b.requires && !st.built[b.requires]) return 'нужно: ' + BUILDINGS[b.requires].name;
+  if (level(st, id) >= maxLevel(id, st.tier)) return b.kind === 'once' ? 'уже построено' : 'максимальный уровень';
   if (st.money < priceOf(st, id)) return 'не хватает ' + fmt(priceOf(st, id) - st.money);
   return null;
 }
-
-export function build(st, id) {
-  const why = canBuild(st, id);
+export function buy(st, id) {
+  const why = canBuy(st, id);
   if (why) return why;
-  st.money -= priceOf(st, id);
-  st.built[id] = true;
-  if (id === 'coop') st.hens += 10;
-  if (id === 'apiary') st.hives += 3;
-  st.history.push({ m: st.month, t: `Построили: ${BUILDINGS[id].name} (${fmt(priceOf(st, id))}).` });
+  const p = priceOf(st, id);
+  st.money -= p;
+  st.lv[id] = level(st, id) + 1;
+  if (st.flags.disc?.[id]) delete st.flags.disc[id];
+  const L = st.lv[id], b = BUILDINGS[id];
+  st.history.push({ m: st.month, t: L === 1 ? `Построили: ${b.name} (${fmt(p)}).` : `${b.name}: уровень ${L} (${fmt(p)}).` });
+  checkGoals(st);
   return null;
 }
+const tierName = (t) => { const g = goalOf(t); return g >= 1e9 ? `${g / 1e9} млрд` : `${g / 1e6} млн`; };
 
-export function canBuy(st, kind) {
-  const u = UNITS[kind];
-  if (!st.built[u.requires]) return 'нужно: ' + BUILDINGS[u.requires].name;
-  if (st[kind] + u.step > u.max) return 'больше не поместится';
-  if (st.money < u.price) return 'не хватает ' + fmt(u.price - st.money);
-  return null;
+// Ценность покупки для «самого выгодного»: прирост ₽/мин (в среднем по году) на рубль
+export function buyValue(st, id) {
+  const b = BUILDINGS[id];
+  const L = level(st, id);
+  const k = globalMult(st, false);
+  if (b.kind === 'prod') return (baseIncome(id, L + 1) - baseIncome(id, L)) * soonSeason(st, id) * k;
+  if (b.kind === 'boost') {
+    const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0);
+    return base * k * b.boost / (1 + b.boost * L);
+  }
+  if (id === 'stove') return baseIncome('greenhouse', level(st, 'greenhouse')) * 1.5 * k * (isWinter(st.month + 1) ? 1 : 0.25);
+  if (id === 'omshanik') return baseIncome('apiary', level(st, 'apiary')) * k * (st.month % 12 >= 6 && st.month % 12 <= 9 ? 0.5 : 0.05);
+  if (id === 'fence') return PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)), 0) * 0.02;
+  return 0;
 }
-export function buy(st, kind) {
-  const why = canBuy(st, kind);
-  if (why) return why;
-  const u = UNITS[kind];
-  st.money -= u.price; st[kind] += u.step;
-  st.history.push({ m: st.month, t: `${u.name} за ${fmt(u.price)}.` });
-  return null;
-}
+// средний сезонный множитель на ближайшие 3 месяца (так рассуждает живой игрок)
+function soonSeason(st, id) { let k = 0; for (let d = 0; d < 3; d++) k += BUILDINGS[id].season((st.month + d) % 12, st); return k / 3; }
+function avgSeasonOf(st, id) { let k = 0; for (let m = 0; m < 12; m++) k += BUILDINGS[id].season(m, st); return k / 12; }
 
 export function repay(st) {
   if (!st.debt) return 'долгов нет';
@@ -110,218 +188,164 @@ export function repay(st) {
   return null;
 }
 
-/* ---------- Производство ---------- */
-// месячная норма продукции постройки (в единицах), без модификаторов событий
-export function monthlyCap(st, id, m = st.month) {
-  if (!st.built[id]) return 0;
-  switch (id) {
-    case 'coop': return st.hens * 25 * (isWinter(m) ? 0.5 : 1);
-    case 'garden': return !st.flags.fieldSold && m >= 2 && m <= 6 ? 400 : 0;
-    case 'greenhouse': return m <= 8 ? 300 : st.built.stove ? 250 : 0;
-    case 'apiary': return m >= 3 && m <= 5 ? st.hives * 25 : 0;
-    case 'cow': return 600;
-    default: return 0;
+/* ---------- Капитал, цели, рейтинг ---------- */
+export const capital = (st) => Math.round(st.money - st.debt + buildingsValue(st));
+// В рейтинг идёт капитал БЕЗ монет, купленных за Telegram Stars
+export const ratingCapital = (st) => Math.max(0, capital(st) - (st.paid?.coins || 0));
+export const goal = (st) => goalOf(st.tier);
+export const progress = (st) => Math.max(0, Math.min(1, ratingCapital(st) / goal(st)));
+
+export function grantAch(st, id) {
+  if (st.ach[id]) return false;
+  st.ach[id] = { at: Date.now(), capital: capital(st), month: st.month };
+  st.achNew.push(id);
+  return true;
+}
+export function checkGoals(st) {
+  let reached = false;
+  while (ratingCapital(st) >= goalOf(st.tier)) {
+    grantAch(st, goalAchievement(st.tier));
+    st.history.push({ m: st.month, t: `Цель достигнута: ${tierName(st.tier)}! Открыты новые постройки.` });
+    st.tier++;
+    reached = true;
   }
-}
-export function unitPrice(st, id, m = st.month) {
-  if (id === 'greenhouse' && isWinter(m)) return 150; // зимние огурцы
-  return PRODUCTS[id].price;
-}
-export const PRODUCERS = Object.keys(PRODUCTS);
-
-// реальное время: накапливаем продукцию
-export function tick(st, now = Date.now()) {
-  const dt = Math.max(0, Math.min((now - st.lastTick) / 1000, MONTH_FILL_SEC * 2));
-  st.lastTick = now;
-  if (st.phase !== 'play') return false;
-  let changed = false;
-  for (const id of PRODUCERS) {
-    const cap = monthlyCap(st, id);
-    if (!cap) continue;
-    const before = Math.floor(ready(st, id));
-    st.made[id] = Math.min(cap, (st.made[id] || 0) + cap * dt / MONTH_FILL_SEC);
-    if (Math.floor(ready(st, id)) !== before) changed = true;
-  }
-  return changed;
-}
-export const ready = (st, id) => Math.max(0, (st.made[id] || 0) - (st.barn[id] || 0));
-
-export function collect(st, id) {
-  const amt = Math.floor(ready(st, id));
-  if (amt <= 0 || st.phase !== 'play') return 0;
-  st.barn[id] = (st.barn[id] || 0) + amt;
-  st.taps++;
-  return amt;
+  return reached;
 }
 
-/* ---------- Капитал ---------- */
-export function capital(st) {
-  let assets = 0;
-  for (const id of Object.keys(st.built)) assets += BUILDINGS[id].price * ASSET_SHARE;
-  return Math.round(st.money - st.debt + assets + st.hens * HEN_VALUE + st.hives * HIVE_VALUE);
+/* ---------- Месяцы и события ---------- */
+export const monthLeft = (st) => Math.max(0, MONTH_MS - st.monthMs);
+export const monthReady = (st) => st.phase === 'play' && monthLeft(st) <= 0;
+// пропуск ожидания: половина того, что ферма заработала бы за оставшееся время (минимум 500 ₽)
+export const skipCost = (st) => nice(Math.max(500, totalRate(st) * 0.5 * monthLeft(st) / 60000));
+export function skipMonth(st) {
+  if (st.phase !== 'play' || monthReady(st)) return 'месяц уже прошёл';
+  const c = skipCost(st);
+  if (st.money < c) return 'не хватает ' + fmt(c - st.money);
+  st.money -= c;
+  st.monthMs = MONTH_MS;
+  st.history.push({ m: st.month, t: `Поторопили время за ${fmt(c)}.` });
+  return null;
 }
-export const progress = (st) => Math.max(0, Math.min(1, capital(st) / GOAL));
 
-/* ---------- События ---------- */
 function helpers(st, log) {
+  const r = rng(st.seed ^ (st.month * 2654435761));
+  const S = monthScale(st);
   const addMod = (bucket, key, v) => { bucket[key] = (bucket[key] ?? 1) * v; };
   return {
-    fmt,
+    fmt, S,
+    amt: (k) => nice(S * k),
     pay: (sum, label) => { st.money -= sum; log.push({ label, amount: -sum }); },
     gain: (sum, label) => { st.money += sum; log.push({ label, amount: sum }); },
     mod: (key, v) => addMod(st.mods, key, v),
     modAll: (v) => PRODUCERS.forEach(id => addMod(st.mods, id, v)),
     next: (key, v) => addMod(st.nextMods, key, v),
-    offer: (s) => Math.max(60000, Math.round(capital(s) * 1.15 / 1000) * 1000),
-    sellFarm: () => { st.flags.soldFarm = Math.max(60000, Math.round(capital(st) * 1.15 / 1000) * 1000); },
+    chance: (p) => r() < p,
+    price: (id) => priceOf(st, id),
+    lv: (id) => level(st, id),
+    ach: (id) => grantAch(st, id),
+    capital: () => capital(st),
+    buildingsValue: () => buildingsValue(st),
   };
 }
-
 export const resolveText = (v, st) => (typeof v === 'function' ? v(st, helpers(st, [])) : v);
 
+const eventKey = (e, st) => (e.once ? e.id : `${e.id}@${yearOf(st.month + 1)}`);
 export function pickEvent(st) {
-  const r = rng(st.seed + st.month * 7919);
-  const pool = EVENTS.filter(e => e.months.includes(st.month) && (e.repeat || !st.usedEvents.includes(e.id)) && (!e.cond || e.cond(st)));
+  const r = rng(st.seed + (st.month + 1) * 7919);
+  const nm = (st.month + 1) % 12;
+  const pool = EVENTS.filter(e => e.months.includes(nm) && (e.repeat || !st.usedEvents.includes(eventKey(e, st))) && (!e.cond || e.cond(st)));
   const total = pool.reduce((a, e) => a + e.weight, 0);
   let x = r() * total;
   for (const e of pool) { if ((x -= e.weight) <= 0) return e; }
   return pool[pool.length - 1] || EVENT_BY_ID.quiet;
 }
 
-// «Следующий месяц»: выпадает событие
+// «Следующий месяц»: только когда месяц прошёл. Выпадает событие нового месяца.
 export function endMonth(st) {
-  if (st.phase !== 'play') return null;
+  if (!monthReady(st)) return null;
   const e = pickEvent(st);
   st.event = e.id;
   st.phase = 'event';
   return e;
 }
-
 export function optionState(st, e, i) {
   const o = e.options[i];
-  return { why: o.can ? o.can(st) : null, desc: resolveText(o.desc, st), label: o.label, icon: o.icon };
+  return { why: o.can ? o.can(st, helpers(st, [])) : null, desc: resolveText(o.desc, st), label: o.label, icon: o.icon };
 }
-
-export const allBlocked = (st, e) => e.options.every(o => o.can && o.can(st));
+export const allBlocked = (st, e) => e.options.every((o) => o.can && o.can(st, helpers(st, [])));
 const PASS = { label: 'Не по карману', effect: () => 'Денег не хватило ни на один вариант.' };
+const stripTags = (s) => s.replace(/<[^>]+>/g, '');
 
 export function choose(st, i) {
   if (st.phase !== 'event') return null;
   const e = EVENT_BY_ID[st.event];
   const o = i === -1 && allBlocked(st, e) ? PASS : e.options[i];
-  if (!o || (o.can && o.can(st))) return null;
+  if (!o || (o.can && o.can(st, helpers(st, [])))) return null;
+  const report = closeMonth(st);              // итоги прошедшего месяца
   const log = [];
-  const text = o.effect(st, helpers(st, log));
-  st.usedEvents.push(e.id);
+  const text = o.effect(st, helpers(st, log)); // событие действует на новый месяц
+  st.usedEvents.push(eventKey(e, st));
   st.history.push({ m: st.month, t: `${stripTags(e.title)}: ${o.label.toLowerCase()}. ${text}` });
-  return closeMonth(st, { title: stripTags(e.title), choice: o.label, text, log });
-}
-const stripTags = (s) => s.replace(/<[^>]+>/g, '');
-
-/* ---------- Итоги месяца ---------- */
-export function closeMonth(st, ev) {
-  const m = st.month;
-  const sales = [];
-  let salesMul = st.mods.sales ?? 1;
-  if (st.built.stall) salesMul *= isSummer(m) ? 1.5 : 1.25;
-  if (st.flags.contract) salesMul *= 1.3;
-  for (const id of PRODUCERS) {
-    const cap = monthlyCap(st, id) * (st.mods[id] ?? 1);
-    if (!cap) continue;
-    const made = Math.min(st.made[id] || 0, cap);
-    const hand = Math.min(st.barn[id] || 0, cap);
-    const rest = cap - hand; // несобранное + не успевшее «вырасти» — оптом
-    const share = st.flags.helper ? 1 : UNCOLLECTED_SHARE;
-    const p = unitPrice(st, id);
-    const sum = (hand * p + rest * p * share) * salesMul;
-    sales.push({ id, qty: Math.round(cap), hand: Math.round(hand), made: Math.round(made), unit: PRODUCTS[id].unit, sum: Math.round(sum) });
-  }
-  const income = sales.reduce((a, s) => a + s.sum, 0);
-
-  const costs = [];
-  const add = (label, amount) => amount > 0 && costs.push({ label, amount: Math.round(amount) });
-  add('Свет и налог', COSTS.base);
-  if (isWinter(m)) add('Отопление дома', COSTS.heating);
-  if (st.hens) add(`Корм курам (${st.hens})`, st.hens * (isWinter(m) ? COSTS.henFeedWinter : COSTS.henFeed));
-  if (st.built.cow) add('Корм корове', isWinter(m) ? COSTS.cowFeedWinter : COSTS.cowFeed);
-  if (monthlyCap(st, 'garden')) add('Семена', COSTS.gardenSeeds);
-  if (monthlyCap(st, 'greenhouse') && !isWinter(m)) add('Теплица: рассада', COSTS.greenhouse);
-  if (st.built.stove && isWinter(m)) add('Дрова для печки', COSTS.firewood);
-  if (st.flags.helper) add('Зарплата Ване', COSTS.helper);
-  if (st.debt) add('Проценты по кредиту', st.debt * COSTS.loanRate);
-  const expense = costs.reduce((a, c) => a + c.amount, 0);
-
-  const notes = [];
-  if (st.flags.contract) {
-    const c = st.flags.contract;
-    if (income < c.min) { costs.push({ label: 'Штраф кафе', amount: c.fine }); notes.push('Кафе недовольно: выручка меньше нормы, штраф.'); }
-    if (--c.left <= 0) { delete st.flags.contract; notes.push('Контракт с кафе закончился.'); }
-  }
-  const totalExpense = costs.reduce((a, c) => a + c.amount, 0);
-  const before = st.money;
-  st.money += income - totalExpense;
-
-  // сезонные последствия
-  if (m === 9 && st.built.apiary && !st.built.omshanik && st.hives > 0) {
-    notes.push(`Без омшаника ${st.hives} ульев замёрзли…`);
-    st.history.push({ m, t: 'Ульи замёрзли без омшаника.' });
-    st.hives = 0;
-  }
-
-  const evSum = (ev?.log || []).reduce((a, l) => a + l.amount, 0);
-  const report = {
-    month: m, name: MONTHS[m].name, event: ev, sales, costs, income: Math.round(income), expense: Math.round(totalExpense),
-    eventSum: evSum, before: Math.round(before - evSum), after: Math.round(st.money), notes, capital: capital(st),
-  };
-  st.ledger.push({ m, income: report.income, expense: report.expense, event: evSum, money: report.after, costs });
-
-  // банкротство / продажа / конец года
-  st.negMonths = st.money < 0 ? st.negMonths + 1 : 0;
-  if (st.flags.soldFarm) {
-    st.money = st.flags.soldFarm + income - totalExpense; st.debt = 0;
-    finish(st, 'sold');
-  } else if (st.negMonths >= 2) {
-    finish(st, 'frozen');
-  } else if (m === 11) {
-    const c = capital(st);
-    finish(st, c >= GOAL ? 'millionaire' : c > START_MONEY ? 'alive' : 'frozen');
-  } else {
-    if (st.money < 0) notes.push('Деньги в минусе! Ещё месяц — и ферма замёрзнет.');
-    st.month++;
-    st.mods = st.nextMods; st.nextMods = {};
-    st.made = {}; st.barn = {};
-    st.phase = 'play';
-  }
+  report.event = { title: stripTags(e.title), choice: o.label, text, log };
+  report.after = Math.round(st.money);
+  report.capital = capital(st);
   st.event = null;
+  st.phase = 'play';
+  checkGoals(st);
   st.report = report;
   return report;
 }
 
-function finish(st, ending) {
-  st.phase = 'end';
-  st.ending = ending;
-  st.finalCapital = ending === 'sold' ? Math.round(st.money) : capital(st);
-  st.history.push({ m: st.month, t: `Конец игры: ${ending}. Капитал ${fmt(st.finalCapital)}.` });
+function closeMonth(st) {
+  const m = st.month;
+  const income = Math.round(st.monthIncome);
+  const costs = [];
+  if (income > 0) costs.push({ label: 'Корм, свет и налоги', amount: Math.round(income * UPKEEP_SHARE) });
+  if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE) });
+  if (st.flags.helper) costs.push({ label: 'Зарплата Ване', amount: nice(monthScale(st) * 0.08) });
+  const notes = [];
+  if (st.flags.contract) {
+    const c = st.flags.contract;
+    if (income < c.min) { costs.push({ label: 'Штраф кафе', amount: c.fine }); notes.push('Кафе недовольно: выручка меньше нормы.'); }
+    if (--c.left <= 0) { delete st.flags.contract; notes.push('Контракт с кафе закончился.'); }
+  }
+  if (st.flags.helper && --st.flags.helper.left <= 0) { delete st.flags.helper; notes.push('Ваня уехал учиться. Собирать — снова самим!'); }
+  const expense = costs.reduce((a, c) => a + c.amount, 0);
+  st.money -= expense;
+  if (m % 12 === 9 && level(st, 'apiary') > 1 && !level(st, 'omshanik')) {
+    notes.push('Без омшаника пчёлы замёрзли — пасека откатилась на 1-й уровень.');
+    st.history.push({ m, t: 'Пасека замёрзла без омшаника.' });
+    st.lv.apiary = 1;
+  }
+  st.ledger.push({ m, income, expense, money: Math.round(st.money) });
+  if (st.ledger.length > 36) st.ledger.shift();
+  const report = { month: m, name: monthOf(m).name, year: yearOf(m), income, costs, expense, notes };
+  st.month++;
+  st.monthMs = 0;
+  st.monthIncome = 0;
+  st.mods = st.nextMods; st.nextMods = {};
+  if (st.month === 12) grantAch(st, 'alive');
+  return report;
 }
 
-/* ---------- Задания для тетради ---------- */
+/* ---------- Задания ---------- */
 export function tasks(st) {
+  const L = (id) => level(st, id);
   return [
     ['Убрать ферму деда', st.phase !== 'clean'],
-    ['Построить курятник', !!st.built.coop],
-    ['Поставить прилавок у дороги', !!st.built.stall],
-    ['Защитить кур забором', !!st.built.fence],
-    ['Собрать теплицу из окон деда', !!st.built.greenhouse],
-    ['Завести пасеку', !!st.built.apiary],
-    ['Утеплить пчёл: омшаник до декабря', !!st.built.omshanik],
-    ['Купить корову', !!st.built.cow],
+    ['Построить курятник', L('coop') > 0],
+    ['Поставить прилавок у дороги', L('stall') > 0],
+    ['Защитить кур забором', L('fence') > 0],
+    ['Собрать теплицу из окон деда', L('greenhouse') > 0],
+    ['Завести пасеку', L('apiary') > 0],
+    ['Омшаник до декабря', L('omshanik') > 0],
+    ['Курятник 5-го уровня', L('coop') >= 5],
+    ['Купить корову', L('cow') > 0],
     ['Капитал 100 000 ₽', capital(st) >= 100000],
-    ['Капитал 500 000 ₽', capital(st) >= 500000],
-    ['Миллион!', capital(st) >= GOAL],
+    [`Цель: ${tierName(st.tier)}`, false],
   ];
 }
 
-/* ---------- Миграция сохранений ---------- */
 export function migrate(save) {
   if (!save || typeof save !== 'object' || save.v !== SCHEMA_VERSION) return null;
   return save;

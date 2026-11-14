@@ -81,9 +81,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* ---------- Сцена: интерактив ---------- */
 #scene [data-tap] { cursor: pointer; }
-.trash { transform-box: fill-box; transform-origin: 50% 100%; animation: wobble 2.6s ease-in-out infinite; }
+.trash .trash-art { animation: wobble 2.6s ease-in-out infinite; }
 .trash.cracked { opacity: .8; }
-.trash:active { transform: scale(.9); }
 .slot-area { fill: rgba(255,255,255,.18); stroke: #fffaf0; stroke-width: 2.5; stroke-dasharray: 7 6; animation: dash 1.2s linear infinite; }
 .slot-pin { animation: pulse 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 .ready .bob { animation: bob 1.4s ease-in-out infinite; }
@@ -271,3 +270,39 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #fx, #fx * { pointer-events: none; }
 #app.covered .helper, #app.covered .dock { visibility: hidden; }
 #app.bare .hud { visibility: hidden; }
+
+/* ===== Уборка: подсветка и анимации ===== */
+.tap-ring { fill: rgba(255,250,235,.28); stroke: #fffaf0; stroke-width: 2.4; stroke-dasharray: 5 4; transform-box: fill-box; transform-origin: center; animation: ring 1.5s ease-in-out infinite; pointer-events: none; }
+.trash .trash-art { transform-box: fill-box; transform-origin: 50% 100%; }
+.trash.fly { pointer-events: none; animation: none; }
+.trash.fly .trash-art { animation: flyAway .45s cubic-bezier(.4,0,.8,.4) forwards; }
+.trash.cut { pointer-events: none; animation: none; }
+.trash.cut .trash-art { animation: cutDown .4s ease-in forwards; }
+.trash.fly .tap-ring, .trash.cut .tap-ring { display: none; }
+.slot .slot-area { animation: dash 1.2s linear infinite, glow 1.6s ease-in-out infinite; }
+#ready .bob { filter: drop-shadow(0 0 4px rgba(255,236,150,.95)); }
+@keyframes ring { 0%, 100% { transform: scale(.9); opacity: .55 } 50% { transform: scale(1.15); opacity: 1 } }
+@keyframes flyAway { to { transform: translate(30px, -120px) rotate(200deg) scale(.3); opacity: 0 } }
+@keyframes cutDown { 40% { transform: scaleY(.25) skewX(18deg) } to { transform: scaleY(0) translateY(6px); opacity: 0 } }
+@keyframes glow { 50% { fill: rgba(255,255,255,.38) } }
+
+/* ===== v2: таймер месяца, уровни, поздравления ===== */
+#btnNext { position: relative; overflow: hidden; }
+#btnNext .month-bar { position: absolute; left: 0; bottom: 0; height: 5px; width: 0; background: rgba(255,255,255,.55); transition: width 1s linear; }
+#btnNext.wait { background: #6fae66; border-color: #3f7a3a; box-shadow: 0 4px 0 #3f7a3a; font-size: 15px; }
+#btnNext.ready { animation: readyPulse 1.4s ease-in-out infinite; }
+#btnNext span { position: relative; }
+@keyframes readyPulse { 50% { transform: scale(1.04); box-shadow: 0 4px 0 var(--btn-dark), 0 0 0 6px rgba(63,163,77,.35); } }
+.bubble[hidden] { display: none !important; }
+.lvl { grid-column: 1 / -1; display: flex; align-items: center; gap: 3px; }
+.lvl i { width: 14px; height: 8px; border-radius: 3px; background: #eadcc0; border: 1.5px solid #c9b48e; }
+.lvl i.on { background: #f2b632; border-color: #b8801a; }
+.lvl span { margin-left: 6px; font-size: 12px; font-weight: 900; color: var(--label); }
+.btn.ghost { background: transparent; border-color: rgba(255,255,255,.7); color: #fff; box-shadow: none; text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+.goal-next { background: #fff; border: 2px dashed var(--line); border-radius: 12px; padding: 8px 10px; font-weight: 700; color: var(--brown); width: 100%; line-height: 1.4; font-size: 14px; }
+.goal-next b { color: var(--green); }
+.ending { position: relative; overflow: hidden; }
+.confetti { position: absolute; inset: 0; pointer-events: none; }
+.confetti i { position: absolute; top: -10px; left: var(--x); width: 8px; height: 12px; background: var(--c); border-radius: 2px; animation: confetti 2.2s var(--d) ease-in infinite; }
+@keyframes confetti { 0% { transform: translateY(0) rotate(0); opacity: 1 } 100% { transform: translateY(600px) rotate(540deg); opacity: 0 } }
+.lvl-tag { font-family: Rubik, sans-serif; font-weight: 900; font-size: 10px; fill: #fff; }

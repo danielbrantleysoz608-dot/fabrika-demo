@@ -1,68 +1,83 @@
-// Симуляция баланса: node tools/sim.mjs
+// Симуляция баланса v2 (реальное время).
+//   node tools/sim.mjs            — средний игрок + сравнение стилей
+//   node tools/sim.mjs trace      — по шагам: что и когда купил
 import * as E from '../webapp/js/engine.js';
-import { BUILDINGS, ENDING_ORDER } from '../webapp/js/data.js';
-import { EVENT_BY_ID } from '../webapp/js/events.js';
+import { BUILDINGS, BUILD_ORDER, MONTH_MS } from '../webapp/js/data.js';
 
-const clone = (o) => structuredClone(o);
-function fillMonth(st, collectShare) {
-  for (const id of E.PRODUCERS) { const cap = E.monthlyCap(st, id); st.made[id] = cap; st.barn[id] = cap * collectShare; }
-}
-const strategies = {
-  // «умный»: стройка по приоритету, докупка ульев, лучший вариант события (заглядывает вперёд на 1 месяц)
-  smart: { order: ['coop', 'stall', 'garden', 'greenhouse', 'apiary'], late: ['cow', 'omshanik', 'stove', 'fence'], buy: true, collect: 1, choice: 'best' },
-  smart70: { order: ['coop', 'stall', 'garden', 'greenhouse', 'apiary'], late: ['cow', 'omshanik', 'stove', 'fence'], buy: true, collect: .7, choice: 'best' },
-  normal: { order: ['coop', 'stall', 'garden', 'fence', 'greenhouse', 'apiary', 'cow', 'omshanik', 'stove'], buy: 'some', collect: .7, choice: 'random' },
-  lazy: { order: ['coop', 'stall', 'garden'], buy: false, collect: 0, choice: 'random' },
-  reckless: { order: ['cow', 'coop', 'apiary', 'greenhouse'], buy: true, collect: .5, choice: 'first' },
-};
-function act(st, s, r) {
-  let did = true;
-  while (did) {
-    did = false;
-    for (const id of s.order) { if (!st.built[id]) { if (!E.build(st, id)) did = true; else if (s.late) break; } }
-    if (s.buy === true || (s.buy === 'some' && r() < .5)) {
-      if (st.month <= 4 && st.built.apiary && !E.buy(st, 'hives')) { did = true; continue; }
-    }
-    if (s.late && s.order.every(id => st.built[id]) && (st.month >= 5 || st.hives >= 15)) for (const id of s.late) if (!E.build(st, id)) did = true;
-    if (s.buy && st.money > 30000 && st.month >= 5 && !E.buy(st, 'hens')) did = true;
-  }
-}
-function play(seed, s, from = null, rollout = false) {
-  const r = E.rng(seed * 31 + 7);
-  let st = from || E.newGame(seed, 0);
-  if (!from) { st.trash.forEach(t => (t.hp = 1)); st.trash.forEach(t => E.hitTrash(st, t.id)); }
-  while (st.phase !== 'end') {
-    act(st, s, r);
-    fillMonth(st, s.collect);
-    const e = E.endMonth(st);
-    const opts = e.options.map((_, i) => i).filter(i => !E.optionState(st, e, i).why);
-    let pick = opts[0] ?? -1;
-    if (s.choice === 'random') pick = opts[Math.floor(r() * opts.length)] ?? -1;
-    if (s.choice === 'best') {
-      let best = -1e18;
-      for (const i of opts) {
-        const c = clone(st); E.choose(c, i);
-        let v;
-        if (rollout) v = c.phase === 'end' ? c.finalCapital : E.capital(c);
-        else { const f = c.phase === 'end' ? c : play(seed, s, c, true); v = f.ending === 'sold' ? f.finalCapital * .8 : f.finalCapital; }
-        if (v > best) { best = v; pick = i; }
+const MIN = 60000;
+const MILESTONES = [1e5, 1e6, 1e7, 1e8, 1e9];
+
+// игрок: tapEvery — как часто заходит и собирает (мс); smart — покупает лучшее по «доход/цена»
+function play(seed, { tapEvery = 30000, hours = 14, trace = false } = {}) {
+  let now = 0;
+  const st = E.newGame(seed, now);
+  // уборка: ~20 тапов за ~40 секунд
+  st.trash.forEach(t => E.hitTrash(st, t.id));
+  now += 40000; st.lastTick = now;
+  const r = E.rng(seed * 97 + 1);
+  const hit = {};
+  const log = [];
+  while (now < hours * 3600000) {
+    now += tapEvery;
+    E.tick(st, now);
+    E.collectAll(st);
+    // покупки: самое выгодное (прирост ₽/мин на рубль). Если лучшее не по карману —
+    // копим на него, если ждать < 3 мин или оно заметно выгоднее (×1.3) и ждать < часа.
+    for (let guard = 0; guard < 60; guard++) {
+      let best = null, bestV = 0, bestAff = null, bestAffV = 0;
+      for (const id of BUILD_ORDER) {
+        const why = E.canBuy(st, id);
+        if (why && !why.startsWith('не хватает')) continue;
+        const v = E.buyValue(st, id) / E.priceOf(st, id);
+        if (v > bestV) { bestV = v; best = id; }
+        if (!why && v > bestAffV) { bestAffV = v; bestAff = id; }
       }
+      if (!best) break;
+      let pick = best;
+      if (E.canBuy(st, best)) {
+        const wait = (E.priceOf(st, best) - st.money) / Math.max(1, E.totalRate(st));
+        if (wait < 3 || !bestAff || (bestV > 1.3 * bestAffV && wait < 60)) break; // копим на заметно более выгодное
+        pick = bestAff;
+      }
+      if (E.buy(st, pick)) break;
+      if (trace) log.push(`${(now / MIN).toFixed(1).padStart(6)} мин  ${BUILDINGS[pick].name} → ур.${st.lv[pick]}  (капитал ${E.fmt(E.capital(st))})`);
     }
-    if (!opts.length) { st.money += 0; }
-    E.choose(st, pick);
+    // месяц прошёл → следующий, событие: случайный доступный вариант
+    if (E.monthReady(st)) {
+      const e = E.endMonth(st);
+      const opts = e.options.map((_, i) => i).filter(i => !E.optionState(st, e, i).why && !(e.id === 'sell_farm' && i === 0));
+      E.choose(st, opts.length ? opts[Math.floor(r() * opts.length)] : -1);
+    }
+    const c = E.ratingCapital(st);
+    for (const m of MILESTONES) if (!hit[m] && c >= m) hit[m] = now;
   }
-  return st;
+  return { hit, st, log };
 }
-const N = +process.argv[2] || 400;
-for (const [name, s] of Object.entries(strategies)) {
-  const res = []; const ends = {};
-  for (let seed = 1; seed <= N; seed++) { const st = play(seed, s); res.push(st.finalCapital); ends[st.ending] = (ends[st.ending] || 0) + 1; }
-  res.sort((a, b) => a - b);
-  const q = (p) => E.fmt(res[Math.floor(p * (res.length - 1))]);
-  console.log(name.padEnd(9), 'p10', q(.1), '| med', q(.5), '| p90', q(.9), '| max', q(1), '|', ENDING_ORDER.map(k => `${k}:${ends[k] || 0}`).join(' '));
+
+const fmtT = (ms) => (ms == null ? '   —   ' : ms < 3600000 ? `${Math.round(ms / MIN)} мин` : `${Math.floor(ms / 3600000)} ч ${String(Math.round(ms % 3600000 / MIN)).padStart(2, '0')} мин`);
+const median = (a) => { const s = a.filter(x => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+
+if (process.argv[2] === 'trace') {
+  const { log, st } = play(1, { trace: true, hours: +process.argv[3] || 4 });
+  console.log(log.join('\n'));
+  console.log('Итог: месяц', st.month, 'капитал', E.fmt(E.capital(st)));
+} else if (!process.argv[2]) {
+  const styles = [
+    ['Средний: заходит каждые 30 с', 30000],
+    ['Заходит раз в 5 мин', 300000],
+    ['Заходит раз в 30 мин', 1800000],
+    ['Заходит раз в 2 часа', 7200000],
+  ];
+  console.log('Время до капитала (медиана по 40 фермам):\n');
+  console.log('Стиль игры'.padEnd(32), MILESTONES.map(m => (m >= 1e6 ? `${m / 1e6} млн` : `${m / 1e3} тыс`).padStart(12)).join(''));
+  for (const [name, tap] of styles) {
+    const runs = Array.from({ length: 40 }, (_, i) => play(i + 1, { tapEvery: tap, hours: 24 }));
+    console.log(name.padEnd(32), MILESTONES.map(m => fmtT(median(runs.map(x => x.hit[m]))).padStart(12)).join(''));
+  }
 }
-if (process.argv[3] === 'trace') {
-  const st = play(+process.argv[4] || 1, strategies.smart);
-  for (const l of st.ledger) console.log(l.m, l.income, l.expense, l.event, l.money);
-  console.log(st.history.map(h => h.m + ' ' + h.t).join('\n'));
+if (process.argv[2] === 'income') {
+  // доход по постройкам каждые 10 минут
+  const { st: s2 } = play(1, { hours: +process.argv[3] || 1.5 });
+  for (const id of Object.keys(s2.lv).filter(i => BUILDINGS[i].kind === 'prod')) console.log(BUILDINGS[id].name.padEnd(22), 'ур.', s2.lv[id], ' доход/мин сейчас', Math.round(E.rate(s2, id)));
+  console.log('месяц', s2.month, 'итого', Math.round(E.totalRate(s2)), '₽/мин, капитал', E.fmt(E.capital(s2)));
 }
