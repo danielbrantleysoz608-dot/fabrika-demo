@@ -86,7 +86,11 @@ async def get_leaderboard(request: web.Request) -> web.Response:
         key, _, _ = player_identity(request)
     except web.HTTPUnauthorized:
         key = None
-    return web.json_response(await request.app[DBK].leaderboard(period, key))
+    try:
+        my_value = int(request.query.get("value", "0"))
+    except ValueError:
+        my_value = 0
+    return web.json_response(await request.app[DBK].leaderboard(period, key, my_value=my_value))
 
 
 async def get_save(request: web.Request) -> web.Response:

@@ -1,6 +1,7 @@
 """Бот «Ферма деда»: кнопка «Играть» (Telegram WebApp) + веб-сервер игры и API.
 
 Запуск:  python main.py            (бот + сервер)
+         python main.py --clear-rating   (очистить рейтинг перед запуском)
          DEV_MODE=1 python main.py --web-only   (только сервер, без Telegram — для локального теста)
 """
 import argparse
@@ -90,7 +91,15 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     ap = argparse.ArgumentParser()
     ap.add_argument("--web-only", action="store_true", help="только веб-сервер, без бота")
+    ap.add_argument("--clear-rating", action="store_true", help="очистить рейтинг (тестовых игроков) и выйти")
     args = ap.parse_args()
+    if args.clear_rating:
+        async def _clear() -> None:
+            db = DB(CFG.db_path); await db.open()
+            n = await db.clear_rating(); await db.close()
+            print(f"Рейтинг очищен: удалено игроков — {n}. Сохранения игр не тронуты.")
+        asyncio.run(_clear())
+        raise SystemExit(0)
     try:
         asyncio.run(run(args.web_only))
     except KeyboardInterrupt:

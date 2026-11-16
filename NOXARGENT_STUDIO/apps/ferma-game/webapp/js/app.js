@@ -11,6 +11,7 @@ import { ICONS, POSTCARD_ART } from './icons.js';
 import * as api from './api.js';
 import { playerName, setPlayerName, tgName } from './api.js';
 import { sfx } from './sfx.js';
+import * as coach from './coach.js';
 import { openRating, submitScore } from './rating.js';
 
 const tg = window.Telegram?.WebApp;
@@ -122,9 +123,27 @@ function persist(now = false) {
 }
 
 /* ================= Помощник ================= */
+/* Важные подсказки — по центру (coach.js). Пока открыта — игра на паузе: время фермы не идёт, тапы не работают. */
+let pausedAt = 0;
+coach.init({
+  onPause: () => { if (!pausedAt) pausedAt = Date.now(); $('#app').classList.add('paused'); },
+  onResume: () => {
+    if (pausedAt && st && st.phase !== 'clean') st.lastTick += Date.now() - pausedAt; // пауза не считается временем фермы
+    pausedAt = 0; $('#app').classList.remove('paused');
+    if (st && st.phase === 'clean') hint(); else $('#bubble').hidden = true;
+  },
+  onTap: () => { haptic(); sfx.click(); },
+});
+function important(html, mood = 'wink', onClose = null) {
+  if (!prefs.hints) { if (onClose) onClose(); return; }
+  $('#bubble').hidden = true;
+  coach.show(html, { mood, onClose });
+}
+
 let sayTimer, hideTimer, forceSay = false;
 function say(html, mood = 'wink', ms = 0) {
   $('#farmer').innerHTML = farmerSVG(mood);
+  if (coach.isOpen()) return;
   // подсказки выключены — говорим только во время уборки и когда игрок сам тапнул по фермеру
   if (!prefs.hints && !forceSay && st && st.phase !== 'clean') { $('#bubble').hidden = true; return; }
   const b = $('#bubble');
@@ -166,7 +185,7 @@ svg.addEventListener('pointerdown', (e) => {
 svg.addEventListener('pointercancel', () => { downAt = null; });
 svg.addEventListener('pointerup', (e) => {
   const d = downAt; downAt = null;
-  if (!d || !st || !d.el) return;
+  if (!d || !st || !d.el || coach.isOpen()) return;
   if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12 || Date.now() - d.t > 800) return;
   const el = d.el;
   const { tap, id } = el.dataset;
@@ -192,8 +211,9 @@ function hitTrash(id) {
     notify('success'); sfx.fanfare();
     st.lastTick = Date.now();
     floatText(svg, 230, 380, `+${fmt(SCRAP_BONUS)} за металлолом`, '#e8891a');
-    say(`Вот это порядок! Дедов металлолом сдали — <b>+${fmt(SCRAP_BONUS)}</b>. Теперь — стройка!`, 'happy');
     render();
+    $('#btnBuild').classList.add('glow');
+    setTimeout(() => important(`<b>Ферма чистая!</b> Дедов металлолом сдали — +${fmt(SCRAP_BONUS)}.<br>Жми <b>«Стройка»</b> — начнём с курятника.`, 'happy'), 500);
   } else if (Math.random() < .25) {
     say(['Ух, сколько хлама!', 'Ещё немного!', 'Шины — потом на клумбы пустим.', 'Бурьян по пояс…', 'Дед ничего не выбрасывал!'][Math.floor(Math.random() * 5)], 'wink', 2500);
   }
@@ -214,7 +234,7 @@ function collect(id) {
 /* ================= Реальное время ================= */
 const tickReady = {};
 setInterval(() => {
-  if (!st || !profile.game || st.phase === 'clean') return;
+  if (!st || !profile.game || st.phase === 'clean' || coach.isOpen()) return;
   const r = E.tick(st);
   if (r.changed) render('ready');
   hud();
@@ -265,6 +285,7 @@ function closeLayer() {
   setTimeout(afterGain, 300);
 }
 tg?.BackButton.onClick(() => {
+  if (coach.isOpen()) return coach.close();
   const k = layer.dataset.kind;
   if (k === 'event' || k === 'report') return;
   if (k === 'intro' || k === 'album-start' || k === 'rating-start') return showSplash();
@@ -299,10 +320,10 @@ const ACTIONS = {
   introNext: (id) => showIntro(+id),
   share: (id) => share(id),
   sound: () => { const m = sfx.toggle(); toast(m ? 'Звук выключен' : 'Звук включён'); openBook('tasks'); },
-  pref: (id) => {
+  pref: (id, el) => {
     if (id === 'sound') sfx.toggle(); else { prefs[id] = !prefs[id]; savePrefs(); }
-    if (id === 'hints' && prefs.hints) { forceSay = true; hint(); forceSay = false; }
-    openSettings();
+    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : 'Сохранено');
+    if (el?.dataset.from === 'book') openBook('tasks'); else openSettings();
   },
   saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
   rules: () => openRules(),
@@ -357,6 +378,7 @@ function newGame() {
   profile.game = st;
   persist(true);
   enterGame();
+  important('Дед оставил нам ферму… и <b>бурьян</b> по пояс.<br>Тапай по хламу и бурьяну — всё, по чему можно тапать, обведено <b>кружком</b>.', 'wink');
 }
 function enterGame() {
   closeLayer();
@@ -440,6 +462,7 @@ function openBook(tab = 'tasks') {
   if (tab === 'tasks') {
     body = `<ul class="todo">${E.tasks(st).map(([t, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="box">${ok ? '✓' : ''}</span>${t}</li>`).join('')}</ul>
       <p class="note">Капитал = деньги + стоимость построек − долг. Сейчас: <b>${short(E.capital(st))}</b>. Покупки за Telegram Stars в рейтинг не идут.</p>
+      <ul class="settings"><li><span>🧑‍🌾 Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}<small>кто уже знает игру — может отключить</small></span><button class="switch ${prefs.hints ? 'on' : ''}" data-act="pref" data-id="hints" data-from="book" aria-label="переключить"></button></li></ul>
       <div class="row"><button class="btn wide" data-act="rating">🏆 Рейтинг</button><button class="btn wide" data-act="sound">${sfx.muted ? '🔇 Звук выкл.' : '🔊 Звук вкл.'}</button></div>`;
   }
   if (tab === 'costs') {
@@ -461,9 +484,10 @@ function nextMonth() {
   if (st.phase === 'event') return showEvent();
   E.tick(st);
   if (!E.monthReady(st)) return askSkip();
-  E.endMonth(st);
+  const e = E.endMonth(st);
   persist(true);
-  showEvent();
+  const nm = monthOf(st.month + 1).name;
+  important(`Наступил <b>${nm.toLowerCase()}</b>! А на ферме — «${e.title.replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
 }
 function askSkip() {
   const cost = E.skipCost(st), left = E.monthLeft(st);
@@ -490,7 +514,6 @@ function showEvent() {
     <div class="ev-opts">${opts.map((o, i) => `<button class="opt ${o.why ? 'off' : ''}" data-act="opt" data-id="${i}">${ICONS[o.icon] || ''}<b>${o.label}</b><span>${o.desc}</span>${o.why ? `<em>${cap1(o.why)}</em>` : ''}</button>`).join('')}</div>
     ${blocked ? '<button class="btn wide pass" data-act="opt" data-id="-1">Не по карману — пропустить</button>' : ''}`, 'event-wrap', false);
   layer.dataset.kind = 'event';
-  say('Думай! От выбора зависит весь месяц.', 'worried');
 }
 function pickOption(i) {
   const e = EVENT_BY_ID[st.event];
@@ -633,7 +656,7 @@ function openSettings() {
   sheet('⚙️ Настройки', `<ul class="settings">
       <li><span>🔊 Звук<small>щелчки, монетки, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
       <li><span>📳 Вибрация<small>в Telegram на телефоне</small></span>${sw('haptics', prefs.haptics)}</li>
-      <li><span>🧑‍🌾 Подсказки фермера<small>выключены — тапни по фермеру, и он подскажет</small></span>${sw('hints', prefs.hints)}</li>
+      <li><span>🧑‍🌾 Подсказки фермера<small>${prefs.hints ? 'вкл — важное фермер расскажет по центру экрана' : 'выкл — тапни по фермеру, и он подскажет'}</small></span>${sw('hints', prefs.hints)}</li>
       <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
     </ul>
     ${tgUser ? '' : `<div class="r-name"><input id="setName" maxlength="24" placeholder="Твоё имя" value="${(playerName() || '').replace(/"/g, '&quot;')}"><button class="btn primary" data-act="saveName">ОК</button></div>`}
@@ -655,7 +678,7 @@ function openRules() {
 }
 
 /* ================= Кнопки ================= */
-$('#btnBuild').onclick = () => { if (!st) return; haptic(); sfx.click(); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); };
+$('#btnBuild').onclick = () => { if (!st) return; haptic(); sfx.click(); $('#btnBuild').classList.remove('glow'); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); };
 $('#btnBook').onclick = () => { if (!st) return; haptic(); sfx.click(); openBook(); };
 $('#btnNext').onclick = () => { if (!st) return; haptic('medium'); sfx.click(); nextMonth(); };
 $('#farmer').onclick = () => { if (!st) return; haptic(); forceSay = true; hint(); forceSay = false; };

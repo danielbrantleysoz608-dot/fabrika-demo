@@ -92,6 +92,13 @@ crontab -e
 
 ---
 
+### 2.9. Очистить рейтинг перед запуском
+Если на сервере уже кто-то тестировал игру, в рейтинге остались тестовые «Фермер XXXX». Убрать их (сохранения игр не трогаются):
+```bash
+cd /opt/ferma-game/bot && sudo -u ferma .venv/bin/python main.py --clear-rating && systemctl restart ferma-bot
+```
+На ПК (Windows): `.venv\Scripts\python main.py --clear-rating`.
+
 ## Часть 3. Проверка
 
 1. В браузере: `https://ВАШ_ДОМЕН/health` → `{"ok": true, ...}`.

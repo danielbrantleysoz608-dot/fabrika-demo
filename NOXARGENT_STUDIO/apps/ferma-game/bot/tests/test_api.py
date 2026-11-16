@@ -157,3 +157,18 @@ async def test_anon_disabled(aiohttp_client, tmp_path):
     c = await aiohttp_client(make_app(cfg, d))
     assert (await c.post("/api/score", json={"capital": 1}, headers=anon("someone-123"))).status == 401
     await d.close()
+
+
+async def test_me_always_has_rank_and_clear(client):
+    for i, cap in enumerate([900, 500, 100]):
+        await client.post("/api/score", json={"capital": cap}, headers=anon(f"ranker-{i:04d}"))
+    # новичок ещё ничего не прислал — место считается по переданному значению
+    b = await (await client.get("/api/leaderboard?value=600", headers=anon("newbie-0000"))).json()
+    assert b["me"]["rank"] == 2 and b["me"]["value"] == 600
+    # за неделю без прироста — место всё равно есть (после всех, у кого есть прирост)
+    w = await (await client.get("/api/leaderboard?period=week", headers=anon("ranker-0001"))).json()
+    assert w["me"]["rank"] == 1 and w["total"] == 0
+    n = await client.app[__import__("web").DBK].clear_rating()
+    assert n == 3
+    b = await (await client.get("/api/leaderboard")).json()
+    assert b["top"] == [] and b["total"] == 0

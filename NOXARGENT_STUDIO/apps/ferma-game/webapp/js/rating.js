@@ -24,19 +24,24 @@ export async function openRating(ctx, period = 'all') {
   const { st, openLayer, layer, short, fromSplash } = ctx;
   const kind = fromSplash || layer.dataset.kind === 'rating-start' ? 'rating-start' : 'rating';
   const head = `<div class="tabs"><button data-r="all" class="${period === 'all' ? 'on' : ''}">Все время</button><button data-r="week" class="${period === 'week' ? 'on' : ''}">За неделю</button></div>`;
-  openLayer(`<div class="sheet rating"><div class="grab"></div><h2>🏆 Рейтинг</h2>${head}<div class="r-list"><p class="note">Загружаем…</p></div></div>`, 'sheet-wrap', true);
+  openLayer(`<div class="sheet rating"><div class="grab"></div><div class="sheet-head"><h2>🏆 Рейтинг</h2><button class="x-close" data-act="${kind === 'rating-start' ? 'splash' : 'close'}">✕ Закрыть</button></div>${head}<div class="r-list"><p class="note">Загружаем…</p></div></div>`, 'sheet-wrap', true);
   layer.dataset.kind = kind;
   if (st) await submitScore(st, ctx.profile, true);
   let data;
-  try { data = await request('GET', '/api/leaderboard?period=' + period); } catch (e) {
+  const myValue = period === 'week' || !st || st.phase === 'clean' ? 0 : Math.round(E.ratingCapital(st));
+  try { data = await request('GET', `/api/leaderboard?period=${period}&value=${myValue}`); } catch (e) {
     layer.querySelector('.r-list').innerHTML = `<p class="note">Рейтинг недоступен: нет связи с сервером игры.<br>Локально запустите сервер: <code>python main.py --web-only</code> и откройте http://localhost:8080</p>`;
     bind(ctx, period); return;
   }
   const unit = period === 'week' ? 'за неделю' : 'капитал';
   const row = (r) => `<li class="${r.me ? 'me' : ''}"><span class="rk">${medal(r.rank)}</span><span class="nm">${esc(r.name)}${r.year > 1 ? `<small>год ${r.year}</small>` : ''}</span><b>${period === 'week' && r.value > 0 ? '+' : ''}${short(r.value)}</b></li>`;
-  const empty = period === 'week' ? 'Неделя только началась — расти ферму, и попадёшь в топ недели!' : 'Пока никого — будь первым!';
-  const top = data.top.length ? `<ol class="r-top">${data.top.map(row).join('')}</ol>` : `<p class="note">${empty}</p>`;
-  const me = data.me ? row({ ...data.me, me: true }) : `<li class="me"><span class="rk">—</span><span class="nm">Ты</span><b>${period === 'week' ? '+0 ₽' : st ? short(E.ratingCapital(st)) : '—'}</b></li>`;
+  // игроков мало (кроме тебя никого) — заглушка-приглашение
+  const others = data.top.filter(r => !r.me);
+  const top = others.length
+    ? `<ol class="r-top">${data.top.map(row).join('')}</ol>`
+    : `<div class="r-empty"><div class="r-empty-ico">🏆</div><b>Стань первым фермером в рейтинге!</b><span>${period === 'week' ? 'Неделя только началась — расти ферму, и попадёшь в топ недели.' : 'Расти ферму — и твоё имя будет первым в списке.'}</span></div>`;
+  const meData = data.me || { rank: 1, name: null, value: myValue };
+  const me = row({ ...meData, name: meData.name || playerName() || tgName() || 'Ты', me: true });
   const canRename = !tgName();
   layer.querySelector('.r-list').innerHTML = `${top}
     <div class="r-me"><div class="r-me-lbl">Твоё место · ${unit}${data.total ? ` · игроков: ${data.total}` : ''}</div><ol>${me}</ol>

@@ -189,7 +189,17 @@ class DB:
         await self.conn.commit()
         return rating
 
-    async def leaderboard(self, period: str, player_key: str | None, limit: int = 100, now: float | None = None) -> dict:
+    async def clear_rating(self) -> int:
+        """Очистить рейтинг перед запуском (тестовые игроки). Сохранения игр не трогает."""
+        async with self.conn.execute("SELECT COUNT(*) c FROM players") as cur:
+            n = (await cur.fetchone())["c"]
+        for t in ("weekly", "scores", "players"):
+            await self.conn.execute(f"DELETE FROM {t}")
+        await self.conn.commit()
+        return n
+
+    async def leaderboard(self, period: str, player_key: str | None, limit: int = 100, now: float | None = None,
+                          my_value: int = 0) -> dict:
         if period == "week":
             week = current_week(now)
             base = """SELECT w.player_key, p.name, (w.capital - w.start_capital) AS value, s.tier, s.year
@@ -212,6 +222,15 @@ class DB:
                 async with self.conn.execute(f"SELECT COUNT(*) c FROM ({base}) WHERE value > ?", (*args, mine["value"])) as cur:
                     rank = (await cur.fetchone())["c"] + 1
                 me = {"rank": rank, "name": mine["name"], "value": mine["value"], "tier": mine["tier"] or 0, "year": mine["year"] or 1}
+            else:
+                # игрока ещё нет в таблице (не прислал результат / за неделю пока без прироста) —
+                # всё равно показываем место: сколько игроков впереди при его текущем значении
+                value = max(0, int(my_value))
+                async with self.conn.execute(f"SELECT COUNT(*) c FROM ({base}) WHERE value > ?", (*args, value)) as cur:
+                    rank = (await cur.fetchone())["c"] + 1
+                async with self.conn.execute("SELECT name FROM players WHERE player_key = ?", (player_key,)) as cur:
+                    row = await cur.fetchone()
+                me = {"rank": rank, "name": row["name"] if row else None, "value": value, "tier": 0, "year": 1}
         async with self.conn.execute(f"SELECT COUNT(*) c FROM ({base})", args) as cur:
             total = (await cur.fetchone())["c"]
         return {"period": period, "top": top, "me": me, "total": total}
