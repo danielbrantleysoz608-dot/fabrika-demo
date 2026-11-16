@@ -24,7 +24,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--sky); 
 button { font: inherit; color: inherit; cursor: pointer; }
 
 #app { position: relative; height: 100vh; height: var(--tg-viewport-stable-height, 100dvh); max-width: 520px; margin: 0 auto; overflow: hidden; }
-#scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Ферма листается вертикально; шапка, помощник и нижние кнопки — поверх, на месте */
+.farm-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(59,42,31,.35) transparent; }
+.farm-scroll::-webkit-scrollbar { width: 5px; } .farm-scroll::-webkit-scrollbar-thumb { background: rgba(59,42,31,.35); border-radius: 3px; }
+#scene { display: block; width: 100%; height: auto; min-height: 100%; aspect-ratio: 460 / 890; }
+.farm-spacer { height: calc(96px + var(--safe-bot)); background: var(--meadow, #8dc95a); }
 
 /* ---------- HUD ---------- */
 .hud { position: absolute; left: 0; right: 0; top: 0; padding: calc(8px + var(--safe-top)) 10px 0; display: grid; gap: 6px; pointer-events: none; z-index: 5; }
@@ -327,3 +331,43 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .r-name input { flex: 1; min-width: 0; font: inherit; font-weight: 700; padding: 10px 12px; border: 2px solid var(--line); border-radius: 10px; background: #fff; color: var(--brown); }
 .r-name .btn { min-height: 44px; padding: 0 16px; flex-direction: row; }
 .note code { background: #fff; padding: 1px 4px; border-radius: 4px; }
+
+/* ===== Быстрые кнопки и настройки ===== */
+.quick { display: flex; justify-content: flex-end; gap: 6px; pointer-events: auto; }
+.qbtn { width: 54px; height: 50px; border-radius: 14px; border: 2.5px solid var(--line); background: rgba(251,243,227,.94); box-shadow: 0 3px 0 rgba(59,42,31,.3);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 0; transition: transform .08s; }
+.qbtn span { font-size: 20px; line-height: 1.1; }
+.qbtn small { font-size: 9px; font-weight: 800; color: var(--brown); letter-spacing: .01em; }
+.qbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(59,42,31,.3); }
+#app.clean-phase .quick { display: none; }
+.settings { list-style: none; margin: 0 0 10px; padding: 0; }
+.settings li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 4px; border-bottom: 2px dashed #e3d3b4; font-weight: 800; color: var(--brown); font-size: 15px; }
+.settings li small { display: block; font-weight: 600; font-size: 12px; color: #9a8670; }
+.switch { width: 54px; height: 30px; border-radius: 15px; border: 2.5px solid var(--line); background: #e3d6bc; position: relative; flex: none; padding: 0; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 21px; height: 21px; border-radius: 50%; background: #fff; border: 2px solid var(--line); transition: left .15s; }
+.switch.on { background: var(--btn); }
+.switch.on::after { left: 25px; }
+.rules p { margin: 0 0 10px; font-weight: 600; color: var(--brown); line-height: 1.45; font-size: 14.5px; }
+.rules b { color: #b5582e; }
+.settings .r-name { margin: 0; flex: 1; }
+.btn.danger { color: var(--red); }
+
+/* ===== «Моя ферма» под картинкой ===== */
+.farm-info { background: var(--meadow, #3f8f31); padding: 0 12px; }
+.farm-info:empty { display: none; }
+.fi-card { background: var(--cream); border: 3px solid var(--line); border-radius: 18px; padding: 12px; box-shadow: 0 4px 0 rgba(59,42,31,.3); }
+.fi-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.fi-title { font-size: 20px; font-weight: 900; color: #b5582e; text-transform: uppercase; }
+.fi-sub { font-size: 13px; font-weight: 800; color: var(--label); }
+.fi-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.fi-stats div { background: #fff; border: 2px solid var(--line); border-radius: 10px; padding: 6px 8px; }
+.fi-stats span { display: block; font-size: 10.5px; font-weight: 900; letter-spacing: .05em; color: var(--label); text-transform: uppercase; }
+.fi-stats b { font-size: 16px; color: var(--gold); }
+.fi-lbl { margin: 10px 0 2px; font-size: 11px; font-weight: 900; letter-spacing: .06em; color: var(--label); text-transform: uppercase; }
+.fi-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.fi-btns .btn { min-height: 58px; font-size: 22px; }
+.fi-btns .btn small { font-size: 11.5px; font-weight: 800; color: var(--brown); }
+.farm-spacer { margin-top: -1px; }
+.fi-card .todo.small li { justify-content: flex-start; }
+#app.info-view .helper { opacity: 0; pointer-events: none; transition: opacity .2s; }
+.helper { transition: opacity .2s; }

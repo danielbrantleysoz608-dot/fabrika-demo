@@ -9,6 +9,7 @@ import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene
 import { farmerSVG } from './farmer.js';
 import { ICONS, POSTCARD_ART } from './icons.js';
 import * as api from './api.js';
+import { playerName, setPlayerName, tgName } from './api.js';
 import { sfx } from './sfx.js';
 import { openRating, submitScore } from './rating.js';
 
@@ -16,8 +17,11 @@ const tg = window.Telegram?.WebApp;
 const $ = (s) => document.querySelector(s);
 const svg = $('#scene');
 const fmt = E.fmt;
-const haptic = (t = 'light') => tg?.HapticFeedback?.impactOccurred?.(t);
-const notify = (t) => tg?.HapticFeedback?.notificationOccurred?.(t);
+// Настройки игрока (хранятся в браузере)
+const prefs = (() => { try { return { haptics: true, hints: true, ...JSON.parse(localStorage.getItem('ferma-prefs') || '{}') }; } catch { return { haptics: true, hints: true }; } })();
+const savePrefs = () => { try { localStorage.setItem('ferma-prefs', JSON.stringify(prefs)); } catch { /* */ } };
+const haptic = (t = 'light') => prefs.haptics && tg?.HapticFeedback?.impactOccurred?.(t);
+const notify = (t) => prefs.haptics && tg?.HapticFeedback?.notificationOccurred?.(t);
 const SKY = { early: '#6db8ef', spring: '#55b0f1', summer: '#35a6f3', autumn: '#79b4dd', late: '#8fb0c8', winter: '#8eb0cc' };
 const TRASH_DEF = Object.fromEntries(TRASH.map(t => [t.id, t]));
 const n = (x) => Math.round(x).toLocaleString('ru-RU');
@@ -72,8 +76,14 @@ function hud() {
   $('#goalNum').textContent = `${short(cap, '')} / ${short(g)}`;
   updateClean();
   updateNext();
+  farmInfo();
+  $('#app').classList.toggle('clean-phase', st.phase === 'clean' || !profile.game);
   const sky = SKY[m.season];
-  if (hud.sky !== sky) { hud.sky = sky; tg?.setHeaderColor?.(sky); tg?.setBackgroundColor?.(sky); document.body.style.background = sky; }
+  if (hud.sky !== sky) {
+    hud.sky = sky; tg?.setHeaderColor?.(sky); tg?.setBackgroundColor?.(sky); document.body.style.background = sky;
+    const grass = { winter: '#c9d5de', autumn: '#9a9548', late: '#9a9548', early: '#7f8f4d' }[m.season] || '#3f8f31';
+    document.documentElement.style.setProperty('--meadow', grass);
+  }
 }
 
 // Кнопка «Следующий месяц»: таймер, пока месяц идёт; активна, когда прошёл
@@ -112,9 +122,11 @@ function persist(now = false) {
 }
 
 /* ================= Помощник ================= */
-let sayTimer, hideTimer;
+let sayTimer, hideTimer, forceSay = false;
 function say(html, mood = 'wink', ms = 0) {
   $('#farmer').innerHTML = farmerSVG(mood);
+  // подсказки выключены — говорим только во время уборки и когда игрок сам тапнул по фермеру
+  if (!prefs.hints && !forceSay && st && st.phase !== 'clean') { $('#bubble').hidden = true; return; }
   const b = $('#bubble');
   b.hidden = false;
   b.innerHTML = html; b.style.animation = 'none'; void b.offsetWidth; b.style.animation = '';
@@ -144,11 +156,19 @@ function toast(text) {
 }
 
 /* ================= Тапы по сцене ================= */
-// pointerdown: срабатывает сразу при касании и одинаково в Chrome / Firefox / Telegram
+// Тап по ферме: палец опустили и подняли почти на том же месте (если листали — это не тап).
+// Цель запоминаем при касании: так анимации построек не уводят её из-под пальца.
+let downAt = null;
 svg.addEventListener('pointerdown', (e) => {
-  if (e.button > 0 || !st) return;
-  const el = e.target.closest('[data-tap]');
-  if (!el) return;
+  if (e.button > 0) return;
+  downAt = { x: e.clientX, y: e.clientY, t: Date.now(), el: e.target.closest('[data-tap]') };
+});
+svg.addEventListener('pointercancel', () => { downAt = null; });
+svg.addEventListener('pointerup', (e) => {
+  const d = downAt; downAt = null;
+  if (!d || !st || !d.el) return;
+  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12 || Date.now() - d.t > 800) return;
+  const el = d.el;
   const { tap, id } = el.dataset;
   if (tap === 'trash') return hitTrash(id);
   if (tap === 'slot') { haptic(); sfx.click(); return openBuilding(id); }
@@ -279,6 +299,15 @@ const ACTIONS = {
   introNext: (id) => showIntro(+id),
   share: (id) => share(id),
   sound: () => { const m = sfx.toggle(); toast(m ? 'Звук выключен' : 'Звук включён'); openBook('tasks'); },
+  pref: (id) => {
+    if (id === 'sound') sfx.toggle(); else { prefs[id] = !prefs[id]; savePrefs(); }
+    if (id === 'hints' && prefs.hints) { forceSay = true; hint(); forceSay = false; }
+    openSettings();
+  },
+  saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
+  rules: () => openRules(),
+  settings: () => openSettings(),
+  menu: () => { persist(true); showSplash(); },
 };
 
 /* ================= Заставка и интро ================= */
@@ -540,11 +569,96 @@ function share(id) {
   tg?.openTelegramLink?.(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`);
 }
 
+/* ================= Раздел «Моя ферма» под картинкой (листай вниз) ================= */
+function farmInfo() {
+  const box = $('#farmInfo');
+  if (!box || !st) return;
+  if (st.phase === 'clean' || !profile.game) { if (box.innerHTML) box.innerHTML = ''; return; }
+  const levels = Object.entries(st.lv).filter(([id]) => BUILDINGS[id].kind !== 'once').reduce((a, [, L]) => a + L, 0);
+  const built = Object.keys(st.lv).filter(id => st.lv[id] > 0).length;
+  const cards = ACHIEVEMENT_ORDER.filter(k => profile.album[k]).length;
+  const todo = E.tasks(st).filter(([, ok]) => !ok).slice(0, 3);
+  const html = `<div class="fi-card">
+      <div class="fi-head"><span class="fi-title">Моя ферма</span><span class="fi-sub">Год ${yearOf(st.month)} · ${monthOf(st.month).name}</span></div>
+      <div class="fi-stats">
+        <div><span>Доход</span><b>${short(E.totalRate(st))}/мин</b></div>
+        <div><span>Капитал</span><b>${short(E.ratingCapital(st))}</b></div>
+        <div><span>Постройки</span><b>${built} · ур. ${levels}</b></div>
+        <div><span>Открытки</span><b>${cards}/${ACHIEVEMENT_ORDER.length}</b></div>
+      </div>
+      ${todo.length ? `<div class="fi-lbl">Ближайшие задания</div><ul class="todo small">${todo.map(([t]) => `<li><span class="box"></span>${t}</li>`).join('')}</ul>` : ''}
+      <div class="fi-btns">
+        <button class="btn" data-fi="build">🔨<small>Стройка</small></button>
+        <button class="btn" data-fi="rating">🏆<small>Рейтинг</small></button>
+        <button class="btn" data-fi="book">📒<small>Тетрадь</small></button>
+        <button class="btn" data-fi="settings">⚙️<small>Настройки</small></button>
+        <button class="btn" data-fi="rules">📖<small>Как играть</small></button>
+        <button class="btn" data-fi="top">⬆️<small>К ферме</small></button>
+      </div></div>`;
+  if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+}
+// фермер не закрывает раздел «Моя ферма», когда до него долистали
+$('#farmScroll').addEventListener('scroll', () => {
+  const f = $('#farmScroll');
+  $('#app').classList.toggle('info-view', f.scrollTop > svg.clientHeight - f.clientHeight + 60);
+}, { passive: true });
+$('#farmInfo').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-fi]');
+  if (!b || !st) return;
+  haptic(); sfx.click();
+  const k = b.dataset.fi;
+  if (k === 'build') return openBuild();
+  if (k === 'rating') return ACTIONS.rating();
+  if (k === 'book') return openBook();
+  if (k === 'settings') return openSettings();
+  if (k === 'rules') return openRules();
+  if (k === 'top') return $('#farmScroll').scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+/* ================= Быстрые кнопки, настройки, правила ================= */
+$('#quick').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-q]');
+  if (!b || !st) return;
+  haptic(); sfx.click();
+  const q = b.dataset.q;
+  if (q === 'rating') return ACTIONS.rating();
+  if (q === 'cards') return openBook('cards');
+  if (q === 'settings') return openSettings();
+  if (q === 'menu') return ACTIONS.menu();
+});
+
+function openSettings() {
+  const sw = (id, on) => `<button class="switch ${on ? 'on' : ''}" data-act="pref" data-id="${id}" aria-label="переключить"></button>`;
+  const tgUser = tgName();
+  sheet('⚙️ Настройки', `<ul class="settings">
+      <li><span>🔊 Звук<small>щелчки, монетки, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
+      <li><span>📳 Вибрация<small>в Telegram на телефоне</small></span>${sw('haptics', prefs.haptics)}</li>
+      <li><span>🧑‍🌾 Подсказки фермера<small>выключены — тапни по фермеру, и он подскажет</small></span>${sw('hints', prefs.hints)}</li>
+      <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
+    </ul>
+    ${tgUser ? '' : `<div class="r-name"><input id="setName" maxlength="24" placeholder="Твоё имя" value="${(playerName() || '').replace(/"/g, '&quot;')}"><button class="btn primary" data-act="saveName">ОК</button></div>`}
+    <div class="row" style="margin-top:12px"><button class="btn wide" data-act="rules">📖 Как играть</button><button class="btn wide" data-act="menu">🏠 Главное меню</button></div>
+    <div class="row" style="margin-top:10px"><button class="btn wide danger" data-act="newgame">Начать заново</button></div>
+    <p class="note">Игра сохраняется сама${api.online ? ' — на сервере, по твоему Telegram' : ' — в этом браузере'}.</p>`, 'settings');
+}
+
+function openRules() {
+  sheet('📖 Как играть', `<div class="rules">
+    <p><b>1. Уборка.</b> Тапай по хламу и бурьяну — дед оставил ферму в запустении.</p>
+    <p><b>2. Стройка.</b> Зелёный «＋» на ферме или кнопка «Стройка». У построек есть уровни: каждый следующий дороже в 1,6 раза, но приносит больше.</p>
+    <p><b>3. Сбор.</b> Постройки работают сами. Над ними появляются значки — тапай, чтобы собрать деньги. Пока тебя нет, ферма копит до 2 часов.</p>
+    <p><b>4. Месяцы.</b> Месяц длится 15 минут. Потом жми «Следующий месяц» — будет событие с выбором и итоги. Сезоны меняются: мёд летом, огород с мая, теплице зимой нужна печка.</p>
+    <p><b>5. Цели.</b> Первая — 1 000 000 ₽. Дальше 10 млн, 100 млн… На каждой цели открываются новые постройки, а ферма растёт прямо на картинке.</p>
+    <p><b>6. Рейтинг.</b> Место — по капиталу фермы: деньги + постройки − долг. Покупки за Telegram Stars в рейтинг не идут.</p>
+    <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
+  </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
+}
+
 /* ================= Кнопки ================= */
 $('#btnBuild').onclick = () => { if (!st) return; haptic(); sfx.click(); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); };
 $('#btnBook').onclick = () => { if (!st) return; haptic(); sfx.click(); openBook(); };
 $('#btnNext').onclick = () => { if (!st) return; haptic('medium'); sfx.click(); nextMonth(); };
-$('#farmer').onclick = () => { if (!st) return; haptic(); hint(); };
+$('#farmer').onclick = () => { if (!st) return; haptic(); forceSay = true; hint(); forceSay = false; };
 $('.goal').onclick = () => st && toast(`Капитал ${short(E.ratingCapital(st))}: деньги + постройки − долг`);
 
 window.addEventListener('error', (e) => { try { toast('Ошибка: ' + e.message); } catch { /* */ } });

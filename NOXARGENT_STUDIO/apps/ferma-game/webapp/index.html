@@ -14,7 +14,13 @@
 <body>
 <div id="app">
   <!-- Сцена фермы -->
-  <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg"></svg>
+  <!-- Ферму можно листать: шапка и нижние кнопки стоят на месте -->
+  <div class="farm-scroll" id="farmScroll">
+    <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg"></svg>
+    <!-- Под фермой: листай вниз -->
+    <section class="farm-info" id="farmInfo"></section>
+    <div class="farm-spacer"></div>
+  </div>
 
   <!-- Шапка-счётчики как в серии -->
   <header class="hud">
@@ -33,6 +39,13 @@
       <span class="bar-lbl">ЧИСТОТА</span>
       <span class="track"><span class="fill" id="cleanFill"></span><i></i><i></i><i></i></span>
       <span class="bar-num" id="cleanNum">0%</span>
+    </div>
+    <!-- Быстрые кнопки -->
+    <div class="quick" id="quick">
+      <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
+      <button class="qbtn" data-q="cards" aria-label="Открытки"><span>🃏</span><small>Открытки</small></button>
+      <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
+      <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>
     </div>
   </header>
 
