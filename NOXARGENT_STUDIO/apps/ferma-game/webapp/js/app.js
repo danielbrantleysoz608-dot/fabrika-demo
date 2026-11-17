@@ -12,6 +12,7 @@ import * as api from './api.js';
 import { playerName, setPlayerName, tgName } from './api.js';
 import { sfx } from './sfx.js';
 import * as coach from './coach.js';
+import { music } from './music.js';
 import { openRating, submitScore } from './rating.js';
 
 const tg = window.Telegram?.WebApp;
@@ -45,10 +46,11 @@ let st = null;
 function view() {
   const stock = {}, built = {};
   for (const id of Object.keys(st.lv)) if (st.lv[id] > 0) built[id] = true;
-  for (const id of E.PRODUCERS) stock[id] = E.unitsReady(st, id);
+  const fresh = {};
+  for (const id of E.PRODUCERS) { stock[id] = E.unitsReady(st, id); fresh[id] = stock[id] > 0 && E.freshShare(st, id) >= 0.99; }
   return {
     month: st.month, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
-    clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock,
+    clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
     canBuild: st.phase !== 'clean',
@@ -80,6 +82,7 @@ function hud() {
   farmInfo();
   $('#app').classList.toggle('clean-phase', st.phase === 'clean' || !profile.game);
   const sky = SKY[m.season];
+  music.setSeason(m.season); // плавная смена мелодии вместе с сезоном (если музыка уже играет)
   if (hud.sky !== sky) {
     hud.sky = sky; tg?.setHeaderColor?.(sky); tg?.setBackgroundColor?.(sky); document.body.style.background = sky;
     const grass = { winter: '#c9d5de', autumn: '#9a9548', late: '#9a9548', early: '#7f8f4d' }[m.season] || '#3f8f31';
@@ -224,9 +227,13 @@ function collect(id) {
   const pos = READY_POSITIONS[id];
   const amt = E.collect(st, id);
   if (!pos || amt <= 0) { haptic(); return openBuilding(id); } // нечего собирать — открываем карточку улучшения
-  haptic('medium'); sfx.coin();
+  const fresh = E.lastFresh;
+  haptic('medium');
+  if (fresh > 0 && fresh >= amt * 0.15) sfx.fresh(); else sfx.coin();
   render('ready');
   floatText(svg, pos[0], pos[1], `+${short(amt)}`);
+  if (fresh > 0 && fresh >= amt * 0.15) setTimeout(() => floatText(svg, pos[0], pos[1] - 18, 'свежее +20%!', '#2f8a2f'), 180);
+  updateDots();
   afterGain();
   persist();
 }
@@ -240,6 +247,8 @@ setInterval(() => {
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
+  updateDots();
+  if (st.login?.pending && layer.hidden) maybeLoginBonus();
   // напоминание: месяц прошёл
   if (E.monthReady(st) && !tickReady.done) { tickReady.done = true; notify('success'); if (layer.hidden) hint(); }
   if (!E.monthReady(st)) tickReady.done = false;
@@ -259,7 +268,12 @@ function welcomeBack() {
     say(`Пока тебя не было ${mins >= 60 ? Math.floor(mins / 60) + ' ч ' + (mins % 60) + ' мин' : mins + ' мин'}, ферма наработала <b>${short(got)}</b>${r.offline >= 7200000 ? ' (больше 2 часов не копится)' : ''}. Собирай!`, 'happy', 8000);
   }
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') welcomeBack(); else if (profile.game) persist(true); });
+// Свернули игру — музыка и звуки на паузе; вернулись — продолжаем
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { sfx.resume(); welcomeBack(); } else { sfx.suspend(); if (profile.game) persist(true); }
+});
+tg?.onEvent?.('deactivated', () => sfx.suspend());
+tg?.onEvent?.('activated', () => sfx.resume());
 
 // Новые цели и открытки — поздравляем, когда ничего не открыто
 function afterGain() {
@@ -319,10 +333,14 @@ const ACTIONS = {
   splash: () => showSplash(),
   introNext: (id) => showIntro(+id),
   share: (id) => share(id),
+  claimLogin: () => { const p = E.claimLogin(st); if (p) { sfx.fresh(); notify('success'); toast(`Бонус за вход: +${short(p)}`); } closeLayer(); render(); persist(true); },
+  claimDaily: (id) => { const p = E.claimDaily(st, +id); if (p) { sfx.coin(); notify('success'); toast(`Задание выполнено: +${short(p)}`); } render(); persist(true); updateDots(); openBook('tasks'); },
   sound: () => { const m = sfx.toggle(); toast(m ? 'Звук выключен' : 'Звук включён'); openBook('tasks'); },
   pref: (id, el) => {
-    if (id === 'sound') sfx.toggle(); else { prefs[id] = !prefs[id]; savePrefs(); }
-    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : 'Сохранено');
+    if (id === 'sound') sfx.toggle();
+    else if (id === 'music') music.enable(!sfx.settings.music);
+    else { prefs[id] = !prefs[id]; savePrefs(); }
+    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : id === 'music' ? `Музыка: ${sfx.settings.music ? 'вкл' : 'выкл'}` : id === 'sound' ? `Звуки: ${sfx.muted ? 'выкл' : 'вкл'}` : 'Сохранено');
     if (el?.dataset.from === 'book') openBook('tasks'); else openSettings();
   },
   saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
@@ -348,6 +366,7 @@ function showSplash() {
 }
 
 function startOrContinue() {
+  music.start(monthOf(profile.game ? profile.game.month : 0).season); // первый тап — можно включать звук
   if (profile.game) { st = profile.game; enterGame(); return; }
   if (!profile.introSeen) return showIntro(0);
   newGame();
@@ -383,9 +402,37 @@ function newGame() {
 function enterGame() {
   closeLayer();
   delete svg.dataset.month;
+  st.tzOff = new Date().getTimezoneOffset();
   render(); hint();
   welcomeBack();
   if (st.phase === 'event') showEvent();
+  else setTimeout(maybeLoginBonus, 600);
+}
+
+/* ================= Ежедневное: бонус за вход и задания дня ================= */
+function maybeLoginBonus() {
+  if (!st?.login?.pending || st.phase === 'clean' || !layer.hidden || coach.isOpen()) return;
+  const n = st.login.streak;
+  const days = Array.from({ length: 7 }, (_, i) => `<div class="lb-day ${i + 1 < n ? 'got' : i + 1 === n ? 'now' : ''}"><span>${i + 1}</span><b>${i + 1 < n ? '✓' : i + 1 === n ? '🎁' : '·'}</b></div>`).join('');
+  openLayer(`<div class="dialog login-bonus"><div class="kicker">БОНУС ЗА ВХОД</div><h3>День ${n} из 7</h3>
+    <div class="lb-days">${days}</div>
+    <p>Заходи каждый день — бонус растёт! Пропустишь день — серия начнётся заново.</p>
+    <button class="btn primary big" data-act="claimLogin">Забрать ${short(st.login.pending)}</button></div>`, 'screen dim', false);
+  layer.dataset.kind = 'login';
+}
+function dailyBlock() {
+  const tasks = E.dailyTasks(st);
+  if (!tasks.length) return '';
+  return `<div class="sub">Задания дня</div><ul class="daily">${tasks.map((t, i) => `<li class="${t.claimed ? 'claimed' : t.done ? 'done' : ''}">
+      <div class="dl-main"><span>${t.title}</span><div class="dl-bar"><i style="width:${Math.round(100 * t.have / t.need)}%"></i></div></div>
+      ${t.claimed ? '<b class="dl-ok">✓</b>' : `<button class="btn primary dl-btn" data-act="claimDaily" data-id="${i}" ${t.done ? '' : 'disabled'}>${t.done ? 'Забрать' : short(t.reward)}</button>`}
+    </li>`).join('')}</ul><p class="note">Награда за каждое — ${short(tasks[0].reward)}. Новые задания — каждый день.</p>`;
+}
+// красная точка на «Тетради», если есть что забрать
+function updateDots() {
+  if (!st) return;
+  const can = E.dailyTasks(st).some(t => t.done && !t.claimed);
+  $('#btnBook').classList.toggle('has-dot', can);
 }
 
 /* ================= Стройка и улучшения ================= */
@@ -460,10 +507,10 @@ function openBook(tab = 'tasks') {
   const tabs = [['tasks', 'Задания'], ['costs', 'Расходы'], ['story', 'История'], ['cards', 'Открытки']];
   let body = '';
   if (tab === 'tasks') {
-    body = `<ul class="todo">${E.tasks(st).map(([t, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="box">${ok ? '✓' : ''}</span>${t}</li>`).join('')}</ul>
+    body = dailyBlock() + `<div class="sub">Задания фермы</div><ul class="todo">${E.tasks(st).map(([t, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="box">${ok ? '✓' : ''}</span>${t}</li>`).join('')}</ul>
       <p class="note">Капитал = деньги + стоимость построек − долг. Сейчас: <b>${short(E.capital(st))}</b>. Покупки за Telegram Stars в рейтинг не идут.</p>
       <ul class="settings"><li><span>🧑‍🌾 Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}<small>кто уже знает игру — может отключить</small></span><button class="switch ${prefs.hints ? 'on' : ''}" data-act="pref" data-id="hints" data-from="book" aria-label="переключить"></button></li></ul>
-      <div class="row"><button class="btn wide" data-act="rating">🏆 Рейтинг</button><button class="btn wide" data-act="sound">${sfx.muted ? '🔇 Звук выкл.' : '🔊 Звук вкл.'}</button></div>`;
+      <div class="row"><button class="btn wide" data-act="rating">🏆 Рейтинг</button><button class="btn wide" data-act="settings">⚙️ Звук и музыка</button></div>`;
   }
   if (tab === 'costs') {
     const rows = [...st.ledger].reverse().map(l => `<tr><td>${monthOf(l.m).name}${yearOf(l.m) > 1 ? ` <small>г.${yearOf(l.m)}</small>` : ''}</td><td class="plus">+${short(l.income, '')}</td><td class="minus">−${short(l.expense, '')}</td><td><b>${short(l.money, '')}</b></td></tr>`).join('');
@@ -495,7 +542,7 @@ function askSkip() {
     <p>До конца месяца — <b>${mmss(left)}</b>. Постройки работают — собирай урожай!</p>
     <p>Можно поторопить время за <b>${short(cost)}</b>. Продукция за пропущенное время не накопится.</p>
     <div class="row"><button class="btn wide" data-act="close">Подожду</button><button class="btn primary wide" data-act="skip">⏩ ${short(cost)}</button></div>
-    <p class="note">Скоро: ускорение за Telegram Stars. На место в рейтинге не влияет.</p></div>`, 'screen dim', true);
+    <p class="note">Ускорение — только за монеты фермы. На рейтинг не влияет.</p></div>`, 'screen dim', true);
   layer.dataset.kind = 'skip';
 }
 function doSkip() {
@@ -504,6 +551,7 @@ function doSkip() {
   closeLayer(); persist(true); nextMonth();
 }
 function showEvent() {
+  sfx.card();
   const e = EVENT_BY_ID[st.event];
   render();
   const opts = e.options.map((_, i) => E.optionState(st, e, i));
@@ -527,6 +575,7 @@ function pickOption(i) {
 }
 
 function showReport(r) {
+  sfx.bell(); // новый месяц — колокольчик
   const evLog = (r.event?.log || []).map(l => `<li><span>${l.label}</span><b class="${l.amount > 0 ? 'plus' : 'minus'}">${l.amount > 0 ? '+' : '−'}${short(Math.abs(l.amount), '')}</b></li>`).join('');
   const costs = r.costs.map(c => `<li><span>${c.label}</span><b class="minus">−${short(c.amount, '')}</b></li>`).join('');
   openLayer(`<div class="report">
@@ -654,7 +703,9 @@ function openSettings() {
   const sw = (id, on) => `<button class="switch ${on ? 'on' : ''}" data-act="pref" data-id="${id}" aria-label="переключить"></button>`;
   const tgUser = tgName();
   sheet('⚙️ Настройки', `<ul class="settings">
-      <li><span>🔊 Звук<small>щелчки, монетки, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
+      <li><span>🎵 Музыка<small>своя мелодия на каждый сезон</small></span>${sw('music', sfx.settings.music)}</li>
+      <li class="vol-row"><span>🔈 Громкость музыки</span><input type="range" id="vol" min="0" max="100" step="5" value="${sfx.settings.volume}" aria-label="Громкость музыки"><b id="volNum">${sfx.settings.volume}%</b></li>
+      <li><span>🔊 Звуки<small>вжух, монетки, молоток, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
       <li><span>📳 Вибрация<small>в Telegram на телефоне</small></span>${sw('haptics', prefs.haptics)}</li>
       <li><span>🧑‍🌾 Подсказки фермера<small>${prefs.hints ? 'вкл — важное фермер расскажет по центру экрана' : 'выкл — тапни по фермеру, и он подскажет'}</small></span>${sw('hints', prefs.hints)}</li>
       <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
@@ -677,6 +728,14 @@ function openRules() {
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }
 
+// ползунок громкости: меняем сразу, пока тянут
+layer.addEventListener('input', (e) => {
+  if (e.target.id !== 'vol') return;
+  const v = +e.target.value; sfx.set('volume', v);
+  const n = layer.querySelector('#volNum'); if (n) n.textContent = v + '%';
+  if (v > 0 && !sfx.settings.music) music.enable(true);
+});
+
 /* ================= Кнопки ================= */
 $('#btnBuild').onclick = () => { if (!st) return; haptic(); sfx.click(); $('#btnBuild').classList.remove('glow'); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); };
 $('#btnBook').onclick = () => { if (!st) return; haptic(); sfx.click(); openBook(); };
@@ -696,7 +755,8 @@ async function boot() {
   const saved = await api.loadSave();
   if (saved) profile = { album: {}, introSeen: false, ...saved, game: E.migrate(saved.game) };
   st = profile.game || E.newGame();
-  if (location.hash === '#dev') window.__ferma = { E, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile };
+  st.tzOff = new Date().getTimezoneOffset();
+  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile };
   render();
   say('Привет! Я помогу с фермой.', 'wink');
   showSplash();

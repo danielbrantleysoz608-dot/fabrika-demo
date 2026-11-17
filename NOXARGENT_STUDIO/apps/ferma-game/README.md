@@ -4,6 +4,7 @@
 
 - **План и схема экранов:** [docs/PLAN.md](docs/PLAN.md)
 - **Как создать бота и запустить:** [docs/LAUNCH.md](docs/LAUNCH.md)
+- **Музыка, звуки, шрифты — авторы и лицензии:** [CREDITS.md](CREDITS.md)
 
 ## Что внутри
 
@@ -13,7 +14,9 @@ webapp/            SPA без фреймворков + Telegram WebApp SDK
   js/events.js     19 событий месяца (сезонные, 2 варианта, суммы под размер фермы)
   js/engine.js     логика: реальное время, уровни, цели, капитал (чистые функции)
   js/rating.js     экран рейтинга
-  js/sfx.js        звуки (Web Audio, без файлов)
+  js/sfx.js        звуки действий (синтез Web Audio, без файлов)
+  js/music.js      фоновая музыка: 4 сезонные темы, генерируется кодом
+  js/coach.js      подсказки фермера по центру экрана
   js/scene.js      SVG-сцена фермы, 4 сезона
   js/app.js        экраны, тапы, Telegram, сохранение
   js/api.js        сервер + localStorage

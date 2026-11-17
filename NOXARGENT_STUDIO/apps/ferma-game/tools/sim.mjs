@@ -1,83 +1,117 @@
-// Симуляция баланса v2 (реальное время).
-//   node tools/sim.mjs            — средний игрок + сравнение стилей
-//   node tools/sim.mjs trace      — по шагам: что и когда купил
+// Симуляция баланса (реальное время).
+//   node tools/sim.mjs               — таблица: время до 100 тыс … 1 млрд для 5 типов игроков
+//   node tools/sim.mjs trace [часы]  — что и когда покупает средний игрок
 import * as E from '../webapp/js/engine.js';
-import { BUILDINGS, BUILD_ORDER, MONTH_MS } from '../webapp/js/data.js';
+import { BUILDINGS, BUILD_ORDER } from '../webapp/js/data.js';
 
-const MIN = 60000;
+const MIN = 60000, HOUR = 3600000, DAY = 24 * HOUR;
 const MILESTONES = [1e5, 1e6, 1e7, 1e8, 1e9];
 
-// игрок: tapEvery — как часто заходит и собирает (мс); smart — покупает лучшее по «доход/цена»
-function play(seed, { tapEvery = 30000, hours = 14, trace = false } = {}) {
-  let now = 0;
+// Типы игроков. sessions — расписание (часы суток) для «реального» игрока.
+export const PLAYERS = {
+  active: { name: 'Средний: каждые 30 с', every: 30000 },
+  m5: { name: 'Раз в 5 мин', every: 5 * MIN },
+  m30: { name: 'Раз в 30 мин', every: 30 * MIN },
+  h2: { name: 'Раз в 2 часа', every: 2 * HOUR },
+  real: { name: 'Реальный: 3×15 мин в день', every: 30000, sessions: [8, 13, 20], len: 15 * MIN },
+};
+
+function shop(st, now, trace, log) {
+  // покупки: максимум прироста ₽/мин на рубль; копим на лучшее, если ждать < 3 мин
+  // или оно заметно выгоднее (×1.3) лучшего из доступного
+  for (let guard = 0; guard < 80; guard++) {
+    let best = null, bestV = 0, bestAff = null, bestAffV = 0;
+    for (const id of BUILD_ORDER) {
+      const why = E.canBuy(st, id);
+      if (why && !why.startsWith('не хватает')) continue;
+      const v = E.buyValue(st, id) / E.priceOf(st, id);
+      if (v > bestV) { bestV = v; best = id; }
+      if (!why && v > bestAffV) { bestAffV = v; bestAff = id; }
+    }
+    if (!best) break;
+    let pick = best;
+    if (E.canBuy(st, best)) {
+      const wait = (E.priceOf(st, best) - st.money) / Math.max(1, E.totalRate(st));
+      if (wait < 3 || !bestAff || bestV > 1.3 * bestAffV) break; // копим на заметно более выгодное
+      pick = bestAff;
+    }
+    if (E.buy(st, pick)) break;
+    if (trace) log.push(`${fmtT(now).padStart(12)}  ${BUILDINGS[pick].name} → ур.${st.lv[pick]}  (капитал ${E.fmt(E.capital(st))})`);
+  }
+}
+
+function visit(st, now, r, trace, log) {
+  E.tick(st, now);
+  E.claimLogin(st);
+  E.collectAll(st);
+  E.dailyTasks(st).forEach((t, i) => t.done && !t.claimed && E.claimDaily(st, i));
+  if (st.debt && st.money >= st.debt * 1.2) E.repay(st); // кредит возвращаем, как только хватает
+  shop(st, now, trace, log);
+  if (E.monthReady(st)) {
+    const e = E.endMonth(st);
+    const opts = e.options.map((_, i) => i).filter(i => !E.optionState(st, e, i).why && !(e.id === 'sell_farm' && i === 0));
+    // выбор как у разумного игрока: вариант, после которого через месяц капитал больше
+    let pick = -1, best = -Infinity;
+    for (const i of opts) {
+      const c = structuredClone(st); E.choose(c, i);
+      const v = E.capital(c) + E.totalRate(c) * 15 - (c.debt ? c.debt * 0.05 : 0);
+      if (v > best) { best = v; pick = i; }
+    }
+    E.choose(st, pick);
+  }
+}
+
+export function play(seed, type, { until = 1e9, maxDays = 60, trace = false } = {}) {
+  const P = PLAYERS[type];
+  let now = 8 * HOUR; // игра начинается в 8 утра
   const st = E.newGame(seed, now);
-  // уборка: ~20 тапов за ~40 секунд
   st.trash.forEach(t => E.hitTrash(st, t.id));
   now += 40000; st.lastTick = now;
-  const r = E.rng(seed * 97 + 1);
-  const hit = {};
-  const log = [];
-  while (now < hours * 3600000) {
-    now += tapEvery;
-    E.tick(st, now);
-    E.collectAll(st);
-    // покупки: самое выгодное (прирост ₽/мин на рубль). Если лучшее не по карману —
-    // копим на него, если ждать < 3 мин или оно заметно выгоднее (×1.3) и ждать < часа.
-    for (let guard = 0; guard < 60; guard++) {
-      let best = null, bestV = 0, bestAff = null, bestAffV = 0;
-      for (const id of BUILD_ORDER) {
-        const why = E.canBuy(st, id);
-        if (why && !why.startsWith('не хватает')) continue;
-        const v = E.buyValue(st, id) / E.priceOf(st, id);
-        if (v > bestV) { bestV = v; best = id; }
-        if (!why && v > bestAffV) { bestAffV = v; bestAff = id; }
-      }
-      if (!best) break;
-      let pick = best;
-      if (E.canBuy(st, best)) {
-        const wait = (E.priceOf(st, best) - st.money) / Math.max(1, E.totalRate(st));
-        if (wait < 3 || !bestAff || (bestV > 1.3 * bestAffV && wait < 60)) break; // копим на заметно более выгодное
-        pick = bestAff;
-      }
-      if (E.buy(st, pick)) break;
-      if (trace) log.push(`${(now / MIN).toFixed(1).padStart(6)} мин  ${BUILDINGS[pick].name} → ур.${st.lv[pick]}  (капитал ${E.fmt(E.capital(st))})`);
+  const r = E.rng(seed * 97 + 1), hit = {}, log = [];
+  const start = now;
+  const end = start + maxDays * DAY;
+  const mark = () => { const c = E.ratingCapital(st); for (const m of MILESTONES) if (!hit[m] && c >= m) hit[m] = now - start; };
+  while (now < end && !(hit[until])) {
+    if (P.sessions) {
+      // внутри сессии — каждые 30 с; между сессиями — прыжок к следующей
+      const dayStart = Math.floor(now / DAY) * DAY;
+      const inSession = P.sessions.some(h => now >= dayStart + h * HOUR && now < dayStart + h * HOUR + P.len);
+      if (inSession) { visit(st, now, r, trace, log); mark(); now += P.every; continue; }
+      const next = [...P.sessions.map(h => dayStart + h * HOUR), ...P.sessions.map(h => dayStart + DAY + h * HOUR)].find(t => t > now);
+      now = next; continue;
     }
-    // месяц прошёл → следующий, событие: случайный доступный вариант
-    if (E.monthReady(st)) {
-      const e = E.endMonth(st);
-      const opts = e.options.map((_, i) => i).filter(i => !E.optionState(st, e, i).why && !(e.id === 'sell_farm' && i === 0));
-      E.choose(st, opts.length ? opts[Math.floor(r() * opts.length)] : -1);
-    }
-    const c = E.ratingCapital(st);
-    for (const m of MILESTONES) if (!hit[m] && c >= m) hit[m] = now;
+    visit(st, now, r, trace, log); mark(); now += P.every;
   }
   return { hit, st, log };
 }
 
-const fmtT = (ms) => (ms == null ? '   —   ' : ms < 3600000 ? `${Math.round(ms / MIN)} мин` : `${Math.floor(ms / 3600000)} ч ${String(Math.round(ms % 3600000 / MIN)).padStart(2, '0')} мин`);
-const median = (a) => { const s = a.filter(x => x != null).sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
+export const fmtT = (ms) => {
+  if (ms == null) return '—';
+  if (ms < HOUR) return `${Math.round(ms / MIN)} мин`;
+  if (ms < 2 * DAY) return `${Math.floor(ms / HOUR)} ч ${String(Math.round(ms % HOUR / MIN)).padStart(2, '0')} мин`;
+  const d = ms / DAY;
+  return d < 14 ? `${d.toFixed(1).replace('.', ',')} дн` : `${(d / 7).toFixed(1).replace('.', ',')} нед`;
+};
+const median = (a) => { const s = a.filter(x => x != null).sort((x, y) => x - y); return s.length > a.length / 2 ? s[Math.floor(a.length / 2)] : null; };
 
-if (process.argv[2] === 'trace') {
-  const { log, st } = play(1, { trace: true, hours: +process.argv[3] || 4 });
+const arg = process.argv[2];
+if (arg === 'trace') {
+  const { log, st } = play(1, 'active', { until: 1e12, maxDays: (+process.argv[3] || 6) / 24, trace: true });
   console.log(log.join('\n'));
-  console.log('Итог: месяц', st.month, 'капитал', E.fmt(E.capital(st)));
-} else if (!process.argv[2]) {
-  const styles = [
-    ['Средний: заходит каждые 30 с', 30000],
-    ['Заходит раз в 5 мин', 300000],
-    ['Заходит раз в 30 мин', 1800000],
-    ['Заходит раз в 2 часа', 7200000],
-  ];
-  console.log('Время до капитала (медиана по 40 фермам):\n');
-  console.log('Стиль игры'.padEnd(32), MILESTONES.map(m => (m >= 1e6 ? `${m / 1e6} млн` : `${m / 1e3} тыс`).padStart(12)).join(''));
-  for (const [name, tap] of styles) {
-    const runs = Array.from({ length: 40 }, (_, i) => play(i + 1, { tapEvery: tap, hours: 24 }));
-    console.log(name.padEnd(32), MILESTONES.map(m => fmtT(median(runs.map(x => x.hit[m]))).padStart(12)).join(''));
+  console.log('Итог: месяц', st.month, 'капитал', E.fmt(E.capital(st)), 'доход', E.fmt(E.totalRate(st)), '/мин');
+} else if (!arg || arg === 'table') {
+  const N = +process.argv[3] || 12;
+  const types = process.argv[4] ? process.argv[4].split(',') : Object.keys(PLAYERS);
+  console.log(`Время до капитала (медиана по ${N} фермам, реальное время с начала игры):\n`);
+  console.log('Тип игрока'.padEnd(30), MILESTONES.map(m => (m >= 1e9 ? `${m / 1e9} млрд` : m >= 1e6 ? `${m / 1e6} млн` : `${m / 1e3} тыс`).padStart(11)).join(''));
+  for (const t of types) {
+    const runs = Array.from({ length: N }, (_, i) => play(i + 1, t, { maxDays: 90 }));
+    console.log(PLAYERS[t].name.padEnd(30), MILESTONES.map(m => fmtT(median(runs.map(x => x.hit[m]))).padStart(11)).join(''));
   }
 }
-if (process.argv[2] === 'income') {
-  // доход по постройкам каждые 10 минут
-  const { st: s2 } = play(1, { hours: +process.argv[3] || 1.5 });
-  for (const id of Object.keys(s2.lv).filter(i => BUILDINGS[i].kind === 'prod')) console.log(BUILDINGS[id].name.padEnd(22), 'ур.', s2.lv[id], ' доход/мин сейчас', Math.round(E.rate(s2, id)));
-  console.log('месяц', s2.month, 'итого', Math.round(E.totalRate(s2)), '₽/мин, капитал', E.fmt(E.capital(s2)));
+if (arg === 'income') {
+  for (const h of (process.argv[3] || '1,3,8,24').split(',').map(Number)) {
+    const { st } = play(1, process.argv[4] || 'active', { until: 1e15, maxDays: h / 24 });
+    console.log(`через ${h} ч: капитал ${E.fmt(E.capital(st))}, доход ${E.fmt(E.totalRate(st))}/мин, уровни`, JSON.stringify(st.lv));
+  }
 }

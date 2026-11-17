@@ -2,7 +2,7 @@
 // Время — реальное: продукция копится по минутам, 1 игровой месяц = MONTH_MS.
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
-  LOAN_RATE, LEVEL_INC_MULT, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
+  LOAN_RATE, LEVEL_INC_MULT, STEEP_FROM, STEEP_MULT, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -22,6 +22,13 @@ export function rng(seed) { // mulberry32
   };
 }
 
+// История ограничена (сохранение не должно расти бесконечно)
+const HISTORY_MAX = 150;
+function addHistory(st, entry) {
+  st.history.push(entry);
+  if (st.history.length > HISTORY_MAX) st.history.splice(0, st.history.length - HISTORY_MAX);
+}
+
 /* ---------- Новая игра ---------- */
 export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) {
   return {
@@ -37,6 +44,7 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     usedEvents: [], event: null, report: null,
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
     ledger: [], taps: 0, offline: 0,
+    daily: null, login: null, tzOff: 0,
   };
 }
 
@@ -54,7 +62,7 @@ export function hitTrash(st, id) {
   if (done) {
     st.phase = 'play';
     st.money += SCRAP_BONUS;
-    st.history.push({ m: st.month, t: `Убрали весь хлам. Сдали дедов металлолом: +${fmt(SCRAP_BONUS)}.` });
+    addHistory(st, { m: st.month, t: `Убрали весь хлам. Сдали дедов металлолом: +${fmt(SCRAP_BONUS)}.` });
   }
   return { removed: t.hp <= 0, done, share: trashDef[id].hp / cleanTotal() };
 }
@@ -89,6 +97,7 @@ export function tick(st, now = Date.now()) {
   if (st.phase === 'clean') return { changed: false, offline: 0 };
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
+  newDay(st, now);
   let changed = false;
   for (const id of PRODUCERS) {
     if (!level(st, id)) continue;
@@ -106,21 +115,79 @@ export const unitsReady = (st, id) => Math.floor((st.acc[id] || 0) / BUILDINGS[i
 
 function gain(st, sum) { st.money += sum; st.monthIncome += sum; }
 
+// «Свежий сбор»: то, что созрело за последние 5 минут, идёт с бонусом +20%.
+// Кто собирает часто — получает бонус почти со всего; кто заходит раз в 2 часа — ничего не теряет (склад 2 ч).
+export let lastFresh = 0;
+export const freshShare = (st, id) => { const a = st.acc[id] || 0; return a > 0 ? Math.min(1, rate(st, id) * FRESH_MIN / a) : 0; };
 export function collect(st, id) {
   const amt = ready(st, id);
+  lastFresh = 0;
   if (amt <= 0 || st.phase === 'clean') return 0;
+  const fresh = Math.floor(Math.min(amt, rate(st, id) * FRESH_MIN) * FRESH_BONUS);
   st.acc[id] -= amt;
-  gain(st, amt);
+  gain(st, amt + fresh);
+  lastFresh = fresh;
   st.taps++;
+  dailyProgress(st, 'collect', amt + fresh);
   checkGoals(st);
-  return amt;
+  return amt + fresh;
 }
 export const collectAll = (st) => PRODUCERS.reduce((a, id) => a + collect(st, id), 0);
 
+/* ---------- Ежедневное: задания дня и бонус за вход ---------- */
+// день по местному времени игрока (st.tzOff — смещение в минутах, как Date#getTimezoneOffset)
+export const dayKey = (st, now = Date.now()) => Math.floor((now - (st.tzOff || 0) * 60000) / 86400000);
+export function dailyTasks(st) {
+  const d = st.daily; if (!d) return [];
+  return [
+    { id: 'collect', title: 'Собери урожай 10 раз', have: Math.min(d.collects, 10), need: 10 },
+    { id: 'build', title: 'Построй или улучши 1 постройку', have: Math.min(d.builds, 1), need: 1 },
+    { id: 'sell', title: `Продай урожай на ${fmt(d.sellTarget)}`, have: Math.min(d.sold, d.sellTarget), need: d.sellTarget },
+  ].map((t, i) => ({ ...t, done: t.have >= t.need, claimed: d.claimed[i], reward: d.reward }));
+}
+function newDay(st, now) {
+  const day = dayKey(st, now);
+  if (st.daily?.day === day) return;
+  const S = monthScale(st);
+  st.daily = { day, collects: 0, builds: 0, sold: 0, sellTarget: nice(S * 0.6), reward: nice(S * DAILY_REWARD), claimed: [false, false, false] };
+  // бонус за вход: растёт 7 дней подряд, пропустил день — заново с 1-го
+  // в первый день новой игры бонуса нет — подарок первого дня это стартовые деньги
+  if (!st.login) { st.login = { day, streak: 1, pending: 0 }; return; }
+  const streak = st.login.day === day - 1 ? (st.login.streak % LOGIN_DAYS) + 1 : 1;
+  st.login = { day, streak, pending: nice(S * LOGIN_REWARD * streak) };
+}
+function dailyProgress(st, kind, amount) {
+  const d = st.daily; if (!d) return;
+  if (kind === 'collect') { d.collects++; d.sold += amount; }
+  if (kind === 'build') d.builds += amount;
+}
+export function claimDaily(st, i) {
+  const t = dailyTasks(st)[i];
+  if (!t || !t.done || t.claimed) return 0;
+  st.daily.claimed[i] = true;
+  st.money += t.reward;
+  addHistory(st, { m: st.month, t: `Задание дня «${t.title}»: +${fmt(t.reward)}.` });
+  checkGoals(st);
+  return t.reward;
+}
+export function claimLogin(st) {
+  const p = st.login?.pending || 0;
+  if (!p) return 0;
+  st.login.pending = 0;
+  st.money += p;
+  addHistory(st, { m: st.month, t: `Бонус за вход, день ${st.login.streak}: +${fmt(p)}.` });
+  checkGoals(st);
+  return p;
+}
+
 /* ---------- Стройка и улучшения ---------- */
+// множитель цены уровня: ×1.6 (у прилавка/марки свой), а после STEEP_FROM — круче
+export const levelMult = (b, i) => (b.costMult || LEVEL_COST_MULT) * (i >= (b.steepFrom ?? STEEP_FROM) ? STEEP_MULT / LEVEL_COST_MULT : 1);
+// цена перехода с уровня L на L+1
+export function costAt(b, L) { let p = b.cost; for (let i = 0; i < L; i++) p *= levelMult(b, i); return p; }
 export function priceOf(st, id) {
   const b = BUILDINGS[id], L = level(st, id);
-  let p = b.cost * (b.costMult || LEVEL_COST_MULT) ** L;
+  let p = costAt(b, L);
   const disc = st.flags.disc?.[id];
   if (disc) p *= 1 - disc;
   return Math.round(p);
@@ -130,8 +197,9 @@ export function buildingsValue(st) {
   let v = 0;
   for (const id of Object.keys(st.lv)) {
     const b = BUILDINGS[id], L = level(st, id);
-    const k = b.costMult || LEVEL_COST_MULT;
-    v += b.kind === 'once' ? b.cost * L : b.cost * (k ** L - 1) / (k - 1);
+    if (b.kind === 'once') { v += b.cost * L; continue; }
+    let p = b.cost;
+    for (let i = 0; i < L; i++) { v += p; p *= levelMult(b, i); }
   }
   return v;
 }
@@ -153,8 +221,9 @@ export function buy(st, id) {
   st.money -= p;
   st.lv[id] = level(st, id) + 1;
   if (st.flags.disc?.[id]) delete st.flags.disc[id];
+  dailyProgress(st, 'build', 1);
   const L = st.lv[id], b = BUILDINGS[id];
-  st.history.push({ m: st.month, t: L === 1 ? `Построили: ${b.name} (${fmt(p)}).` : `${b.name}: уровень ${L} (${fmt(p)}).` });
+  addHistory(st, { m: st.month, t: L === 1 ? `Построили: ${b.name} (${fmt(p)}).` : `${b.name}: уровень ${L} (${fmt(p)}).` });
   checkGoals(st);
   return null;
 }
@@ -183,7 +252,7 @@ export function repay(st) {
   if (!st.debt) return 'долгов нет';
   if (st.money < st.debt) return 'не хватает ' + fmt(st.debt - st.money);
   st.money -= st.debt;
-  st.history.push({ m: st.month, t: `Вернули кредит ${fmt(st.debt)}.` });
+  addHistory(st, { m: st.month, t: `Вернули кредит ${fmt(st.debt)}.` });
   st.debt = 0;
   return null;
 }
@@ -205,7 +274,7 @@ export function checkGoals(st) {
   let reached = false;
   while (ratingCapital(st) >= goalOf(st.tier)) {
     grantAch(st, goalAchievement(st.tier));
-    st.history.push({ m: st.month, t: `Цель достигнута: ${tierName(st.tier)}! Открыты новые постройки.` });
+    addHistory(st, { m: st.month, t: `Цель достигнута: ${tierName(st.tier)}! Открыты новые постройки.` });
     st.tier++;
     reached = true;
   }
@@ -223,7 +292,7 @@ export function skipMonth(st) {
   if (st.money < c) return 'не хватает ' + fmt(c - st.money);
   st.money -= c;
   st.monthMs = MONTH_MS;
-  st.history.push({ m: st.month, t: `Поторопили время за ${fmt(c)}.` });
+  addHistory(st, { m: st.month, t: `Поторопили время за ${fmt(c)}.` });
   return null;
 }
 
@@ -285,7 +354,10 @@ export function choose(st, i) {
   const log = [];
   const text = o.effect(st, helpers(st, log)); // событие действует на новый месяц
   st.usedEvents.push(eventKey(e, st));
-  st.history.push({ m: st.month, t: `${stripTags(e.title)}: ${o.label.toLowerCase()}. ${text}` });
+  // помним события только этого года (и разовые) — иначе список растёт бесконечно
+  const y = yearOf(st.month);
+  st.usedEvents = st.usedEvents.filter(k => !k.includes('@') || +k.split('@')[1] >= y);
+  addHistory(st, { m: st.month, t: `${stripTags(e.title)}: ${o.label.toLowerCase()}. ${text}` });
   report.event = { title: stripTags(e.title), choice: o.label, text, log };
   report.after = Math.round(st.money);
   report.capital = capital(st);
@@ -314,7 +386,7 @@ function closeMonth(st) {
   st.money -= expense;
   if (m % 12 === 9 && level(st, 'apiary') > 1 && !level(st, 'omshanik')) {
     notes.push('Без омшаника пчёлы замёрзли — пасека откатилась на 1-й уровень.');
-    st.history.push({ m, t: 'Пасека замёрзла без омшаника.' });
+    addHistory(st, { m, t: 'Пасека замёрзла без омшаника.' });
     st.lv.apiary = 1;
   }
   st.ledger.push({ m, income, expense, money: Math.round(st.money) });

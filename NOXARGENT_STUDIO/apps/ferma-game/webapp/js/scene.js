@@ -530,14 +530,16 @@ const READY_ICON = {
   factory: '<rect x="-6" y="-5" width="12" height="10" fill="#8f9aa5" stroke="#3b2a1f" stroke-width="1.4"/>',
 };
 const kfmt = (a) => (a >= 1e9 ? (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? Math.round(a / 1e3) + 'к' : a >= 1000 ? (a / 1e3).toFixed(1) + 'к' : a).toString().replace('.', ',');
-function readyBadge(id, amount) {
+function readyBadge(id, amount, fresh) {
   amount = kfmt(amount);
   const [x, y] = READY_POS[id];
-  return `<g class="ready" data-tap="bld" data-id="${id}" transform="translate(${x} ${y})">
+  // «свежее»: созрело за последние 5 минут — собери сейчас и получи +20%
+  const star = fresh ? '<g class="fresh-star"><path d="M22 -16 l2.5 5 5.5 .8 -4 3.9 1 5.5 -5 -2.6 -5 2.6 1 -5.5 -4 -3.9 5.5 -.8z" fill="#ffe24a" stroke="#b8801a" stroke-width="1.4"/></g>' : '';
+  return `<g class="ready${fresh ? ' fresh' : ''}" data-tap="bld" data-id="${id}" transform="translate(${x} ${y})">
     <g class="bob"><path d="M0 16 l-6 -8 h12z" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="1.8"/>
     <rect x="-24" y="-14" width="48" height="24" rx="12" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="2"/>
     <g transform="translate(-11 -2)">${READY_ICON[id]}</g>
-    <text x="9" y="3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="800" font-size="11" fill="#e8891a">${amount}</text></g></g>`;
+    <text x="9" y="3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="800" font-size="11" fill="#e8891a">${amount}</text>${star}</g></g>`;
 }
 
 /* ---------- Сборка сцены ---------- */
@@ -591,7 +593,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
   let r = '';
   if (clean) for (const id of Object.keys(READY_POS)) {
     const amt = Math.floor(st.stock[id] || 0);
-    if (b[id] && amt > 0) r += readyBadge(id, amt);
+    if (b[id] && amt > 0) r += readyBadge(id, amt, st.fresh?.[id]);
   }
   const rl = svg.querySelector('#ready');
   if (rl.dataset.html !== r) { rl.innerHTML = r; rl.dataset.html = r; }
