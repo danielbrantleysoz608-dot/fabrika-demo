@@ -59,7 +59,7 @@ const always = () => 1;
 const months = (from, to, k = 1) => (m) => (m >= from && m <= to ? k : 0);
 export const BUILDINGS = {
   coop:       { kind: 'prod', name: 'Курятник', cost: 450, inc: 640, unit: 'яиц', price: 12, tier: 0, max: 10,
-                season: (m) => (m >= 9 ? 0.5 : 1), seasonText: 'круглый год, зимой вдвое меньше',
+                season: (m) => (m >= 9 ? 0.5 : m === 0 ? 0.55 : 1), seasonText: 'круглый год; в марте и зимой несутся хуже',
                 desc: 'Куры несут яйца. Каждый уровень — +10 кур и быстрее.' },
   stall:      { kind: 'boost', name: 'Прилавок у дороги', cost: 6000, boost: 0.05, costMult: 2, tier: 0, max: 10,
                 desc: '«ЯЙЦА деревенские». Каждый уровень — +5% ко всему доходу.' },
@@ -67,7 +67,7 @@ export const BUILDINGS = {
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Грядки на дедовом поле.' },
   fence:      { kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
   greenhouse: { kind: 'prod', name: 'Теплица из окон деда', cost: 3000, inc: 600, unit: 'кг', price: 60, tier: 0, max: 10,
-                season: (m, st) => (m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь, зимой — с печкой',
+                season: (m, st) => (m === 0 ? 0.55 : m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь (в марте разогревается), зимой — с печкой',
                 desc: 'Дед хранил старые рамы. Собираем из них теплицу!' },
   stove:      { kind: 'once', name: 'Печка в теплицу', cost: 30000, tier: 0, requires: 'greenhouse',
                 desc: 'Буржуйка: зимой теплица работает и даёт ×1.5 (огурцы втридорога).' },

@@ -27,6 +27,9 @@ const notify = (t) => prefs.haptics && tg?.HapticFeedback?.notificationOccurred?
 const SKY = { early: '#6db8ef', spring: '#55b0f1', summer: '#35a6f3', autumn: '#79b4dd', late: '#8fb0c8', winter: '#8eb0cc' };
 const TRASH_DEF = Object.fromEntries(TRASH.map(t => [t.id, t]));
 const n = (x) => Math.round(x).toLocaleString('ru-RU');
+// «с мая»: месяц в родительном падеже (номер 0…11, 0 = март)
+const MONTH_GEN = ['марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря', 'января', 'февраля'];
+const waitText = (w) => (w.minutes === Infinity ? 'нужна печка' : w.minutes < 60 ? `через ≈${w.minutes} мин` : `через ≈${Math.floor(w.minutes / 60)} ч ${w.minutes % 60} мин`);
 const cap1 = (s) => s[0].toUpperCase() + s.slice(1);
 // 1 250 000 → «1,25 млн»
 function short(x, cur = ' ₽') {
@@ -346,6 +349,8 @@ layer.addEventListener('click', (e) => {
 
 const ACTIONS = {
   buy: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } doBuy(id); },
+  buyAnyway: (id) => doBuy(id, true),
+  backToBuild: () => openBuild(),
   tab: (id) => openBook(id),
   repay: () => { const why = E.repay(st); if (why) return toast(why); notify('success'); render(); persist(); openBook('costs'); say('Долг вернули! Теперь спим спокойно.', 'happy'); },
   opt: (id) => pickOption(+id),
@@ -399,8 +404,8 @@ function startOrContinue() {
   newGame();
 }
 function confirmNew() {
-  openLayer(`<div class="dialog"><h3>Начать заново?</h3><p>Текущая ферма (год ${yearOf(profile.game.month)}, капитал ${short(E.capital(profile.game))}) будет потеряна. Открытки останутся, в рейтинге останется лучший результат.</p>
-    <div class="row"><button class="btn wide" data-act="splash">Нет</button><button class="btn primary wide" data-act="newyes">Да, заново</button></div></div>`, 'screen dim', true);
+  openLayer(`<div class="dialog"><h3>Точно начать заново?</h3><p><b>Прогресс пропадёт:</b> ферма (год ${yearOf(profile.game.month)}, капитал ${short(E.capital(profile.game))}) начнётся с нуля. Открытки останутся, в рейтинге останется лучший результат.</p>
+    <div class="row"><button class="btn primary wide" data-act="splash">Нет, играть дальше</button><button class="btn wide danger" data-act="newyes">Да, заново</button></div></div>`, 'screen dim', true);
   layer.dataset.kind = 'intro';
 }
 
@@ -471,7 +476,12 @@ function card(id) {
   let stats = '';
   if (b.kind === 'prod') {
     const next = (E.baseIncome(id, L + 1) - E.baseIncome(id, L)) * k;
-    stats = `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.baseIncome(id, 1) * k)}/мин`}</span>${L && L < max ? `<span class="tag inc">+${short(next)}/мин за уровень</span>` : ''}<span class="tag">${b.seasonText}</span>`;
+    const w = E.seasonWait(st, id);
+    const waiting = w && w.months > 0;
+    const nowTag = waiting
+      ? `<span class="tag wait">🌱 ${L ? 'ждёт сезона — ' : ''}с ${MONTH_GEN[w.month]}${w.minutes !== Infinity ? ` (${waitText(w)})` : ''}</span>`
+      : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.baseIncome(id, 1) * k)}/мин`}</span>`;
+    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.baseIncome(id, 1) * k)}/мин в сезон</span>` : ''}${L && L < max ? `<span class="tag inc">+${short(next)}/мин за уровень</span>` : ''}<span class="tag">${b.seasonText}</span>`;
   } else if (b.kind === 'boost') {
     stats = `<span class="tag inc">сейчас +${Math.round(b.boost * L * 100)}% ко всему</span><span class="tag">+${Math.round(b.boost * 100)}% за уровень</span>`;
   }
@@ -501,8 +511,18 @@ function openBuilding(id) {
     <button class="btn wide" data-act="close">Закрыть</button>`, 'building');
 }
 
-function doBuy(id) {
+function doBuy(id, sure = false) {
   const firstTime = !E.level(st, id);
+  // сезонная постройка вне сезона — предупреждаем перед покупкой
+  const w = E.seasonWait(st, id);
+  if (firstTime && !sure && w && w.months > 0) {
+    openLayer(`<div class="dialog"><h3>🌱 ${BUILDINGS[id].name} — не сезон</h3>
+      <p>Начнёт приносить <b>с ${MONTH_GEN[w.month]}</b>${w.minutes !== Infinity ? ` (${waitText(w)})` : ''}. До этого урожая не будет.</p>
+      <p>Можно построить сейчас — или подождать и потратить деньги на то, что приносит уже сегодня.</p>
+      <div class="row"><button class="btn wide" data-act="backToBuild">Подожду</button><button class="btn primary wide" data-act="buyAnyway" data-id="${id}">Построить · ${short(E.priceOf(st, id))}</button></div></div>`, 'screen dim keep-ui', true);
+    layer.dataset.kind = 'season-warn';
+    return;
+  }
   const err = E.buy(st, id);
   if (err) return toast(err);
   notify('success'); sfx.build();

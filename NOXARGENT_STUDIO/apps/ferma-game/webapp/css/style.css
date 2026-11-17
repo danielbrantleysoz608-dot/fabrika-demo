@@ -447,3 +447,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* окно поверх, но нижняя панель и фермер видны (просто затемнены) */
 #layer.keep-ui { background: rgba(40,28,20,.5); padding-bottom: calc(96px + var(--safe-bot)); }
 .btn.wide.skip-btn { flex-direction: column; gap: 0; line-height: 1.15; }
+
+/* ===== Сезон и заставка ===== */
+.tag.wait { background: #e6f3d6; color: #4a7a2a; }
+/* «Начать заново» выше системной полоски телефона */
+.screen > .splash { padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px)); }
+.splash .btn.ghost { margin-top: 6px; min-height: 48px; }

@@ -257,6 +257,19 @@ export function repay(st) {
   return null;
 }
 
+/* ---------- Сезонность построек ---------- */
+// Через сколько месяцев постройка начнёт приносить (0 — уже сезон) и примерное время ожидания
+export function seasonWait(st, id) {
+  const b = BUILDINGS[id];
+  if (b.kind !== 'prod') return null;
+  for (let k = 0; k < 12; k++) {
+    if (b.season((st.month + k) % 12, st) > 0) {
+      return { months: k, month: (st.month + k) % 12, minutes: k ? Math.ceil(monthLeft(st) / 60000 + (k - 1) * MONTH_MS / 60000) : 0 };
+    }
+  }
+  return { months: 12, month: st.month % 12, minutes: Infinity };
+}
+
 /* ---------- Капитал, цели, рейтинг ---------- */
 export const capital = (st) => Math.round(st.money - st.debt + buildingsValue(st));
 // В рейтинг идёт капитал БЕЗ монет, купленных за Telegram Stars
