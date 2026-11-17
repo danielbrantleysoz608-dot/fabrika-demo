@@ -47,10 +47,15 @@ function view() {
   const stock = {}, built = {};
   for (const id of Object.keys(st.lv)) if (st.lv[id] > 0) built[id] = true;
   const fresh = {};
-  for (const id of E.PRODUCERS) { stock[id] = E.unitsReady(st, id); fresh[id] = stock[id] > 0 && E.freshShare(st, id) >= 0.99; }
+  const full = {};
+  for (const id of E.PRODUCERS) {
+    stock[id] = E.unitsReady(st, id);
+    fresh[id] = stock[id] > 0 && E.freshShare(st, id) >= 0.99;
+    full[id] = stock[id] > 0 && (st.acc[id] || 0) >= E.storageCap(st, id) * 0.98; // склад полон — пузырь мигает
+  }
   return {
     month: st.month, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
-    clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh,
+    clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
     canBuild: st.phase !== 'clean',
@@ -178,19 +183,12 @@ function toast(text) {
 }
 
 /* ================= Тапы по сцене ================= */
-// Тап по ферме: палец опустили и подняли почти на том же месте (если листали — это не тап).
-// Цель запоминаем при касании: так анимации построек не уводят её из-под пальца.
-let downAt = null;
+// Мгновенный отклик: действие — сразу в момент касания (pointerdown), не ждём отпускания пальца.
+// Так тап не теряется, если палец чуть сдвинулся или пузырь урожая как раз перерисовался.
 svg.addEventListener('pointerdown', (e) => {
-  if (e.button > 0) return;
-  downAt = { x: e.clientX, y: e.clientY, t: Date.now(), el: e.target.closest('[data-tap]') };
-});
-svg.addEventListener('pointercancel', () => { downAt = null; });
-svg.addEventListener('pointerup', (e) => {
-  const d = downAt; downAt = null;
-  if (!d || !st || !d.el || coach.isOpen()) return;
-  if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 12 || Date.now() - d.t > 800) return;
-  const el = d.el;
+  if (e.button > 0 || !st || coach.isOpen()) return;
+  const el = e.target.closest('[data-tap]');
+  if (!el) return;
   const { tap, id } = el.dataset;
   if (tap === 'trash') return hitTrash(id);
   if (tap === 'slot') { haptic(); sfx.click(); return openBuilding(id); }
@@ -228,6 +226,7 @@ function collect(id) {
   const amt = E.collect(st, id);
   if (!pos || amt <= 0) { haptic(); return openBuilding(id); } // нечего собирать — открываем карточку улучшения
   const fresh = E.lastFresh;
+  flyToMoney(id, `+${short(amt)}`);
   haptic('medium');
   if (fresh > 0 && fresh >= amt * 0.15) sfx.fresh(); else sfx.coin();
   render('ready');
@@ -236,6 +235,23 @@ function collect(id) {
   updateDots();
   afterGain();
   persist();
+}
+
+// «+N ₽» вылетает от пузыря к счётчику денег
+function flyToMoney(id, text) {
+  const from = svg.querySelector(`#ready [data-id="${id}"] .pill`) || svg.querySelector(`#${id}`);
+  const to = $('#money');
+  if (!from || !to) return;
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect(), app = $('#app').getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = 'fly-coin'; el.textContent = text;
+  el.style.left = (a.left + a.width / 2 - app.left) + 'px'; el.style.top = (a.top + a.height / 2 - app.top) + 'px';
+  $('#app').appendChild(el);
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.style.transform = `translate(${b.left + b.width / 2 - a.left - a.width / 2}px, ${b.top + b.height / 2 - a.top - a.height / 2}px) scale(.7)`;
+    el.style.opacity = '0.2';
+  }));
+  setTimeout(() => { el.remove(); to.parentElement.classList.remove('bump-chip'); void to.offsetWidth; to.parentElement.classList.add('bump-chip'); }, 620);
 }
 
 /* ================= Реальное время ================= */
@@ -283,9 +299,18 @@ function afterGain() {
 
 /* ================= Слои-оверлеи ================= */
 const layer = $('#layer');
+// Кнопки, которые всегда на месте (нижняя панель, быстрые сверху): срабатывают на касание.
+// click оставлен для мыши/клавиатуры, но не дублирует касание.
+function fastTap(el, fn) {
+  let last = 0;
+  el.addEventListener('pointerdown', (e) => { if (e.button > 0) return; last = Date.now(); fn(e); });
+  el.addEventListener('click', (e) => { if (Date.now() - last < 700) return; fn(e); });
+}
+
+// keep-ui: окно поверх, но нижняя панель и фермер остаются на месте (фон затемнён)
 function openLayer(html, cls = 'sheet-wrap', back = true) {
   layer.className = cls;
-  $('#app').classList.toggle('covered', cls.startsWith('screen'));
+  $('#app').classList.toggle('covered', cls.startsWith('screen') && !cls.includes('keep-ui'));
   $('#app').classList.toggle('bare', cls === 'screen');
   layer.innerHTML = html;
   layer.hidden = false;
@@ -307,8 +332,10 @@ tg?.BackButton.onClick(() => {
 });
 const sheet = (title, body, kind) => { openLayer(`<div class="sheet"><div class="grab"></div><h2>${title}</h2>${body}</div>`); layer.dataset.kind = kind; };
 
+// нажатие считается, только если палец опустили уже на открытом окне (нет «призрачных» кликов)
+layer.addEventListener('pointerdown', () => { layer.dataset.down = Date.now(); });
 layer.addEventListener('click', (e) => {
-  if (Date.now() - (+layer.dataset.opened || 0) < 300) return; // «призрачный» клик после касания
+  if ((+layer.dataset.down || 0) < (+layer.dataset.opened || 0) && e.pointerType !== '' && e.detail !== 0) return;
   const a = e.target.closest('[data-act]');
   if (e.target === layer && layer.classList.contains('sheet-wrap')) return closeLayer();
   if (!a) return;
@@ -537,15 +564,17 @@ function nextMonth() {
   important(`Наступил <b>${nm.toLowerCase()}</b>! А на ферме — «${e.title.replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
 }
 function askSkip() {
-  const cost = E.skipCost(st), left = E.monthLeft(st);
+  const cost = E.skipCost(st), left = E.monthLeft(st), lack = Math.max(0, cost - st.money);
   openLayer(`<div class="dialog"><h3>Месяц ещё идёт</h3>
     <p>До конца месяца — <b>${mmss(left)}</b>. Постройки работают — собирай урожай!</p>
     <p>Можно поторопить время за <b>${short(cost)}</b>. Продукция за пропущенное время не накопится.</p>
-    <div class="row"><button class="btn wide" data-act="close">Подожду</button><button class="btn primary wide" data-act="skip">⏩ ${short(cost)}</button></div>
-    <p class="note">Ускорение — только за монеты фермы. На рейтинг не влияет.</p></div>`, 'screen dim', true);
+    <div class="row"><button class="btn wide" data-act="close">Подожду</button>
+      <button class="btn primary wide skip-btn ${lack ? 'off' : ''}" data-act="skip" ${lack ? 'aria-disabled="true"' : ''}>⏩ ${short(cost)}${lack ? `<small>не хватает ${short(lack)}</small>` : ''}</button></div>
+    <p class="note">Ускорение — только за монеты фермы. На рейтинг не влияет.</p></div>`, 'screen dim keep-ui', true);
   layer.dataset.kind = 'skip';
 }
 function doSkip() {
+  if (st.money < E.skipCost(st)) { haptic('rigid'); sfx.error(); return toast(`Не хватает ${short(E.skipCost(st) - st.money)}`); }
   const err = E.skipMonth(st);
   if (err) { sfx.error(); return toast(cap1(err)); }
   closeLayer(); persist(true); nextMonth();
@@ -688,7 +717,7 @@ $('#farmInfo').addEventListener('click', (e) => {
 });
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
-$('#quick').addEventListener('click', (e) => {
+fastTap($('#quick'), (e) => {
   const b = e.target.closest('[data-q]');
   if (!b || !st) return;
   haptic(); sfx.click();
@@ -737,9 +766,9 @@ layer.addEventListener('input', (e) => {
 });
 
 /* ================= Кнопки ================= */
-$('#btnBuild').onclick = () => { if (!st) return; haptic(); sfx.click(); $('#btnBuild').classList.remove('glow'); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); };
-$('#btnBook').onclick = () => { if (!st) return; haptic(); sfx.click(); openBook(); };
-$('#btnNext').onclick = () => { if (!st) return; haptic('medium'); sfx.click(); nextMonth(); };
+fastTap($('#btnBuild'), () => { if (!st) return; haptic(); sfx.click(); $('#btnBuild').classList.remove('glow'); if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500); openBuild(); });
+fastTap($('#btnBook'), () => { if (!st) return; haptic(); sfx.click(); openBook(); });
+fastTap($('#btnNext'), () => { if (!st) return; haptic('medium'); sfx.click(); nextMonth(); });
 $('#farmer').onclick = () => { if (!st) return; haptic(); forceSay = true; hint(); forceSay = false; };
 $('.goal').onclick = () => st && toast(`Капитал ${short(E.ratingCapital(st))}: деньги + постройки − долг`);
 

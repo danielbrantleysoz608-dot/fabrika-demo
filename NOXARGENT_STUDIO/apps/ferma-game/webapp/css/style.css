@@ -431,3 +431,19 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .lb-day.now { background: #fff5d6; border-color: var(--gold); animation: pop .5s; }
 .vol-row input[type=range] { flex: 1; min-width: 0; accent-color: var(--btn); height: 28px; }
 .vol-row b { min-width: 42px; text-align: right; color: var(--gold); }
+
+/* ===== Отклик на тапы, сбор, пузыри ===== */
+#scene [data-tap], .qbtn, .dock .btn { touch-action: manipulation; -webkit-user-select: none; user-select: none; }
+#ready .hit { pointer-events: all; }
+#ready .full .bob { animation: bob 1.4s ease-in-out infinite, blink .8s steps(2, start) infinite; }
+@keyframes blink { 50% { opacity: .45 } }
+.fly-coin { position: absolute; z-index: 60; transform: translate(0, 0); margin: -12px 0 0 -30px; padding: 3px 8px; border-radius: 12px; background: #fff5d6;
+  border: 2px solid #e8a21a; color: #c47a0e; font-weight: 900; font-size: 14px; white-space: nowrap; pointer-events: none;
+  transition: transform .6s cubic-bezier(.45,-0.2,.6,1), opacity .6s ease-in; box-shadow: 0 2px 0 rgba(59,42,31,.25); }
+.chip.bump-chip { animation: chipBump .35s; }
+@keyframes chipBump { 50% { transform: scale(1.12); } }
+.skip-btn small { display: block; font-size: 11px; font-weight: 800; }
+.skip-btn.off { background: #c9bfae; border-color: #9c8f7a; box-shadow: 0 4px 0 #9c8f7a; color: #fff; }
+/* окно поверх, но нижняя панель и фермер видны (просто затемнены) */
+#layer.keep-ui { background: rgba(40,28,20,.5); padding-bottom: calc(96px + var(--safe-bot)); }
+.btn.wide.skip-btn { flex-direction: column; gap: 0; line-height: 1.15; }
