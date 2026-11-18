@@ -626,6 +626,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       if (b.apiary) s += apiary(m, st);
       if (b.stall) s += stall(m);
       if (st.fox) s += fox();
+      if (st.dog) s += puppy(st.dog);
       if (clean && st.canBuild) s += orderBoard(st);
     } else s += LOC_OBJ[loc](m, st);
     svg.querySelector('#far').innerHTML = '';
@@ -913,3 +914,30 @@ for (const [id, p] of Object.entries(LOC_POS)) {
   LEVEL_POS[id] = p.level;
 }
 READY_EMOJI.cowshed = '🥛'; READY_EMOJI.mill = '🥖'; READY_EMOJI.cafe = '🥧'; READY_EMOJI.elevator = '🌾'; READY_EMOJI.tractor = '🌾'; READY_EMOJI.shop = '📦';
+
+
+/* ---------- Щенок у крыльца ---------- */
+function puppy(d) {
+  // d: { name, boosted, canPet }
+  return `<g id="dog" data-tap="dog" class="${d.boosted ? 'dog-happy' : ''}"><g transform="translate(166 400)">
+    <ellipse cx="0" cy="16" rx="24" ry="4" fill="#000" opacity=".15"/>
+    <path class="dog-tail" d="M18 2 q12 -10 8 -18" stroke="#3b2a1f" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <path class="dog-tail" d="M18 2 q12 -10 8 -18" stroke="#d99a55" stroke-width="4" stroke-linecap="round" fill="none"/>
+    <ellipse cx="4" cy="4" rx="18" ry="11" fill="#d99a55" stroke="#3b2a1f" stroke-width="2"/>
+    <ellipse cx="6" cy="8" rx="9" ry="5" fill="#fbe3bf"/>
+    <rect x="-10" y="8" width="6" height="9" rx="3" fill="#d99a55" stroke="#3b2a1f" stroke-width="1.6"/>
+    <rect x="12" y="8" width="6" height="9" rx="3" fill="#d99a55" stroke="#3b2a1f" stroke-width="1.6"/>
+    <g class="dog-head"><circle cx="-14" cy="-6" r="12" fill="#d99a55" stroke="#3b2a1f" stroke-width="2"/>
+      <path d="M-24 -14 q-8 6 -4 16 q6 -2 8 -10z" fill="#9b5f2c" stroke="#3b2a1f" stroke-width="1.6"/>
+      <path d="M-6 -15 q8 4 6 14 q-6 -2 -9 -9z" fill="#9b5f2c" stroke="#3b2a1f" stroke-width="1.6"/>
+      <ellipse cx="-20" cy="-1" rx="6" ry="4.5" fill="#fbe3bf"/>
+      <circle cx="-24" cy="-3" r="2.4" fill="#2a1d16"/>
+      ${d.boosted ? '<path d="M-19 -9 q2 -3 4 0 M-12 -9 q2 -3 4 0" stroke="#2a1d16" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M-22 2 q2 5 5 1" fill="#e8607a" stroke="#3b2a1f" stroke-width="1"/>'
+        : '<circle cx="-17" cy="-8" r="2" fill="#2a1d16"/><circle cx="-10" cy="-8" r="2" fill="#2a1d16"/>'}
+    </g>
+    <rect x="-22" y="-28" width="44" height="40" fill="transparent"/>
+    ${d.canPet ? '<g class="dog-ask"><circle cx="-14" cy="-30" r="11" fill="#fff" stroke="#e8607a" stroke-width="2"/><text x="-14" y="-25" text-anchor="middle" font-size="13">💗</text></g>' : ''}
+    ${d.boosted ? '<g class="hearts"><text x="-30" y="-24" font-size="12">💕</text><text x="6" y="-30" font-size="10">💗</text></g>' : ''}
+  </g></g>`;
+}
+const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));

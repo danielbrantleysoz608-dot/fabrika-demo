@@ -138,6 +138,12 @@ export const CLIENTS = [
   { id: 'store', name: 'Магазин в селе',   emoji: '🏪', mult: 1.35 },
 ];
 export const ORDER_SLOTS = 3;
+// Рыбалка и щенок
+export const FISH_PER_DAY = 3;                 // не чаще 3 раз в день
+export const FISH_GAME_MS = 20000;             // 20 секунд на заход
+export const DOG_PET_MS = 4 * 3600000;         // погладить — раз в 4 часа
+export const DOG_BOOST_MS = 30 * 60000;        // бонус держится 30 минут
+export const DOG_BONUS = 0.1;                  // +10% к доходу
 export const ORDER_REFILL_MIN = [2, 5];     // новый заказ после выполнения — через 2–5 мин
 export const ORDER_DECLINE_MIN = 10;        // после отказа — через 10 мин
 // Уровень фермы: опыт (⭐) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n

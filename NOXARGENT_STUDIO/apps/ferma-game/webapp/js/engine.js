@@ -3,6 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
+  FISH_PER_DAY, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -87,6 +88,7 @@ export function globalMult(st, withMods = true) {
   k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
   if (withMods) {
     k *= st.mods.sales ?? 1;
+    if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
     if (st.flags.contract) k *= 1.3;
   }
   return k;
@@ -105,6 +107,7 @@ export function tick(st, now = Date.now()) {
   const real = Math.max(0, now - st.lastTick);
   st.lastTick = now;
   if (st.phase === 'clean') return { changed: false, offline: 0 };
+  st.playMs = (st.playMs || 0) + Math.min(real, 60000); // время в игре (офлайн не считается) — для соседа
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
@@ -231,6 +234,68 @@ export const unlockedAt = (n) => Object.keys(BUILDINGS).filter(id => BUILDINGS[i
 
 /* ---------- Доска заказов ---------- */
 export const productPrice = (p) => PRODUCTS[p]?.price || 1;
+// рыба своя, не с постройки: одна рыбина стоит ~минуту дохода фермы (но не дешевле базовой цены)
+export const itemPrice = (st, p) => (p === 'fish' ? Math.max(PRODUCTS.fish.price, Math.round(totalRate(st))) : productPrice(p));
+
+/* ---------- Рыбалка, щенок, сосед ---------- */
+export const fishLeft = (st, now = Date.now()) => (st.fishing?.day === dayKey(st, now) ? Math.max(0, FISH_PER_DAY - st.fishing.n) : FISH_PER_DAY);
+export function startFishing(st, now = Date.now()) {
+  if ((st.tier || 0) < 1) return 'пруд — в локации «Река и луг»';
+  if (!fishLeft(st, now)) return 'рыбалка — не больше 3 раз в день. Приходи завтра!';
+  const day = dayKey(st, now);
+  st.fishing = { day, n: st.fishing?.day === day ? st.fishing.n + 1 : 1 };
+  return null;
+}
+export function catchFish(st, n) {
+  if (n <= 0) return { units: 0, value: 0, sold: 0 };
+  const r = addProduct(st, 'fish', n);
+  addXp(st, n);
+  addHistory(st, { m: st.month, t: `🎣 Рыбалка: поймано ${n} 🐟.` });
+  checkGoals(st);
+  return { ...r, sold: (n - r.units) * itemPrice(st, 'fish') };
+}
+export const hasDog = (st) => !!st.dog?.name;
+export const needDogName = (st) => (st.house || 0) >= 3 && !st.dog?.name;
+export function nameDog(st, name) { st.dog = { name: String(name).trim().slice(0, 16) || 'Шарик', petAt: 0, boostUntil: 0 }; }
+export const petLeft = (st, now = Date.now()) => Math.max(0, (st.dog?.petAt || 0) + DOG_PET_MS - now);
+export function petDog(st, now = Date.now()) {
+  if (!hasDog(st) || petLeft(st, now) > 0) return false;
+  st.dog.petAt = now; st.dog.boostUntil = now + DOG_BOOST_MS;
+  addXp(st, 3);
+  return true;
+}
+// Сосед-соперник: капитал растёт по своей кривой от времени в игре (как у среднего игрока ×0.93)
+const NB = [[0, 1e4], [40, 1e5], [190, 1e6], [1700, 1e7], [8600, 1e8], [29000, 1e9]];
+export function neighborCap(st) {
+  const t = (st.playMs || 0) / 60000;
+  let v;
+  if (t >= NB[NB.length - 1][0]) v = 1e9 * 10 ** ((t - 29000) / 25000);
+  else {
+    let i = 0; while (t > NB[i + 1][0]) i++;
+    const [t0, a] = NB[i], [t1, b] = NB[i + 1];
+    v = a * (b / a) ** ((t - t0) / (t1 - t0));
+  }
+  return Math.round(v * 0.93);
+}
+// перегнал соседа / отстал: возвращает событие один раз при смене лидера
+export function neighborCheck(st, now = Date.now()) {
+  if (st.phase === 'clean') return null;
+  const me = ratingCapital(st), nb = neighborCap(st);
+  const ahead = me > nb;
+  if (!st.nb) { st.nb = { ahead, at: now, wins: 0 }; return null; }
+  if (ahead === st.nb.ahead) return null;
+  if (now - st.nb.at < 3 * 60000) return null; // не дёргаем, если идём ноздря в ноздрю
+  st.nb.ahead = ahead; st.nb.at = now;
+  if (ahead) {
+    st.nb.wins = (st.nb.wins || 0) + 1;
+    const prize = Math.max(500, Math.round(totalRate(st) * 10 / 10) * 10);
+    st.money += prize; st.monthIncome += prize;
+    addXp(st, 20);
+    addHistory(st, { m: st.month, t: `🏁 Обогнали соседа Петровича! Награда +${fmt(prize)}, +20 ⭐.` });
+    return { type: 'ahead', prize };
+  }
+  return { type: 'behind' };
+}
 const rndRange = (r, a, b) => a + r() * (b - a);
 // какие продукты ферма может дать прямо сейчас (постройка есть и сезон идёт) и с какой скоростью, шт/мин
 export function producible(st) {
@@ -249,16 +314,18 @@ export function makeOrder(st, now, big = false) {
   const ps = Object.keys(can);
   if (!ps.length) return null;
   const r = rng((st.seed ^ Math.floor(now / 1000)) >>> 0);
+  // рыба с пруда — в обычные заказы, пока сегодня ещё можно порыбачить
+  if (!big && (st.tier || 0) >= 1 && fishLeft(st, now) > 0 && r() < 0.35) { can.fish = 0.5; ps.push('fish'); }
   const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
   const items = chosen.map(p => {
     const mins = big ? rndRange(r, 25, 40) : rndRange(r, 4, 10) / k;
-    const need = Math.max(3, Math.round(can[p] * mins));
+    const need = p === 'fish' ? 3 + Math.floor(r() * 4) : Math.max(3, Math.round(can[p] * mins));
     return { p, need, have: 0 };
   });
-  const value = items.reduce((a, it) => a + it.need * productPrice(it.p), 0);
+  const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
   const mult = client.mult * (1 + 0.2 * level(st, 'market'));
   return {
     client: client.id, name: client.name, emoji: client.emoji, big, items,
@@ -295,12 +362,12 @@ function reserveForOrders(st, p, units) {
       it.have += take; left -= take; used += take;
     }
   }
-  return { units: used, value: used * productPrice(p) };
+  return { units: used, value: used * itemPrice(st, p) };
 }
 // рыба и прочее, что приходит не со сбора постройки
 export function addProduct(st, p, units) {
   const r = reserveForOrders(st, p, units);
-  const sold = (units - r.units) * productPrice(p);
+  const sold = (units - r.units) * itemPrice(st, p);
   st.money += sold; st.monthIncome += sold;
   return r;
 }
@@ -320,7 +387,7 @@ export function declineOrder(st, i, now = Date.now()) {
   const o = orderAt(st, i);
   if (!o || o.wait) return 0;
   // отложенное в амбар продаём по обычной цене
-  const back = o.items.reduce((a, it) => a + it.have * productPrice(it.p), 0);
+  const back = o.items.reduce((a, it) => a + it.have * itemPrice(st, it.p), 0);
   st.money += back; st.monthIncome += back;
   if (i === 'big') st.big.done = true;
   else st.orders[i] = { wait: true, readyAt: now + ORDER_DECLINE_MIN * 60000 };

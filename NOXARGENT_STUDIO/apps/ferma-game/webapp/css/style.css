@@ -529,3 +529,41 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .ripples path { animation: ripple 3s ease-in-out infinite alternate; }
 @keyframes ripple { to { transform: translateX(8px); } }
+
+/* ===== Сосед-соперник ===== */
+.bar.rival { pointer-events: auto; height: 24px; gap: 6px; padding: 2px 10px; }
+.bar.rival[hidden] { display: none; }
+.rv-me, .rv-nb { font-size: 11px; font-weight: 800; white-space: nowrap; color: var(--ink); }
+.rv-me b { color: #2f8a2f; } .rv-nb b { color: #c8362b; }
+.bar.rival .track { background: #f1b3a8; }
+.bar.rival .fill { background: #3fae4f; min-width: 4px; }
+.bar.rival.ahead .rv-me::before { content: "🏁 "; }
+
+/* ===== Щенок ===== */
+#dog .dog-tail { transform-box: fill-box; transform-origin: 0% 100%; animation: wag .5s ease-in-out infinite alternate; }
+#dog.dog-happy .dog-tail { animation-duration: .18s; }
+@keyframes wag { from { transform: rotate(-14deg); } to { transform: rotate(16deg); } }
+#dog .dog-ask { animation: pop 1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+#dog .hearts text { animation: floatUp 2s ease-in-out infinite; }
+@keyframes floatUp { 0% { transform: translateY(4px); opacity: .2; } 50% { opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
+.dog-dialog input { width: 100%; box-sizing: border-box; font: inherit; font-weight: 800; font-size: 18px; text-align: center; padding: 10px; border: 2.5px solid var(--line); border-radius: 12px; margin: 6px 0 12px; color: var(--brown); background: #fff; }
+.dog-pic { font-size: 54px; text-align: center; line-height: 1.1; }
+
+/* ===== Рыбалка ===== */
+.fish-intro { text-align: center; }
+.fish-intro .fi-art { font-size: 56px; }
+.fish-intro p { color: var(--brown); font-weight: 600; }
+.fish-intro .tags { justify-content: center; margin: 6px 0; }
+.fish-game { width: min(360px, 94vw); background: var(--cream); border: 3px solid var(--line); border-radius: 18px; padding: 10px; box-shadow: 0 6px 0 rgba(0,0,0,.2); touch-action: none; -webkit-user-select: none; user-select: none; }
+.fg-top { display: flex; align-items: center; gap: 10px; font-weight: 900; color: var(--brown); font-size: 18px; margin-bottom: 8px; }
+.fg-time { flex: 1; height: 10px; border-radius: 5px; background: #eadcc0; overflow: hidden; }
+.fg-time i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #e8a21a, #3fae4f); }
+.fg-pond { width: 100%; display: block; border-radius: 12px; border: 2.5px solid var(--line); }
+.fg-hint { text-align: center; font-weight: 900; color: var(--brown); margin: 8px 0 2px; font-size: 16px; }
+#fgBob .bob { transition: transform .12s; }
+#fgBob.nib .bob { animation: nib .35s ease-in-out; }
+#fgBob.bite .bob { transform: translateY(9px) scale(.9); animation: bite .25s ease-in-out infinite alternate; }
+#fgBob.bite .bang { opacity: 1; }
+@keyframes nib { 30% { transform: translateY(3px) rotate(-8deg); } 70% { transform: translateY(-1px) rotate(6deg); } }
+@keyframes bite { from { transform: translateY(7px) scale(.92); } to { transform: translateY(11px) scale(.86); } }
+.fish-res h3 { text-align: center; }

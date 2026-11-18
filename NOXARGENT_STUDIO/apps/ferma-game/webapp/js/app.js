@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_PER_DAY, FISH_GAME_MS,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -69,6 +69,7 @@ function view() {
     ordersActive: E.activeOrders(st).filter(x => x.i !== 'big').length,
     ordersDone: E.activeOrders(st).filter(x => E.orderDone(x.o)).length,
     canBuild: st.phase !== 'clean',
+    dog: E.hasDog(st) ? { name: st.dog.name, boosted: st.dog.boostUntil > Date.now(), canPet: E.petLeft(st) <= 0 } : null,
   };
 }
 const hens = () => E.level(st, 'coop') * 10;
@@ -101,6 +102,7 @@ function hud() {
   if (needQuick && !q.children.length) q.innerHTML = QUICK_HTML;
   if (!needQuick && q.children.length) q.innerHTML = '';
   locNav(needQuick);
+  rivalBar(needQuick);
   // уровень фермы ⭐
   const lp = E.levelProgress(st), pill = q.querySelector('.lvl-pill');
   if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; pill.querySelector('i').style.width = Math.round(100 * lp.have / lp.need) + '%'; }
@@ -216,6 +218,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
   if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
   if (tap === 'fish') { haptic(); sfx.click(); return openFishing(); }
+  if (tap === 'dog') return petDog();
 });
 
 function hitTrash(id) {
@@ -293,6 +296,7 @@ setInterval(() => {
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
+  neighborTick();
   updateDots();
   if (st.login?.pending && layer.hidden) maybeLoginBonus();
   // напоминание: месяц прошёл
@@ -329,6 +333,8 @@ function afterGain() {
   if (!st.locSeen) st.locSeen = ['home'];
   const newLoc = openLocations().find(l => !st.locSeen.includes(l.id));
   if (newLoc) { st.locSeen.push(newLoc.id); persist(true); return showLocOpen(newLoc); }
+  // крыльцо отремонтировано — прибежал щенок
+  if (E.needDogName(st) && st.phase === 'play' && (st.loc || 'home') === 'home') return showDogName();
   // новый уровень фермы
   const lvl = E.farmLevel(st);
   if (lvl > (st.lvlSeen || 1)) { st.lvlSeen = lvl; showLevelUp(lvl); return; }
@@ -508,6 +514,8 @@ const ACTIONS = {
   goLoc: (id) => { closeLayer(); goLoc(id); },
   locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
   map: () => openMap(),
+  dogName: () => { const v = layer.querySelector('#dogName')?.value || ''; E.nameDog(st, v); closeLayer(); render(); persist(true); sfx.woof(); say(`<b>${escH(st.dog.name)}</b> теперь живёт у крыльца! Гладь его раз в 4 часа — <b>+10% к доходу</b> на 30 минут.`, 'happy', 7000); },
+  fishGo: () => startFishGame(),
   repair: (id, el) => {
     if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
     const err = E.repairHouse(st);
@@ -994,8 +1002,167 @@ function showLocOpen(l, reread = false) {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) stepLoc(dx < 0 ? 1 : -1);
   }, { passive: true });
 })();
-// Рыбалка — мини-игра появится в следующем обновлении
-function openFishing() { toast('🎣 Рыбалка скоро! Удочку дед уже починил.'); }
+
+/* ================= Сосед-соперник ================= */
+const NB_TEASE = ['Петрович через забор: «Что, сосед, отстаём? Мои куры несутся быстрее!»', 'Петрович машет из-за забора: «Догоняй, внучок!»',
+  'Сосед купил новый трактор и хвастается на всю улицу…', 'Петрович: «У меня огурцы — во! А у тебя?»'];
+function rivalBar(show) {
+  const bar = $('#rivalBar');
+  bar.hidden = !show;
+  if (!show) return;
+  const me = E.ratingCapital(st), nb = E.neighborCap(st), ahead = me >= nb;
+  $('#rvMe').textContent = short(Math.max(0, me), '');
+  $('#rvNb').textContent = short(nb, '');
+  $('#rvFill').style.width = Math.round(100 * Math.max(0, me) / (Math.max(0, me) + nb || 1)) + '%';
+  bar.classList.toggle('ahead', ahead);
+}
+let lastTease = Date.now();
+function neighborTick() {
+  const ev = E.neighborCheck(st);
+  if (ev?.type === 'ahead') {
+    notify('success'); sfx.fanfare();
+    floatText(svg, 230, 330, `+${short(ev.prize)} за обгон!`, '#2f8a2f');
+    say(`Мы <b>обогнали соседа Петровича</b>! Награда — <b>+${short(ev.prize)}</b> и +20 ⭐. Он аж шапку уронил!`, 'happy', 7000);
+    render(); persist(true);
+  } else if (ev?.type === 'behind') {
+    lastTease = Date.now();
+    say(NB_TEASE[Math.floor(Math.random() * NB_TEASE.length)], 'worried', 6000);
+  } else if (st.nb && !st.nb.ahead && Date.now() - lastTease > 15 * 60000 && layer.hidden) {
+    lastTease = Date.now();
+    say(NB_TEASE[Math.floor(Math.random() * NB_TEASE.length)] + ' Выполняй заказы и улучшай постройки!', 'worried', 6000);
+  }
+}
+fastTap($('#rivalBar'), () => {
+  if (!st) return;
+  const me = E.ratingCapital(st), nb = E.neighborCap(st);
+  toast(me >= nb ? `Ты впереди Петровича на ${short(me - nb)}!` : `Петрович впереди на ${short(nb - me)}. Обгони — будет награда!`);
+});
+
+/* ================= Щенок ================= */
+const escH = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function showDogName() {
+  sfx.woof();
+  openLayer(`<div class="dialog dog-dialog"><div class="dog-pic">🐶</div><h3>К крыльцу прибежал щенок!</h3>
+    <p>Видно, почуял, что в доме деда снова живут. Как назовём?</p>
+    <input id="dogName" maxlength="16" placeholder="Шарик" value="Шарик" autocomplete="off">
+    <div class="row"><button class="btn primary wide" data-act="dogName">Назвать</button></div></div>`, 'screen dim keep-ui', false);
+  layer.dataset.kind = 'dogname';
+}
+function petDog() {
+  const name = escH(st.dog.name);
+  if (E.petDog(st)) {
+    haptic('medium'); sfx.woof(); notify('success');
+    puff(svg, 156, 388);
+    floatText(svg, 156, 366, '+10% на 30 мин 💗', '#d0456a');
+    render(); persist(true);
+    say(`${name} счастлив! Весь доход <b>+10%</b> на 30 минут.`, 'happy', 4000);
+  } else {
+    haptic(); sfx.woof();
+    const boost = st.dog.boostUntil - Date.now();
+    toast(boost > 0 ? `${name} доволен: +10% ещё ${mmss(boost)}` : `${name} дремлет. Погладить можно через ${hm(E.petLeft(st))}`);
+  }
+}
+const hm = (ms) => { const m = Math.ceil(ms / 60000); return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`; };
+
+/* ================= Рыбалка ================= */
+function openFishing() {
+  const left = E.fishLeft(st);
+  const price = E.itemPrice(st, 'fish');
+  const inOrders = E.activeOrders(st).some(x => x.o.items.some(it => it.p === 'fish' && it.have < it.need));
+  sheet('🎣 Рыбалка', `<div class="fish-intro"><div class="fi-art">🎣</div>
+    <p><b>20 секунд у пруда.</b> Смотри на поплавок: когда он <b>нырнёт</b> и появится «!» — тапай! Поторопишься — рыба уйдёт.</p>
+    <div class="tags"><span class="tag inc">1 🐟 ≈ ${short(price)}</span><span class="tag">${inOrders ? 'рыбу ждут в заказе!' : 'рыба идёт в заказы и на прилавок'}</span></div>
+    <p class="note">Сегодня осталось заходов: <b>${left} из ${FISH_PER_DAY}</b></p>
+    <button class="btn primary big" data-act="fishGo" ${left ? '' : 'data-lock="Не больше 3 раз в день — приходи завтра!"'}>${left ? 'Закинуть удочку' : 'Приходи завтра'}</button></div>`, 'fishing-intro');
+}
+function startFishGame() {
+  const err = E.startFishing(st);
+  if (err) { sfx.error(); return toast(err); }
+  persist(true);
+  openLayer(`<div class="fish-game" id="fishGame">
+    <div class="fg-top"><span>🐟 <b id="fgN">0</b></span><span class="fg-time"><i id="fgT"></i></span><span id="fgS">20</span></div>
+    <svg viewBox="0 0 360 420" class="fg-pond">
+      <rect width="360" height="420" fill="#6fb6ec"/>
+      <g stroke="#a9d8f6" stroke-width="3" fill="none" stroke-linecap="round" class="ripples">
+        <path d="M30 80 q15 -6 30 0 q15 6 30 0"/><path d="M220 60 q15 -6 30 0 q15 6 30 0"/><path d="M60 330 q15 -6 30 0 q15 6 30 0"/><path d="M240 360 q15 -6 30 0 q15 6 30 0"/></g>
+      <g fill="#5aa24a" stroke="#3b2a1f" stroke-width="1.4"><ellipse cx="60" cy="200" rx="26" ry="10"/><ellipse cx="300" cy="250" rx="22" ry="9"/></g><circle cx="66" cy="196" r="5" fill="#f39ac1"/>
+      <path d="M10 420 l-6 -60 M22 420 l4 -70 M34 420 l10 -56 M330 420 l-8 -64 M346 420 l4 -54" stroke="#6b8f3a" stroke-width="5" stroke-linecap="round"/>
+      <path d="M360 0 Q 250 120 180 210" stroke="#3b2a1f" stroke-width="1.2" fill="none" opacity=".7"/>
+      <g id="fgRings"></g>
+      <g id="fgBob" transform="translate(180 210)"><g class="bob">
+        <ellipse cx="0" cy="14" rx="16" ry="5" fill="#000" opacity=".12"/>
+        <path d="M0 -26 V-10" stroke="#3b2a1f" stroke-width="2.5"/>
+        <ellipse cx="0" cy="0" rx="9" ry="13" fill="#fff" stroke="#3b2a1f" stroke-width="2"/>
+        <path d="M-9 -2 A9 13 0 0 1 9 -2z" fill="#e2403a" stroke="#3b2a1f" stroke-width="2"/></g>
+        <g class="bang" opacity="0"><circle cx="24" cy="-34" r="14" fill="#ffd23f" stroke="#3b2a1f" stroke-width="2"/><text x="24" y="-28" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="18" fill="#c8362b">!</text></g></g>
+      <g id="fx"></g>
+    </svg>
+    <p class="fg-hint" id="fgHint">Жди поклёвку…</p></div>`, 'screen dim keep-ui fishing', false);
+  layer.dataset.kind = 'fishing';
+  const box = $('#fishGame'), fsvg = box.querySelector('svg'), bob = box.querySelector('#fgBob');
+  const g = { n: 0, t0: Date.now(), state: 'wait', next: 0, until: 0, timers: [] };
+  const later = (fn, ms) => g.timers.push(setTimeout(fn, ms));
+  const setHint = (t) => { const h = box.querySelector('#fgHint'); if (h) h.textContent = t; };
+  const moveBob = () => { const x = 70 + Math.random() * 220, y = 130 + Math.random() * 200; bob.setAttribute('transform', `translate(${x} ${y})`); g.x = x; g.y = y; };
+  g.x = 180; g.y = 210;
+  const nibble = () => { if (g.state !== 'wait') return; bob.classList.remove('nib'); void bob.getBoundingClientRect(); bob.classList.add('nib'); sfx.plop(); };
+  const schedule = (delay) => {
+    g.state = 'wait';
+    const d = delay ?? 1200 + Math.random() * 2200;
+    if (Math.random() < 0.6) later(nibble, d * 0.45); // ложная поклёвка — дёрнулся, но не нырнул
+    later(bite, d);
+  };
+  const bite = () => {
+    if (g.state !== 'wait' || g.over) return;
+    g.state = 'bite'; g.until = Date.now() + 850;
+    bob.classList.add('bite'); haptic('rigid'); sfx.plop();
+    setHint('Клюёт! Тапай!');
+    later(() => { if (g.state === 'bite') { g.state = 'gone'; bob.classList.remove('bite'); setHint('Сорвалась… жди следующую'); schedule(); } }, 850);
+  };
+  box.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (g.over) return;
+    if (g.state === 'bite') {
+      const big = Math.random() < 0.2, k = big ? 2 : 1;
+      g.n += k; g.state = 'caught'; bob.classList.remove('bite');
+      box.querySelector('#fgN').textContent = g.n;
+      sfx.splash(); setTimeout(() => sfx.coin(), 120); haptic('medium');
+      floatText(fsvg, g.x, g.y - 30, big ? 'Крупная! +2 🐟' : '+1 🐟', '#1f5e9a');
+      setHint(big ? 'Вот это лещ!' : 'Есть!');
+      later(() => { moveBob(); schedule(); }, 450);
+    } else if (g.state === 'wait') {
+      sfx.error(); haptic(); setHint('Рано! Рыба испугалась…');
+      floatText(fsvg, g.x, g.y - 30, 'рано!', '#c8362b');
+      g.timers.forEach(clearTimeout); g.timers = [];
+      schedule(1600 + Math.random() * 1600); // спугнул — поклёвка позже
+    }
+  });
+  const tickT = () => {
+    if (g.over || layer.dataset.kind !== 'fishing') return;
+    const left = Math.max(0, FISH_GAME_MS - (Date.now() - g.t0));
+    box.querySelector('#fgS').textContent = Math.ceil(left / 1000);
+    box.querySelector('#fgT').style.width = (100 * left / FISH_GAME_MS) + '%';
+    if (left <= 0) return endFish(g);
+    requestAnimationFrame(tickT);
+  };
+  schedule(1500);
+  requestAnimationFrame(tickT);
+}
+function endFish(g) {
+  g.over = true; g.timers.forEach(clearTimeout);
+  const r = E.catchFish(st, g.n);
+  render(); persist(true);
+  if (g.n) { notify('success'); sfx.fanfare(); }
+  const left = E.fishLeft(st);
+  openLayer(`<div class="dialog fish-res"><div class="dog-pic">${g.n ? '🐟' : '🪣'}</div>
+    <h3>${g.n ? `Улов: ${g.n} 🐟` : 'Сегодня не клюёт…'}</h3>
+    ${g.n ? `<p>${r.units ? `В заказ отложено: <b>${r.units} 🐟</b>. ` : ''}${r.sold ? `Продано на <b>${short(r.sold)}</b>. ` : ''}+${g.n} ⭐</p>` : '<p>Ничего, дед тоже не всегда ловил. Попробуй ещё!</p>'}
+    <p class="note">Заходов на сегодня: ${left} из ${FISH_PER_DAY}</p>
+    <div class="row">${left ? '<button class="btn wide" data-act="fishGo">Ещё раз</button>' : ''}<button class="btn primary wide" data-act="close">Отлично</button></div></div>`, 'screen dim keep-ui', true);
+  layer.dataset.kind = 'fish-res';
+  afterGainSoon();
+}
+const afterGainSoon = () => setTimeout(() => { if (layer.hidden) afterGain(); }, 400);
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
 const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
@@ -1041,6 +1208,10 @@ function openRules() {
     <p><b>4. Месяцы.</b> Месяц длится 15 минут. Потом жми «Следующий месяц» — будет событие с выбором и итоги. Сезоны меняются: мёд летом, огород с мая, теплице зимой нужна печка.</p>
     <p><b>5. Цели.</b> Первая — 1 000 000 ₽. Дальше 10 млн, 100 млн… На каждой цели открываются новые постройки, а ферма растёт прямо на картинке.</p>
     <p><b>6. Рейтинг.</b> Место — по капиталу фермы: деньги + постройки − долг. Покупки за Telegram Stars в рейтинг не идут.</p>
+    <p><b>7. Заказы.</b> Доска у дороги: кафе, дачники и магазин платят дороже прилавка и дают ⭐ опыт. Опыт поднимает уровень фермы — открываются постройки.</p>
+    <p><b>8. Дом деда.</b> Тап по дому: ремонт по этапам (+3% к доходу за каждый) и письма деда. После крыльца прибежит щенок — гладь его раз в 4 часа: +10% к доходу на 30 минут.</p>
+    <p><b>9. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» с рыбалкой (до 3 раз в день), дальше — Райцентр и Агрохолдинг.</p>
+    <p><b>10. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }

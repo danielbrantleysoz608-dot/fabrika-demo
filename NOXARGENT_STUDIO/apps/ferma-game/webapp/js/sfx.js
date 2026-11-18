@@ -90,6 +90,9 @@ export const sfx = {
   },
   error: () => tone(180, 0.15, { type: 'sawtooth', vol: 0.06 }),
   click: () => tone(700, 0.035, { type: 'triangle', vol: 0.06 }),
+  splash: () => { noise(0.35, { vol: 0.3, from: 900, to: 300 }); noise(0.2, { vol: 0.18, from: 3000, to: 1500, delay: 0.05, type: 'highpass' }); },
+  plop: () => tone(520, 0.12, { type: 'sine', vol: 0.12, slide: -260 }),
+  woof: () => { tone(420, 0.09, { type: 'sawtooth', vol: 0.05, slide: -120 }); tone(380, 0.11, { type: 'sawtooth', vol: 0.05, slide: -140, delay: 0.16 }); },
 
   // настройки
   get muted() { return !settings.sounds; },
