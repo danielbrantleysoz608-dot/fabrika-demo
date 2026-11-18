@@ -58,6 +58,8 @@ if [ ! -f "$ENV" ]; then
   echo "Вставьте токен бота от @BotFather (символы не видны — это нормально) и нажмите Enter:"
   read -r -s TOKEN; echo
   read -r -p "Ваш Telegram id (число от @userinfobot, можно оставить пустым): " ADMIN
+  ADMIN=$(echo "$ADMIN" | tr -cd '0-9')      # только цифры: «ID: 123» → 123
+  TOKEN=$(echo "$TOKEN" | tr -d '[:space:]')
   cat > "$ENV" <<CONF
 BOT_TOKEN=$TOKEN
 WEBAPP_URL=https://$DOMAIN

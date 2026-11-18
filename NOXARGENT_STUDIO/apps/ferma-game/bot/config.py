@@ -40,7 +40,7 @@ def load() -> Config:
         init_data_ttl=int(float(os.getenv("INIT_DATA_TTL_HOURS", "24")) * 3600),
         dev_mode=os.getenv("DEV_MODE", "0") == "1",
         allow_anon=os.getenv("ALLOW_ANON", "1") == "1",
-        admin_id=int(os.getenv("ADMIN_ID", "0") or 0),
+        admin_id=int("".join(ch for ch in os.getenv("ADMIN_ID", "") if ch.isdigit()) or 0),  # «ID: 123» → 123
         channel_url=os.getenv("CHANNEL_URL", "https://t.me/predstav_kanal"),
         test_prices=os.getenv("TEST_PRICES", "0") == "1",
     )
