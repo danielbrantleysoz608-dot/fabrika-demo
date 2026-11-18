@@ -20,6 +20,11 @@ id ferma >/dev/null 2>&1 || useradd --system --create-home --home-dir "$ROOT" --
 install -d -o ferma -g ferma "$ROOT/.ssh"
 
 say "3/7 Доступ к закрытому репозиторию (ключ развёртывания, только чтение)"
+if [ ! -f "$ROOT/.ssh/id_ed25519" ] && [ -f /root/.ssh/ferma_deploy ]; then
+  # ключ, который уже добавлен в GitHub на первом шаге, — отдаём пользователю ferma
+  install -o ferma -g ferma -m 600 /root/.ssh/ferma_deploy "$ROOT/.ssh/id_ed25519"
+  install -o ferma -g ferma -m 644 /root/.ssh/ferma_deploy.pub "$ROOT/.ssh/id_ed25519.pub"
+fi
 if [ ! -f "$ROOT/.ssh/id_ed25519" ]; then
   sudo -u ferma ssh-keygen -t ed25519 -N "" -C "ferma-deploy" -f "$ROOT/.ssh/id_ed25519" >/dev/null
 fi
