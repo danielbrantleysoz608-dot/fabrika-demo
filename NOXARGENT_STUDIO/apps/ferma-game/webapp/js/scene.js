@@ -628,6 +628,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       if (b.stall) s += stall(m);
       if (st.fox) s += fox();
       if (st.dog) s += puppy(st.dog);
+      for (const d of st.decor || []) if (DECOR_ART[d]) s += DECOR_ART[d](m);
       for (const w of st.workers || []) if (WORKER_SPOT[w]) s += workerFigure(w, ...WORKER_SPOT[w]);
       if (clean && st.canBuild) s += orderBoard(st) + creek(m);
     } else s += LOC_OBJ[loc](m, st);
@@ -963,3 +964,23 @@ function creek(m) {
     <rect x="112" y="720" width="196" height="88" fill="transparent"/>
   </g></g>`;
 }
+
+
+/* ---------- Украшения фермы ---------- */
+const O2 = 'stroke="#3b2a1f" stroke-width="1.8" stroke-linejoin="round"';
+const DECOR_ART = {
+  flowers: () => `<g class="decor">${[[150, 488], [172, 500], [146, 512]].map(([x, y], i) => `<ellipse cx="${x}" cy="${y}" rx="11" ry="5" fill="#2f2f33" ${O2}/><ellipse cx="${x}" cy="${y - 2}" rx="7" ry="2.5" fill="#6b4426"/>
+    ${[-5, 0, 5].map((d, k) => `<circle cx="${x + d}" cy="${y - 7 - (k % 2) * 3}" r="3.2" fill="${['#f39ac1', '#ffd23f', '#e2403a'][(i + k) % 3]}" stroke="#3b2a1f" stroke-width="1"/>`).join('')}`).join('')}</g>`,
+  well: () => `<g class="decor"><rect x="186" y="380" width="26" height="20" fill="#9aa3a8" ${O2}/><path d="M184 380 h30" stroke="#3b2a1f" stroke-width="2"/>
+    <path d="M190 380 V356 M208 380 V356" stroke="#7b5236" stroke-width="3"/><path d="M186 356 L199 346 L212 356z" fill="#c4553e" ${O2}/><path d="M199 362 v10" stroke="#3b2a1f" stroke-width="1.4"/><rect x="195" y="370" width="8" height="7" fill="#7b5236" stroke="#3b2a1f" stroke-width="1"/></g>`,
+  scarecrow: () => `<g class="decor"><path d="M428 520 V470 M412 484 H444" stroke="#7b5236" stroke-width="3.5" stroke-linecap="round"/><path d="M416 482 h24 l-4 22 h-16z" fill="#4a90d9" ${O2}/>
+    <circle cx="428" cy="468" r="8" fill="#f2d6a0" ${O2}/><path d="M416 464 h24 l-5 -8 h-14z" fill="#e8b24a" ${O2}/><path d="M412 464 h32" stroke="#3b2a1f" stroke-width="2"/></g>`,
+  swing: () => `<g class="decor"><path d="M210 330 V370 M240 330 V370" stroke="#3b2a1f" stroke-width="1.5"/><rect x="206" y="370" width="38" height="5" fill="#b9844f" ${O2}/></g>`,
+  // на лугу внизу фермы (видно, если чуть пролистать вниз)
+  gazebo: () => `<g class="decor"><path d="M44 872 V836 M100 872 V836" stroke="#7b5236" stroke-width="4"/><path d="M36 838 L72 808 L108 838z" fill="#3fa34d" ${O2}/>
+    <rect x="54" y="856" width="36" height="6" fill="#b9844f" stroke="#3b2a1f" stroke-width="1"/><path d="M66 856 v-10 h12 v10z" fill="#d8392d" stroke="#3b2a1f" stroke-width="1"/></g>`,
+  fountain: () => `<g class="decor"><ellipse cx="186" cy="858" rx="40" ry="12" fill="#6fb6ec" ${O2}/>${[[172, 852], [196, 860]].map(([x, y]) => `<g transform="translate(${x} ${y})"><ellipse rx="7" ry="4.5" fill="#fff" stroke="#3b2a1f" stroke-width="1.2"/><circle cx="6" cy="-4" r="3.4" fill="#fff" stroke="#3b2a1f" stroke-width="1.2"/><path d="M9 -4 l4 1 -4 1z" fill="#f4a42a"/></g>`).join('')}</g>`,
+  statue: () => `<g class="decor"><rect x="286" y="858" width="30" height="16" fill="#c9c3b6" ${O2}/><path d="M291 858 q10 -36 20 0z" fill="#a9a399" ${O2}/><circle cx="301" cy="826" r="7" fill="#a9a399" ${O2}/></g>`,
+  arch: () => `<g class="decor"><path d="M346 878 V828 M412 878 V828" stroke="#7b5236" stroke-width="5"/><rect x="336" y="814" width="86" height="20" rx="4" fill="#f8efd9" ${O2}/>
+    <text x="379" y="828" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="11" fill="#c8362b">ФЕРМА ДЕДА</text></g>`,
+};

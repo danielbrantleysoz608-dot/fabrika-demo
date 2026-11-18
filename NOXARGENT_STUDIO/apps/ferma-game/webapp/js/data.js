@@ -181,7 +181,27 @@ export const ORDER_REFILL_MIN = [2, 5];     // новый заказ после 
 export const ORDER_DECLINE_MIN = 10;        // после отказа — через 10 мин
 // Уровень фермы: опыт (⭐) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n
 export const xpForLevel = (n) => (n <= 1 ? 0 : Math.round(30 * (n - 1) ** 1.7));
-export const XP = { build: 8, repair: 60, order: [12, 30], big: 80 };
+export const XP = { build: 8, repair: 60, order: [12, 30], big: 80, daily: 15, login: 10 };
+// Цель открывается, когда есть И капитал, И уровень фермы («нас в районе должны знать»).
+// Опыт идёт только из игры: заказы, большой заказ дня, ремонт дома, рыбалка, задания дня. За деньги и Stars — нельзя.
+export const GOAL_LEVELS = [1, 22, 50, 80];
+export const goalLevel = (tier) => GOAL_LEVELS[tier] ?? GOAL_LEVELS[GOAL_LEVELS.length - 1] + (tier - GOAL_LEVELS.length + 1) * 10;
+// Украшения фермы — куда тратить деньги, пока копишь опыт: каждое +2% ко всему доходу, на картинке фермы.
+// Опыта не дают (иначе опыт можно было бы купить за деньги).
+export const DECOR = [
+  { id: 'flowers',   name: 'Клумбы из шин',      emoji: '🌼', cost: 300000,    tier: 0, desc: 'Дедовы шины — под цветы. Красиво и по-хозяйски.' },
+  { id: 'well',      name: 'Колодец-журавль',    emoji: '🪣', cost: 900000,    tier: 0, desc: 'Старый журавль у дома — как при деде.' },
+  { id: 'scarecrow', name: 'Пугало в шляпе',     emoji: '🎃', cost: 2500000,   tier: 1, desc: 'Охраняет огород. Шляпу дед узнал бы.' },
+  { id: 'gazebo',    name: 'Беседка с самоваром', emoji: '🫖', cost: 7000000,  tier: 1, desc: 'Чай с мёдом для гостей фермы.' },
+  { id: 'swing',     name: 'Качели на дубе',     emoji: '🌳', cost: 20000000,  tier: 2, desc: 'Внуки соседей теперь гостят у нас.' },
+  { id: 'fountain',  name: 'Пруд с утками',      emoji: '🦆', cost: 60000000,  tier: 2, desc: 'Утки, мостик, кувшинки.' },
+  { id: 'statue',    name: 'Памятник деду',      emoji: '🗿', cost: 250000000, tier: 3, desc: '«Деду — от благодарной фермы».' },
+  { id: 'arch',      name: 'Арка «Ферма деда»',  emoji: '⛩️', cost: 900000000, tier: 3, desc: 'Ворота с вывеской — видно с трассы.' },
+];
+export const DECOR_BONUS = 0.02;
+// Улучшение работника: 3 уровня, цена ×4 к найму за каждый
+export const WORKER_UP_MULT = 4;
+export const WORKER_MAX = 3;
 
 // Ремонт дома деда: 5 этапов, каждый +3% ко всему доходу и новое письмо деда
 export const HOUSE_BONUS = 0.03;

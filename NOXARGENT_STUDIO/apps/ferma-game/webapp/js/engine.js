@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -86,7 +86,8 @@ export function globalMult(st, withMods = true) {
   let k = 1;
   for (const id of ['stall', 'brand']) k *= 1 + (BUILDINGS[id].boost || 0) * level(st, id);
   k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
-  if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all; // продавец на прилавке
+  if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all * wLv(st, 'seller'); // продавец на прилавке (+10% за уровень)
+  k *= 1 + DECOR_BONUS * decorCount(st);    // украшения фермы
   if (withMods) {
     k *= st.mods.sales ?? 1;
     if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
@@ -100,7 +101,7 @@ export const seasonMult = (st, id, m = st.month) => {
   return k;
 };
 // бонус работников к постройке (птичница, пасечник, доярка)
-export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id]; return k; };
+export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id] * (1 + 0.6 * (wLv(st, w) - 1)); return k; };
 // текущая скорость, ₽/мин
 export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
 export const totalRate = (st) => PRODUCERS.reduce((a, id) => a + rate(st, id), 0);
@@ -196,6 +197,7 @@ export function claimDaily(st, i) {
   if (!t || !t.done || t.claimed) return 0;
   st.daily.claimed[i] = true;
   st.money += t.reward;
+  addXp(st, XP.daily);
   addHistory(st, { m: st.month, t: `Задание дня «${t.title}»: +${fmt(t.reward)}.` });
   checkGoals(st);
   return t.reward;
@@ -205,6 +207,7 @@ export function claimLogin(st) {
   if (!p) return 0;
   st.login.pending = 0;
   st.money += p;
+  addXp(st, XP.login);
   addHistory(st, { m: st.month, t: `Бонус за вход, день ${st.login.streak}: +${fmt(p)}.` });
   checkGoals(st);
   return p;
@@ -240,7 +243,7 @@ export function repairValue(st) {
 /* ---------- Уровень фермы (⭐ опыт) ---------- */
 export function farmLevel(st) { let n = 1; while ((st.xp || 0) >= xpForLevel(n + 1)) n++; return n; }
 export const levelProgress = (st) => { const n = farmLevel(st), a = xpForLevel(n), b = xpForLevel(n + 1); return { level: n, have: (st.xp || 0) - a, need: b - a }; };
-export function addXp(st, n) { st.xp = (st.xp || 0) + n; }
+export function addXp(st, n) { st.xp = (st.xp || 0) + n; if (st.tier !== undefined && st.ach) checkGoals(st); } // новый уровень может открыть цель
 // постройки, открытые на уровне фермы n
 export const unlockedAt = (n) => Object.keys(BUILDINGS).filter(id => BUILDINGS[id].lvl === n);
 
@@ -251,6 +254,45 @@ export const itemPrice = (st, p) => (p === 'fish' ? Math.max(PRODUCTS.fish.price
 
 /* ---------- Работники ---------- */
 export const hired = (st, w) => !!st.workers?.[w];
+export const wLv = (st, w) => (st.workers?.[w] ? st.workers[w].lv || 1 : 0);
+export const helperEvery = (st) => [5, 5, 3, 2][wLv(st, 'helper')] || 5; // минут между сборами помощника
+export const workerUpPrice = (st, w) => nice(hirePrice(st, w) * WORKER_UP_MULT ** wLv(st, w));
+export function canUpWorker(st, w) {
+  if (!hired(st, w)) return 'сначала наймите';
+  if (wLv(st, w) >= WORKER_MAX) return 'максимальный уровень';
+  if (st.money < workerUpPrice(st, w)) return 'не хватает ' + fmt(workerUpPrice(st, w) - st.money);
+  return null;
+}
+export function upWorker(st, w) {
+  const why = canUpWorker(st, w); if (why) return why;
+  const p = workerUpPrice(st, w);
+  st.money -= p; st.workers[w].lv = wLv(st, w) + 1;
+  st.workerSpent = (st.workerSpent || 0) + p;
+  addHistory(st, { m: st.month, t: `👷 ${WORKERS[w].name}: уровень ${st.workers[w].lv} (${fmt(p)}).` });
+  return null;
+}
+/* ---------- Украшения фермы ---------- */
+export const hasDecor = (st, id) => !!st.decor?.[id];
+export const decorCount = (st) => Object.keys(st.decor || {}).length;
+export function canDecor(st, id) {
+  const d = DECOR.find(x => x.id === id);
+  if (!d) return 'нет такого';
+  if (hasDecor(st, id)) return 'уже стоит';
+  if (st.phase === 'clean') return 'сначала уборка';
+  if (d.tier > st.tier) return `откроется после цели ${tierName(d.tier - 1)}`;
+  if (st.money < d.cost) return 'не хватает ' + fmt(d.cost - st.money);
+  return null;
+}
+export function buyDecor(st, id) {
+  const why = canDecor(st, id); if (why) return why;
+  const d = DECOR.find(x => x.id === id);
+  st.money -= d.cost;
+  if (!st.decor) st.decor = {};
+  st.decor[id] = true;
+  addHistory(st, { m: st.month, t: `🌼 Украшение фермы: ${d.name} (${fmt(d.cost)}). +2% к доходу.` });
+  checkGoals(st);
+  return null;
+}
 export const workersAt = (n) => WORKER_ORDER.filter(w => WORKERS[w].lvl === n).map(w => ({ id: w, ...WORKERS[w] }));
 // цена найма фиксируется, когда работник открылся: hireMin минут дохода фермы на тот момент
 export function hirePrice(st, w) {
@@ -276,8 +318,7 @@ export function hire(st, w, now = Date.now()) {
   const p = hirePrice(st, w);
   st.money -= p;
   if (!st.workers) st.workers = {};
-  st.workers[w] = { at: now, last: now };
-  addXp(st, XP.build);
+  st.workers[w] = { at: now, last: now, lv: 1 };
   addHistory(st, { m: st.month, t: `👷 Наняли: ${WORKERS[w].name} (${fmt(p)}).` });
   return null;
 }
@@ -298,7 +339,7 @@ function workersTick(st, now) {
   for (const w of WORKER_ORDER) if (WORKERS[w].lvl <= lvl) hirePrice(st, w);
   if (!st.workers) return (lastAuto = out);
   const h = st.workers.helper;
-  if (h && now - (h.last || 0) >= WORKERS.helper.every * 60000) {
+  if (h && now - (h.last || 0) >= helperEvery(st) * 60000) {
     h.last = now;
     for (const id of PRODUCERS) {
       if (!level(st, id) || ready(st, id) <= 0) continue;
@@ -308,6 +349,7 @@ function workersTick(st, now) {
   }
   if (st.workers.driver) {
     (st.orders || []).forEach((o, i) => { if (orderDone(o)) { const r = deliverOrder(st, i, now); if (r) out.delivered.push(r); } });
+    if (wLv(st, 'driver') >= 3 && st.big && !st.big.done && orderDone(st.big)) { const r = deliverOrder(st, 'big', now); if (r) out.delivered.push(r); }
   }
   return (lastAuto = out);
 }
@@ -535,6 +577,8 @@ export function priceOf(st, id) {
 export function buildingsValue(st) {
   let v = 0;
   for (let i = 0; i < (st.house || 0); i++) v += HOUSE_STAGES[i].cost;
+  for (const d of DECOR) if (st.decor?.[d.id]) v += d.cost;
+  v += st.workerSpent || 0;                 // улучшения работников — тоже вложения в ферму
   for (const id of Object.keys(st.lv)) {
     const b = BUILDINGS[id], L = level(st, id);
     if (b.kind === 'once') { v += b.cost * L; continue; }
@@ -621,6 +665,8 @@ export const capital = (st) => Math.round(st.money - st.debt + buildingsValue(st
 // В рейтинг идёт капитал БЕЗ монет, купленных за Telegram Stars
 export const ratingCapital = (st) => Math.max(0, capital(st) - (st.paid?.coins || 0));
 export const goal = (st) => goalOf(st.tier);
+// цель: капитал есть, а уровня фермы не хватает
+export const goalNeedsLevel = (st) => ratingCapital(st) >= goal(st) && farmLevel(st) < goalLevel(st.tier);
 export const progress = (st) => Math.max(0, Math.min(1, ratingCapital(st) / goal(st)));
 
 export function grantAch(st, id) {
@@ -631,7 +677,7 @@ export function grantAch(st, id) {
 }
 export function checkGoals(st) {
   let reached = false;
-  while (ratingCapital(st) >= goalOf(st.tier)) {
+  while (ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) >= goalLevel(st.tier)) {
     grantAch(st, goalAchievement(st.tier));
     addHistory(st, { m: st.month, t: `Цель достигнута: ${tierName(st.tier)}! Открыты новые постройки.` });
     st.tier++;

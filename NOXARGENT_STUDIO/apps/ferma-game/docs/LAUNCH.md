@@ -120,6 +120,26 @@ chown -R ferma:ferma /opt/ferma-game && systemctl restart ferma-bot
 
 ---
 
+## Запуск на ПК с Windows: http://localhost:8080 (с рейтингом)
+
+1. Установите **Python 3.11 или новее** с python.org (при установке отметьте «Add python.exe to PATH»).
+2. Скачайте код ветки `claude/ferma-game-telegram-app-57b7fw`: на GitHub → кнопка **Code → Download ZIP** и распакуйте
+   **в короткую папку**, например `C:\ferma` (длинные пути Windows не любит). Или: `git clone -b claude/ferma-game-telegram-app-57b7fw <адрес репозитория> C:\ferma`.
+   Если папка уже есть — `cd C:\ferma` и `git pull`.
+3. Откройте **PowerShell** и выполните по строчке:
+   ```powershell
+   cd C:\ferma\NOXARGENT_STUDIO\apps\ferma-game\bot
+   py -m venv .venv
+   .venv\Scripts\pip install -r requirements.txt
+   $env:DEV_MODE = "1"
+   .venv\Scripts\python main.py --web-only
+   ```
+   Появится строка `Веб-сервер: http://127.0.0.1:8080` — окно не закрывайте (остановить — Ctrl+C).
+4. Откройте в Chrome **http://localhost:8080**, нажмите **F12 → значок телефона** (Ctrl+Shift+M) и выберите размер 375×812.
+5. Если игра «старая» — обновите страницу без кэша: **Ctrl+F5**. Начать с нуля — «Настройки → Начать заново».
+
+Токен бота для локального запуска не нужен. В следующий раз — только строки `cd …\bot`, `$env:DEV_MODE = "1"` и `.venv\Scripts\python main.py --web-only`.
+
 ## Локальный тест на ПК (без сервера)
 
 **Только игра в браузере:**

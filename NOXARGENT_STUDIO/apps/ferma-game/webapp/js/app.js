@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, goalLevel, DECOR, WORKER_MAX, xpForLevel,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -71,6 +71,7 @@ function view() {
     ordersDone: E.activeOrders(st).filter(x => E.orderDone(x.o)).length,
     canBuild: st.phase !== 'clean',
     workers: WORKER_ORDER.filter(w => E.hired(st, w)),
+    decor: Object.keys(st.decor || {}),
     dog: E.hasDog(st) ? { name: st.dog.name, boosted: st.dog.boostUntil > Date.now(), canPet: E.petLeft(st) <= 0 } : null,
   };
 }
@@ -93,8 +94,19 @@ function hud() {
   $('#hudHives').textContent = hives();
   const cap = E.ratingCapital(st), g = E.goal(st);
   $('#goalLbl').textContent = st.tier === 0 ? 'ДО МИЛЛИОНА' : `ДО ${goalLabel(st.tier).toUpperCase()}`;
-  $('#goalFill').style.width = (E.progress(st) * 100) + '%';
-  $('#goalNum').textContent = `${short(cap, '')} / ${short(g)}`;
+  const lp0 = E.levelProgress(st), needL = goalLevel(st.tier);
+  if (E.goalNeedsLevel(st)) { // капитал есть — ждём уровень фермы
+    $('#goalFill').style.width = Math.min(100, 100 * (st.xp || 0) / xpForLevel(needL)) + '%';
+    $('#goalNum').textContent = `капитал ✅ · ур. ${lp0.level}/${needL} ⭐`;
+  } else {
+    $('#goalFill').style.width = (E.progress(st) * 100) + '%';
+    $('#goalNum').textContent = `${short(cap, '')} / ${short(g)}`;
+  }
+  $('.goal').classList.toggle('need-lvl', E.goalNeedsLevel(st));
+  if (E.goalNeedsLevel(st) && !st.flags.lvlLockSaid && st.phase === 'play' && layer.hidden && !coach.isOpen()) {
+    st.flags.lvlLockSaid = true;
+    important(`Денег хватает, но нас в районе ещё не знают — <b>выполняй заказы!</b><br>Для цели «${goalLabel(st.tier)}» нужен <b>уровень фермы ${needL} ⭐</b>. ${XP_HINT}`, 'wink');
+  }
   updateClean();
   updateNext();
   farmInfo();
@@ -533,6 +545,9 @@ const ACTIONS = {
   hire: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.hire(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openWorkers, '#w-' + id); say(`${WORKERS[id].name} теперь работает на ферме! ${WORKERS[id].desc}`, 'happy', 6000); },
   fire: (id) => { openLayer(`<div class="dialog"><h3>Уволить: ${WORKERS[id].name}?</h3><p>Зарплату платить больше не придётся, но и помощи не будет. Нанять снова можно за ${short(E.hirePrice(st, id))}.</p>
     <div class="row"><button class="btn wide" data-act="workers">Оставить</button><button class="btn wide danger" data-act="fireYes" data-id="${id}">Уволить</button></div></div>`, 'screen dim keep-ui', true); layer.dataset.kind = 'fire'; },
+  upWorker: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.upWorker(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openWorkers, '#w-' + id); toast(`${WORKERS[id].name}: уровень ${E.wLv(st, id)}!`); },
+  decor: () => openDecor(),
+  buyDecor: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.buyDecor(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openDecor, '#d-' + id); const d = DECOR.find(x => x.id === id); say(`${d.emoji} ${d.name} — красота! Ферма стала уютнее: +2% ко всему доходу.`, 'happy', 5000); },
   fireYes: (id) => { E.fire(st, id); render(); persist(true); openWorkers(); toast(`${WORKERS[id].name} больше не работает`); },
   dogName: () => { const v = layer.querySelector('#dogName')?.value || ''; E.nameDog(st, v); closeLayer(); render(); persist(true); sfx.woof(); say(`<b>${escH(st.dog.name)}</b> теперь живёт у крыльца! Гладь его раз в 4 часа — <b>+10% к доходу</b> на 30 минут.`, 'happy', 7000); },
   fishGo: (spot) => startFishGame(spot),
@@ -695,7 +710,7 @@ function openBuild(focus, keep = false) {
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
   sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
-    ${houseCard}${workersCard()}${open.map(card).join('')}
+    ${houseCard}${workersCard()}${decorCard()}${open.map(card).join('')}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
 // перерисовать шторку, не сбрасывая прокрутку: та же карточка остаётся на том же месте экрана
@@ -938,6 +953,7 @@ function farmInfo() {
         <div><span>Постройки</span><b>${built} · ур. ${levels}</b></div>
         <div><span>Открытки</span><b>${cards}/${ACHIEVEMENT_ORDER.length}</b></div>
       </div>
+      <div class="fi-lbl">Следующая цель</div><div class="fi-goal">${goalStatus(LOCATIONS.find(l => l.tier === st.tier + 1)?.name || 'Цель ' + goalLabel(st.tier))}</div>
       ${todo.length ? `<div class="fi-lbl">Ближайшие задания</div><ul class="todo small">${todo.map(([t]) => `<li><span class="box"></span>${t}</li>`).join('')}</ul>` : ''}
       <div class="fi-btns">
         <button class="btn" data-fi="board">📋<small>Заказы</small></button>
@@ -1039,14 +1055,14 @@ function openMap() {
       <div class="mart">${mapArt(l.id)}${open ? '' : '<div class="mlock">🔒</div>'}</div>
       <div class="mtext"><b>${l.emoji} ${l.name}</b><small>${l.about}</small>
         ${open ? `<span class="mstat">${locCount(l.id)} построек${locReady(l.id) ? ' · <em>урожай готов!</em>' : ''}</span>`
-          : `<span class="mgoal">Откроется: капитал ${g}${goalNow ? ` · сейчас ${Math.round(E.progress(st) * 100)}%` : ''}</span>`}
+          : goalNow ? goalStatus(l.name) : `<span class="mgoal">Откроется: капитал ${g} + уровень фермы ${goalLevel(l.tier - 1)} ⭐</span>`}
         ${open ? (l.id === cur ? '<span class="mhere">ты здесь</span>' : `<button class="btn primary" data-act="goLoc" data-id="${l.id}">Поехать</button>`) : ''}
         ${open && l.letter ? `<button class="mletter" data-act="locLetter" data-id="${l.id}">✉️ письмо деда</button>` : ''}
       </div></div>`;
   }).join('');
   const nav = openLocations().length > 1
     ? 'Переходить между локациями — кнопками ◀ ▶ сверху или <b>свайпом</b> по ферме влево-вправо.'
-    : 'Новые локации открываются целями по капиталу. Когда откроется вторая, сверху появятся кнопки ◀ ▶, а ферму можно будет листать свайпом.';
+    : 'Новые локации открываются целями: нужен капитал и уровень фермы. Когда откроется вторая, сверху появятся кнопки ◀ ▶, а ферму можно будет листать свайпом.';
   sheet('🗺 Карта', `<p class="note">${nav}</p>${cards}`, 'map');
 }
 function showLocOpen(l, reread = false) {
@@ -1070,6 +1086,31 @@ function showLocOpen(l, reread = false) {
 })();
 
 /* ================= Работники ================= */
+const W_UP = {
+  helper: 'Уровни: собирает раз в 5 мин → 3 мин → 2 мин.',
+  henwife: 'Уровни: курятник +25% → +40% → +55%.',
+  beekeeper: 'Уровни: пасеки +25% → +40% → +55%.',
+  milkmaid: 'Уровни: молоко +25% → +40% → +55%.',
+  seller: 'Уровни: ко всему доходу +10% → +20% → +30%.',
+  driver: 'На 3-м уровне сам отвозит и большой заказ дня.',
+};
+function decorCard() {
+  const n = E.decorCount(st), next = DECOR.find(d => !E.hasDecor(st, d.id) && d.tier <= st.tier);
+  return `<div class="card decor-card"><h3>🌼 Украшения фермы</h3><div class="price">${n}/${DECOR.length}</div>
+    <p>Клумбы, колодец, беседка… Каждое украшение видно на ферме и даёт <b>+2% ко всему доходу</b>.${next ? ` Следующее: ${next.emoji} ${next.name} — ${short(next.cost)}.` : ''}</p>
+    <button class="btn primary go" data-act="decor">Открыть украшения</button></div>`;
+}
+function openDecor() {
+  const cards = DECOR.map(d => {
+    const has = E.hasDecor(st, d.id), why = has ? null : E.canDecor(st, d.id);
+    const locked = d.tier > st.tier;
+    return `<div class="card ${has ? 'done' : ''} ${locked ? 'lock' : ''}" id="d-${d.id}"><h3>${d.emoji} ${d.name}</h3><div class="price">${has ? '' : short(d.cost)}</div>
+      <p>${d.desc}</p><div class="tags"><span class="tag inc">+2% ко всему доходу</span></div>
+      ${has ? '<div class="tag ok">✔ Стоит на ферме</div>' : `<button class="btn primary go" data-act="buyDecor" data-id="${d.id}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Поставить · ${short(d.cost)}`}</button>`}</div>`;
+  }).join('');
+  sheet('🌼 Украшения фермы', `<div class="money-line">В кармане: <b>${short(st.money)}</b></div>
+    <p class="note">Пока копишь опыт для следующей цели — деньги не лежат без дела. Украшения входят в капитал фермы и опыта не дают.</p>${cards}`, 'decor');
+}
 function workersCard() {
   const lvl = E.farmLevel(st);
   const avail = WORKER_ORDER.filter(w => WORKERS[w].lvl <= lvl && !E.hired(st, w)).length;
@@ -1084,11 +1125,12 @@ function workerCard(w) {
   const price = locked ? 0 : E.hirePrice(st, w);
   const why = isOn ? null : E.canHire(st, w);
   return `<div class="card wcard ${isOn ? 'on' : ''} ${locked ? 'lock' : ''}" id="w-${w}">
-    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn ? '<b class="w-on">работает</b>' : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
-    <p>${d.desc}</p>
+    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn ? `<b class="w-on">работает · ур. ${E.wLv(st, w)}/${WORKER_MAX}</b>` : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
+    <p>${d.desc}</p>${isOn ? `<p class="w-up">${W_UP[w]}</p>` : ''}
     ${locked ? '' : `<div class="tags"><span class="tag">${isOn ? 'зарплата' : 'зарплата'} ≈ ${short(E.wageEstimate(st, w))}/мес</span>${isOn ? '' : `<span class="tag inc">наём ${short(price)}</span>`}</div>`}
     ${locked ? `<div class="tag">🔒 Уровень фермы ${d.lvl}</div>`
-      : isOn ? `<button class="btn wide ghost-dark" data-act="fire" data-id="${w}">Уволить</button>`
+      : isOn ? `${E.wLv(st, w) < WORKER_MAX ? (() => { const why = E.canUpWorker(st, w); return `<button class="btn primary go" data-act="upWorker" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>Улучшить до ур. ${E.wLv(st, w) + 1} · ${short(E.workerUpPrice(st, w))}</button>`; })() : '<div class="tag ok">✔ Максимальный уровень</div>'}
+        <button class="btn wide ghost-dark" data-act="fire" data-id="${w}">Уволить</button>`
       : `<button class="btn primary go" data-act="hire" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Нанять · ${short(price)}`}</button>`}
   </div>`;
 }
@@ -1306,6 +1348,15 @@ function takeCatch(toOrder) {
   else { flyToMoney(g.spot === 'home' ? 'creek' : 'pond', `+${short(r.sold)}`); toast(`${g.fish.name}: +${short(r.sold)}`); }
 }
 
+/* ================= Цель: капитал + уровень фермы ================= */
+const XP_HINT = 'Опыт ⭐ — за заказы (новый каждые 2–5 мин), большой заказ дня, ремонт дома деда, рыбалку и задания дня.';
+// «Райцентр: капитал ✅ · уровень 12/15 ⭐» + откуда брать опыт
+function goalStatus(name) {
+  const capOk = E.ratingCapital(st) >= E.goal(st), need = goalLevel(st.tier), lvl = E.farmLevel(st), lvOk = lvl >= need;
+  return `<span class="mgoal goal-st">${name ? name + ': ' : ''}капитал ${capOk ? '✅' : `${Math.round(E.progress(st) * 100)}% из ${goalLabel(st.tier)}`} · уровень ${lvl}/${need} ⭐${lvOk ? ' ✅' : ''}</span>
+    ${capOk && !lvOk ? `<span class="goal-hint">${XP_HINT}</span>` : ''}`;
+}
+
 /* ================= Быстрые кнопки, настройки, правила ================= */
 const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
       <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
@@ -1355,7 +1406,8 @@ function openRules() {
     <p><b>9. Рыбалка.</b> Мостки у речки внизу фермы: раз в 20 минут. Тапни, когда поплавок нырнёт! Рыбу можно продать или отдать в заказ «Уха». Удочку улучшают в «Стройке».</p>
     <p><b>10. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» (пруд — раз в 15 минут, рыба дороже), дальше — Райцентр и Агрохолдинг.</p>
     <p><b>11. Работники.</b> «👷 Работники» в «Стройке» и в разделе «Моя ферма»: помощник сам собирает урожай, водитель сдаёт заказы. Зарплата — раз в месяц.</p>
-    <p><b>12. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
+    <p><b>12. Цели.</b> Цель открывается, когда есть и капитал, и уровень фермы ⭐ (10 млн — ур. 22, 100 млн — ур. 50). Опыт — за заказы, ремонт дома, рыбалку и задания дня. Пока копишь опыт, трать деньги на работников, удочку, дом деда и украшения.</p>
+    <p><b>13. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }
@@ -1373,7 +1425,7 @@ fastTap($('#btnBuild'), () => { if (!st) return; haptic(); sfx.click(); $('#btnB
 fastTap($('#btnBook'), () => { if (!st) return; haptic(); sfx.click(); openBook(); });
 fastTap($('#btnNext'), () => { if (!st) return; haptic('medium'); sfx.click(); nextMonth(); });
 $('#farmer').onclick = () => { if (!st) return; haptic(); forceSay = true; hint(); forceSay = false; };
-$('.goal').onclick = () => st && toast(`Капитал ${short(E.ratingCapital(st))}: деньги + постройки − долг`);
+$('.goal').onclick = () => st && toast(E.goalNeedsLevel(st) ? `Капитал есть ✅ Нужен уровень фермы ${goalLevel(st.tier)} ⭐ (сейчас ${E.farmLevel(st)}). Опыт — за заказы, ремонт, рыбалку и задания дня` : `Капитал ${short(E.ratingCapital(st))}: деньги + постройки − долг. Для цели нужен и уровень фермы ${goalLevel(st.tier)} ⭐`);
 
 window.addEventListener('error', (e) => { try { toast('Ошибка: ' + e.message); } catch { /* */ } });
 

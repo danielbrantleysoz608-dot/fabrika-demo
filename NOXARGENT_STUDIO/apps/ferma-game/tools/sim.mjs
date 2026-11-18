@@ -100,7 +100,8 @@ export function play(seed, type, { until = 1e9, maxDays = 60, trace = false } = 
   const r = E.rng(seed * 97 + 1), hit = {}, log = [];
   const start = now;
   const end = start + maxDays * DAY;
-  const mark = () => { const c = E.ratingCapital(st); for (const m of MILESTONES) if (!hit[m] && c >= m) hit[m] = now - start; };
+  // 100 тыс — по капиталу; 1 млн и дальше — когда цель открылась (капитал + уровень фермы)
+  const mark = () => { const c = E.ratingCapital(st); for (const [i, m] of MILESTONES.entries()) if (!hit[m] && (i === 0 ? c >= m : st.tier >= i)) hit[m] = now - start; };
   while (now < end && !(hit[until])) {
     if (P.sessions) {
       // внутри сессии — каждые 30 с; между сессиями — прыжок к следующей
@@ -132,7 +133,7 @@ if (arg === 'trace') {
 } else if (!arg || arg === 'table') {
   const N = +process.argv[3] || 12;
   const types = process.argv[4] ? process.argv[4].split(',') : Object.keys(PLAYERS);
-  console.log(`Время до капитала (медиана по ${N} фермам, реальное время с начала игры):\n`);
+  console.log(`Время до цели (медиана по ${N} фермам, реальное время с начала игры; цель = капитал + уровень фермы):\n`);
   console.log('Тип игрока'.padEnd(30), MILESTONES.map(m => (m >= 1e9 ? `${m / 1e9} млрд` : m >= 1e6 ? `${m / 1e6} млн` : `${m / 1e3} тыс`).padStart(11)).join(''));
   for (const t of types) {
     const runs = Array.from({ length: N }, (_, i) => play(i + 1, t, { maxDays: 90 }));
