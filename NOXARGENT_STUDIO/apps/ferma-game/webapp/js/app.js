@@ -30,7 +30,12 @@ const n = (x) => Math.round(x).toLocaleString('ru-RU');
 // «с мая»: месяц в родительном падеже (номер 0…11, 0 = март)
 const MONTH_GEN = ['марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря', 'января', 'февраля'];
 const waitText = (w) => (w.minutes === Infinity ? 'нужна печка' : w.minutes < 60 ? `через ≈${w.minutes} мин` : `через ≈${Math.floor(w.minutes / 60)} ч ${w.minutes % 60} мин`);
+// «с мая (через ≈9 мин)», а если сезон со следующего месяца — «с нового месяца — жми «Следующий месяц»»
+const seasonLine = (w, built) => (w.months === 1
+  ? `${built ? 'ждёт сезона — ' : ''}с нового месяца — жми «Следующий месяц»`
+  : `${built ? 'ждёт сезона — ' : ''}с ${MONTH_GEN[w.month]}${w.minutes !== Infinity ? ` (${waitText(w)})` : ''}`);
 const cap1 = (s) => s[0].toUpperCase() + s.slice(1);
+const payText = (m) => (m === Infinity ? '—' : m < 90 ? `≈${Math.max(1, Math.round(m))} мин` : m < 48 * 60 ? `≈${Math.round(m / 60)} ч` : `≈${Math.round(m / 1440)} дн`);
 // 1 250 000 → «1,25 млн»
 function short(x, cur = ' ₽') {
   const a = Math.abs(x);
@@ -89,6 +94,10 @@ function hud() {
   updateNext();
   farmInfo();
   $('#app').classList.toggle('clean-phase', st.phase === 'clean' || !profile.game);
+  // быстрые кнопки есть в DOM только когда видны (никаких скрытых кнопок 0×0)
+  const q = $('#quick'), needQuick = !(st.phase === 'clean' || !profile.game);
+  if (needQuick && !q.children.length) q.innerHTML = QUICK_HTML;
+  if (!needQuick && q.children.length) q.innerHTML = '';
   const sky = SKY[m.season];
   music.setSeason(m.season); // плавная смена мелодии вместе с сезоном (если музыка уже играет)
   if (hud.sky !== sky) {
@@ -141,6 +150,7 @@ coach.init({
   onResume: () => {
     if (pausedAt && st && st.phase !== 'clean') st.lastTick += Date.now() - pausedAt; // пауза не считается временем фермы
     pausedAt = 0; $('#app').classList.remove('paused');
+    tapBlockUntil = Date.now() + 300;
     if (st && st.phase === 'clean') hint(); else $('#bubble').hidden = true;
   },
   onTap: () => { haptic(); sfx.click(); },
@@ -189,7 +199,7 @@ function toast(text) {
 // Мгновенный отклик: действие — сразу в момент касания (pointerdown), не ждём отпускания пальца.
 // Так тап не теряется, если палец чуть сдвинулся или пузырь урожая как раз перерисовался.
 svg.addEventListener('pointerdown', (e) => {
-  if (e.button > 0 || !st || coach.isOpen()) return;
+  if (e.button > 0 || !st || coach.isOpen() || tapsBlocked()) return;
   const el = e.target.closest('[data-tap]');
   if (!el) return;
   const { tap, id } = el.dataset;
@@ -304,10 +314,14 @@ function afterGain() {
 const layer = $('#layer');
 // Кнопки, которые всегда на месте (нижняя панель, быстрые сверху): срабатывают на касание.
 // click оставлен для мыши/клавиатуры, но не дублирует касание.
+// После закрытия любого окна 300 мс тапы игнорируются: второй тап «Закрыть»
+// не должен нажать «Следующий месяц», который стоит на том же месте.
+let tapBlockUntil = 0;
+const tapsBlocked = () => Date.now() < tapBlockUntil;
 function fastTap(el, fn) {
   let last = 0;
-  el.addEventListener('pointerdown', (e) => { if (e.button > 0) return; last = Date.now(); fn(e); });
-  el.addEventListener('click', (e) => { if (Date.now() - last < 700) return; fn(e); });
+  el.addEventListener('pointerdown', (e) => { if (e.button > 0 || tapsBlocked()) return; last = Date.now(); fn(e); });
+  el.addEventListener('click', (e) => { if (Date.now() - last < 700 || tapsBlocked()) return; fn(e); });
 }
 
 // keep-ui: окно поверх, но нижняя панель и фермер остаются на месте (фон затемнён)
@@ -321,6 +335,7 @@ function openLayer(html, cls = 'sheet-wrap', back = true) {
   if (back) tg?.BackButton.show(); else tg?.BackButton.hide();
 }
 function closeLayer() {
+  tapBlockUntil = Date.now() + 300;
   layer.hidden = true; layer.innerHTML = '';
   $('#app').classList.remove('covered', 'bare');
   tg?.BackButton.hide();
@@ -479,9 +494,9 @@ function card(id) {
     const w = E.seasonWait(st, id);
     const waiting = w && w.months > 0;
     const nowTag = waiting
-      ? `<span class="tag wait">🌱 ${L ? 'ждёт сезона — ' : ''}с ${MONTH_GEN[w.month]}${w.minutes !== Infinity ? ` (${waitText(w)})` : ''}</span>`
+      ? `<span class="tag wait">🌱 ${seasonLine(w, L > 0)}</span>`
       : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.baseIncome(id, 1) * k)}/мин`}</span>`;
-    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.baseIncome(id, 1) * k)}/мин в сезон</span>` : ''}${L && L < max ? `<span class="tag inc">+${short(next)}/мин за уровень</span>` : ''}<span class="tag">${b.seasonText}</span>`;
+    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.baseIncome(id, 1) * k)}/мин в сезон</span>` : ''}${L < max ? `<span class="tag inc">${L ? `+${short(next)}/мин за уровень` : ''}</span>`.replace('<span class="tag inc"></span>', '') : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
   } else if (b.kind === 'boost') {
     stats = `<span class="tag inc">сейчас +${Math.round(b.boost * L * 100)}% ко всему</span><span class="tag">+${Math.round(b.boost * 100)}% за уровень</span>`;
   }
@@ -517,7 +532,7 @@ function doBuy(id, sure = false) {
   const w = E.seasonWait(st, id);
   if (firstTime && !sure && w && w.months > 0) {
     openLayer(`<div class="dialog"><h3>🌱 ${BUILDINGS[id].name} — не сезон</h3>
-      <p>Начнёт приносить <b>с ${MONTH_GEN[w.month]}</b>${w.minutes !== Infinity ? ` (${waitText(w)})` : ''}. До этого урожая не будет.</p>
+      <p>Начнёт приносить <b>${w.months === 1 ? 'с нового месяца' : 'с ' + MONTH_GEN[w.month]}</b>${w.months === 1 ? ' — жми «Следующий месяц», когда он закончится' : w.minutes !== Infinity ? ` (${waitText(w)})` : ''}. До этого урожая не будет.</p>
       <p>Можно построить сейчас — или подождать и потратить деньги на то, что приносит уже сегодня.</p>
       <div class="row"><button class="btn wide" data-act="backToBuild">Подожду</button><button class="btn primary wide" data-act="buyAnyway" data-id="${id}">Построить · ${short(E.priceOf(st, id))}</button></div></div>`, 'screen dim keep-ui', true);
     layer.dataset.kind = 'season-warn';
@@ -737,6 +752,10 @@ $('#farmInfo').addEventListener('click', (e) => {
 });
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
+const QUICK_HTML = `<button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
+      <button class="qbtn" data-q="cards" aria-label="Открытки"><span>🃏</span><small>Открытки</small></button>
+      <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
+      <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>`;
 fastTap($('#quick'), (e) => {
   const b = e.target.closest('[data-q]');
   if (!b || !st) return;

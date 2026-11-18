@@ -210,7 +210,8 @@ function field(m, st) {
     let f = ''; for (let i = 1; i < 7; i++) { const y = 420 + i * 20, t = (y - 420) / 140; f += `<path d="M${208 - t * 16} ${y} H${438 + t * 16}"/>`; }
     s += `<g stroke="#8a5d3a" stroke-width="2">${f}</g>`;
   }
-  return `<g id="field">${s}</g>`;
+  // огород построен — тап по грядкам открывает его карточку (или собирает урожай)
+  return st.built?.garden ? `<g id="field" data-tap="bld" data-id="garden">${s}</g>` : `<g id="field">${s}</g>`;
 }
 
 function gardenBeds(m) {

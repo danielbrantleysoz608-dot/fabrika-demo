@@ -25,7 +25,6 @@ function ensureEl() {
   if (el) return el;
   el = document.createElement('div');
   el.id = 'coach';
-  el.hidden = true;
   el.innerHTML = `<div class="coach-dim"></div>
     <div class="coach-box">
       <div class="coach-bubble" role="dialog" aria-live="polite">
@@ -35,9 +34,11 @@ function ensureEl() {
       <div class="coach-farmer"></div>
     </div>`;
   document.querySelector('#app').appendChild(el);
-  // тап по облачку / фермеру / затемнению: допечатать → закрыть
+  // тап по облачку / фермеру / затемнению: допечатать → закрыть.
+  // Считаем только нажатия, начатые уже на подсказке (не «хвост» тапа, который её открыл).
+  el.addEventListener('pointerdown', () => { el.dataset.down = Date.now(); });
   el.addEventListener('click', (e) => {
-    if (!current) return;
+    if (!current || !(+el.dataset.down > +el.dataset.opened)) return;
     if (e.target.closest('.coach-skip')) { hooks.onTap(); return close(); }
     hooks.onTap();
     if (typing) finishTyping(); else close();
@@ -58,7 +59,7 @@ function open(item) {
   const text = el.querySelector('.coach-text');
   text.innerHTML = '';
   el.querySelector('.coach-hint').textContent = 'тап — показать всё';
-  el.hidden = false;
+  el.dataset.opened = Date.now();
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   hooks.onPause();
   const tk = tokens(item.html);
@@ -79,8 +80,11 @@ export function close() {
   clearInterval(typing); typing = null;
   const done = current.onClose;
   current = null;
-  el.hidden = true;
-  if (queue.length) { open(queue.shift()); } else hooks.onResume();
+  if (queue.length) { open(queue.shift()); } else {
+    // окно подсказки удаляем из DOM целиком — никаких скрытых копий кнопок
+    el.remove(); el = null;
+    hooks.onResume();
+  }
   if (done) done();
 }
 

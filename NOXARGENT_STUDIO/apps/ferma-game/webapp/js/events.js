@@ -5,11 +5,13 @@
 
 const ALL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 const need = (st, sum) => (st.money < sum ? `нужно ${Math.round(sum).toLocaleString('ru-RU')} ₽` : null);
+import { maxLevel } from './data.js';
 const lv = (st, id) => st.lv[id] || 0;
+const canUp = (st, id) => lv(st, id) < maxLevel(id, st.tier);
 
 export const EVENTS = [
   {
-    id: 'beekeeper', months: [1, 2], weight: 3,
+    id: 'beekeeper', months: [1, 2], weight: 3, cond: (st) => canUp(st, 'apiary'),
     kicker: 'Предложение', title: 'Пасечник <em>продаёт ульи</em>',
     text: 'Старый пасечник Михалыч уезжает к дочке в город и отдаёт ульи со скидкой 40%.',
     options: [

@@ -2,7 +2,7 @@
 // Время — реальное: продукция копится по минутам, 1 игровой месяц = MONTH_MS.
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
-  LOAN_RATE, LEVEL_INC_MULT, STEEP_FROM, STEEP_MULT, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
+  LOAN_RATE, INC_GROWTH, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -70,7 +70,13 @@ export function hitTrash(st, id) {
 /* ---------- Доход ---------- */
 export const level = (st, id) => st.lv[id] || 0;
 // доход постройки на уровне L (₽/мин без сезона и бонусов)
-export const baseIncome = (id, L) => (L > 0 ? BUILDINGS[id].inc * L * LEVEL_INC_MULT ** (L - 1) : 0);
+// доход на уровне L: inc + inc·g + inc·g² + … — каждый уровень прибавляет больше предыдущего
+export const baseIncome = (id, L) => { const g = BUILDINGS[id].incGrowth || INC_GROWTH; return L > 0 ? BUILDINGS[id].inc * (g ** L - 1) / (g - 1) : 0; };
+// окупаемость следующего уровня (минуты, в сезон)
+export function paybackMin(st, id) {
+  const L = level(st, id), d = (baseIncome(id, L + 1) - baseIncome(id, L)) * globalMult(st, false);
+  return d > 0 ? priceOf(st, id) / d : Infinity;
+}
 
 export function globalMult(st, withMods = true) {
   let k = 1;
@@ -181,10 +187,10 @@ export function claimLogin(st) {
 }
 
 /* ---------- Стройка и улучшения ---------- */
-// множитель цены уровня: ×1.6 (у прилавка/марки свой), а после STEEP_FROM — круче
-export const levelMult = (b, i) => (b.costMult || LEVEL_COST_MULT) * (i >= (b.steepFrom ?? STEEP_FROM) ? STEEP_MULT / LEVEL_COST_MULT : 1);
+// множитель цены уровня: ×1.6 (у прилавка и марки — свой)
+export const levelMult = (b) => b.costMult || LEVEL_COST_MULT;
 // цена перехода с уровня L на L+1
-export function costAt(b, L) { let p = b.cost; for (let i = 0; i < L; i++) p *= levelMult(b, i); return p; }
+export function costAt(b, L) { return b.cost * levelMult(b) ** L; }
 export function priceOf(st, id) {
   const b = BUILDINGS[id], L = level(st, id);
   let p = costAt(b, L);
@@ -199,7 +205,7 @@ export function buildingsValue(st) {
     const b = BUILDINGS[id], L = level(st, id);
     if (b.kind === 'once') { v += b.cost * L; continue; }
     let p = b.cost;
-    for (let i = 0; i < L; i++) { v += p; p *= levelMult(b, i); }
+    for (let i = 0; i < L; i++) { v += p; p *= levelMult(b); }
   }
   return v;
 }

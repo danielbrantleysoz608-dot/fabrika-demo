@@ -115,3 +115,17 @@ if (arg === 'income') {
     console.log(`через ${h} ч: капитал ${E.fmt(E.capital(st))}, доход ${E.fmt(E.totalRate(st))}/мин, уровни`, JSON.stringify(st.lv));
   }
 }
+if (arg === 'payback') {
+  // окупаемость каждого уровня в сезон (без прилавка): цена / прибавка дохода
+  const st = E.newGame(1, 0);
+  console.log('Окупаемость улучшения, минут (в сезон):');
+  console.log('Постройка'.padEnd(22), Array.from({ length: 10 }, (_, i) => `→${i + 1}`.padStart(6)).join(''));
+  for (const id of BUILD_ORDER) {
+    if (BUILDINGS[id].kind !== 'prod') continue;
+    const row = [];
+    for (let L = 0; L < 10; L++) { st.lv[id] = L; row.push(Math.round(E.paybackMin(st, id))); }
+    st.lv[id] = 0;
+    console.log(BUILDINGS[id].name.padEnd(22), row.map(x => String(x).padStart(6)).join(''));
+  }
+  console.log('\nПрибавка за уровень, ₽/мин (огород):', Array.from({ length: 10 }, (_, L) => Math.round(E.baseIncome('garden', L + 1) - E.baseIncome('garden', L))).join(' → '));
+}
