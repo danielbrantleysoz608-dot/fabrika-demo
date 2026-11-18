@@ -11,6 +11,7 @@ GET  /health           — проверка живости
 """
 import json
 import logging
+import mimetypes
 import re
 
 from aiohttp import web
@@ -20,6 +21,13 @@ from config import Config
 from db import DB
 
 log = logging.getLogger("ferma.web")
+
+# На Windows тип файла берётся из реестра, и .js часто отдаётся как text/plain —
+# тогда браузер не запускает модули игры (пустой голубой экран). Задаём типы явно.
+for _ext, _type in {".js": "application/javascript", ".mjs": "application/javascript", ".css": "text/css",
+                    ".svg": "image/svg+xml", ".json": "application/json", ".html": "text/html", ".png": "image/png",
+                    ".webp": "image/webp", ".woff2": "font/woff2"}.items():
+    mimetypes.add_type(_type, _ext)
 CFG = web.AppKey("cfg", Config)
 DBK = web.AppKey("db", DB)
 BOT_NAME = web.AppKey("bot_username", str)
@@ -144,6 +152,9 @@ async def no_cache_js(request: web.Request, handler):
     resp = await handler(request)
     if request.path.endswith((".js", ".css")):
         resp.headers.setdefault("Cache-Control", "no-cache")
+        # тип — явно (на Windows иначе может уйти text/plain и игра не запустится)
+        if isinstance(resp, web.FileResponse):
+            resp.headers["Content-Type"] = "application/javascript; charset=utf-8" if request.path.endswith(".js") else "text/css; charset=utf-8"
     return resp
 
 
