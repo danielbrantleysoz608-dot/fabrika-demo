@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT=/opt/ferma
 APP="$ROOT/repo/NOXARGENT_STUDIO/apps/ferma-game"
 BRANCH="${BRANCH:-claude/ferma-game-telegram-app-57b7fw}"
-bash "$APP/deploy/backup.sh" || true   # копия базы перед обновлением
+runuser -u ferma -- bash "$APP/deploy/backup.sh" || true   # копия базы перед обновлением
 sudo -u ferma git -C "$ROOT/repo" fetch -q --depth 1 origin "$BRANCH"
 sudo -u ferma git -C "$ROOT/repo" reset -q --hard FETCH_HEAD
 sudo -u ferma "$APP/bot/.venv/bin/pip" install -q -r "$APP/bot/requirements.txt"

@@ -95,12 +95,14 @@ systemctl enable -q --now ferma-bot
 systemctl restart ferma-bot
 
 say "Ежедневная копия базы (04:00 по Москве)"
+install -d -o ferma -g ferma "$ROOT/backups"
 cat > /etc/systemd/system/ferma-backup.service <<UNIT
 [Unit]
 Description=Ферма деда: копия базы
 
 [Service]
 Type=oneshot
+User=ferma
 ExecStart=/bin/bash $APP/deploy/backup.sh
 UNIT
 cat > /etc/systemd/system/ferma-backup.timer <<UNIT
