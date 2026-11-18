@@ -432,7 +432,7 @@ function openBoard() {
     else list.push(`<div class="ocard wait"><div class="oh"><span class="oc">⏳</span><b>Новый заказ</b></div><p class="note">появится через ${mmss(Math.max(0, (o?.readyAt || 0) - Date.now()))}</p></div>`);
   });
   if (st.big && !st.big.done) list.push(orderCard({ o: st.big, i: 'big' }));
-  sheet('📋 Доска заказов', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Отказался — новый заказ через 10 минут.</p>${list.join('')}`, 'board');
+  sheet('📋 Заказы', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Отказался — новый заказ через 10 минут.</p>${list.join('')}`, 'board');
 }
 function showLevelUp(lvl) {
   const ids = E.unlockedAt(lvl).filter(id => BUILDINGS[id].tier <= st.tier);
@@ -1097,18 +1097,19 @@ const W_UP = {
 function decorCard() {
   const n = E.decorCount(st), next = DECOR.find(d => !E.hasDecor(st, d.id) && d.tier <= st.tier);
   return `<div class="card decor-card"><h3>🌼 Украшения фермы</h3><div class="price">${n}/${DECOR.length}</div>
-    <p>Клумбы, колодец, беседка… Каждое украшение видно на ферме и даёт <b>+2% ко всему доходу</b>.${next ? ` Следующее: ${next.emoji} ${next.name} — ${short(next.cost)}.` : ''}</p>
+    <p>Клумбы, колодец, беседка… Каждое украшение видно на ферме и даёт <b>+2% ко всему доходу</b>.${next ? ` Следующее: ${next.emoji} ${next.name} — ${short(E.decorPrice(st, next.id))}.` : ''}</p>
     <button class="btn primary go" data-act="decor">Открыть украшения</button></div>`;
 }
 function openDecor() {
   const cards = DECOR.map(d => {
     const has = E.hasDecor(st, d.id), why = has ? null : E.canDecor(st, d.id);
     const locked = d.tier > st.tier;
-    return `<div class="card ${has ? 'done' : ''} ${locked ? 'lock' : ''}" id="d-${d.id}"><h3>${d.emoji} ${d.name}</h3><div class="price">${has ? '' : short(d.cost)}</div>
-      <p>${d.desc}</p><div class="tags"><span class="tag inc">+2% ко всему доходу</span></div>
-      ${has ? '<div class="tag ok">✔ Стоит на ферме</div>' : `<button class="btn primary go" data-act="buyDecor" data-id="${d.id}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Поставить · ${short(d.cost)}`}</button>`}</div>`;
+    const pay = has ? '' : `<span class="tag">окупится за ≈${Math.max(1, Math.round(E.decorPrice(st, d.id) / Math.max(1, E.totalRate(st) * 0.02) / 60))} ч</span>`;
+    return `<div class="card ${has ? 'done' : ''} ${locked ? 'lock' : ''}" id="d-${d.id}"><h3>${d.emoji} ${d.name}</h3><div class="price">${has ? '' : short(E.decorPrice(st, d.id))}</div>
+      <p>${d.desc}</p><div class="tags"><span class="tag inc">+2% ко всему доходу</span>${locked ? '' : pay}</div>
+      ${has ? '<div class="tag ok">✔ Стоит на ферме</div>' : `<button class="btn primary go" data-act="buyDecor" data-id="${d.id}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Поставить · ${short(E.decorPrice(st, d.id))}`}</button>`}</div>`;
   }).join('');
-  sheet('🌼 Украшения фермы', `<div class="money-line">В кармане: <b>${short(st.money)}</b></div>
+  sheet('🌼 Украшения', `<div class="money-line">В кармане: <b>${short(st.money)}</b></div>
     <p class="note">Пока копишь опыт для следующей цели — деньги не лежат без дела. Украшения входят в капитал фермы и опыта не дают.</p>${cards}`, 'decor');
 }
 function workersCard() {
@@ -1353,7 +1354,7 @@ const XP_HINT = 'Опыт ⭐ — за заказы (новый каждые 2�
 // «Райцентр: капитал ✅ · уровень 12/15 ⭐» + откуда брать опыт
 function goalStatus(name) {
   const capOk = E.ratingCapital(st) >= E.goal(st), need = goalLevel(st.tier), lvl = E.farmLevel(st), lvOk = lvl >= need;
-  return `<span class="mgoal goal-st">${name ? name + ': ' : ''}капитал ${capOk ? '✅' : `${Math.round(E.progress(st) * 100)}% из ${goalLabel(st.tier)}`} · уровень ${lvl}/${need} ⭐${lvOk ? ' ✅' : ''}</span>
+  return `<span class="mgoal goal-st">${name ? name + ': ' : ''}капитал ${capOk ? '✅' : `${Math.round(E.progress(st) * 100)}% из ${goalLabel(st.tier)}`} · уровень ${lvOk ? '✅' : `${lvl} из ${need} ⭐`}</span>
     ${capOk && !lvOk ? `<span class="goal-hint">${XP_HINT}</span>` : ''}`;
 }
 

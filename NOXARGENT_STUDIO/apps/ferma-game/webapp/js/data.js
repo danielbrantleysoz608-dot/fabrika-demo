@@ -58,25 +58,25 @@ export const SEASON_ICON = { early: 'sprout', spring: 'sprout', summer: 'sun', a
 const always = () => 1;
 const months = (from, to, k = 1) => (m) => (m >= from && m <= to ? k : 0);
 export const BUILDINGS = {
-  coop:       { product: 'egg', lvl: 1, kind: 'prod', name: 'Курятник', cost: 420, inc: 39.3, unit: 'яиц', price: 12, tier: 0, max: 10,
+  coop:       { product: 'egg', lvl: 1, kind: 'prod', name: 'Курятник', cost: 420, inc: 33.4, unit: 'яиц', price: 12, tier: 0, max: 10,
                 season: (m) => (m >= 9 ? 0.5 : 1), seasonText: 'круглый год, зимой вдвое меньше',
                 desc: 'Куры несут яйца. Каждый уровень — +10 кур и быстрее.' },
   stall:      { lvl: 2, kind: 'boost', name: 'Прилавок у дороги', cost: 6000, boost: 0.05, costMult: 2, tier: 0, max: 10,
                 desc: '«ЯЙЦА деревенские». Каждый уровень — +5% ко всему доходу.' },
-  garden:     { product: 'veg', lvl: 2, kind: 'prod', name: 'Огород', cost: 1900, inc: 127.6, unit: 'кг', price: 25, tier: 0, max: 10,
+  garden:     { product: 'veg', lvl: 2, kind: 'prod', name: 'Огород', cost: 1900, inc: 108.5, unit: 'кг', price: 25, tier: 0, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Грядки на дедовом поле.' },
   fence:      { lvl: 2, kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
-  greenhouse: { product: 'cuke', lvl: 1, kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 77.9, unit: 'кг', price: 60, tier: 0, max: 10,
+  greenhouse: { product: 'cuke', lvl: 1, kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 66.2, unit: 'кг', price: 60, tier: 0, max: 10,
                 season: (m, st) => (m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь, зимой — с печкой',
                 desc: 'Дед хранил старые рамы. Собираем из них теплицу!' },
   stove:      { lvl: 4, kind: 'once', name: 'Печка в теплицу', cost: 30000, tier: 0, requires: 'greenhouse',
                 desc: 'Буржуйка: зимой теплица работает и даёт ×1.5 (огурцы втридорога).' },
-  apiary:     { product: 'honey', lvl: 3, kind: 'prod', name: 'Пасека', cost: 3400, inc: 212.9, unit: 'кг мёда', price: 600, tier: 0, max: 10,
+  apiary:     { product: 'honey', lvl: 3, kind: 'prod', name: 'Пасека', cost: 3400, inc: 181, unit: 'кг мёда', price: 600, tier: 0, max: 10,
                 season: months(3, 5), seasonText: 'мёд июнь – август', desc: 'Ульи. Мёд только летом, зато дорогой.' },
   omshanik:   { lvl: 3, kind: 'once', name: 'Омшаник', cost: 20000, tier: 0, requires: 'apiary',
                 desc: 'Зимний домик для пчёл. Без него в декабре пасека откатится на 1-й уровень.' },
-  cow:        { product: 'milk', lvl: 4, kind: 'prod', name: 'Корова', cost: 18000, inc: 736, unit: 'л молока', price: 60, tier: 0, max: 10,
-                season: (m) => (m >= 9 ? 0.8 : 1), seasonText: 'круглый год', desc: 'Корова — дорогое удовольствие: забирает все деньги, зато молоко каждый день и много. Каждый уровень — ещё корова.' },
+  cow:        { product: 'milk', lvl: 4, kind: 'prod', name: 'Корова', cost: 18000, inc: 625.6, unit: 'л молока', price: 60, tier: 0, max: 10,
+                season: (m) => (m >= 9 ? 0.8 : 1), seasonText: 'круглый год', desc: 'Корова — дорогое удовольствие, но молоко каждый день. Каждый уровень — ещё корова.' },
   // --- Река и луг (после 1 млн) ---
   honeyfield: { loc: 'river', product: 'honey', kind: 'prod', name: 'Пасека-поле', cost: 3000000, inc: 60000, costMult: 2.5, incGrowth: 1.6, unit: 'кг мёда', price: 600, tier: 1, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Луг медоносов у реки и сотня ульев.' },
@@ -184,19 +184,20 @@ export const xpForLevel = (n) => (n <= 1 ? 0 : Math.round(30 * (n - 1) ** 1.7));
 export const XP = { build: 8, repair: 60, order: [12, 30], big: 80, daily: 15, login: 10 };
 // Цель открывается, когда есть И капитал, И уровень фермы («нас в районе должны знать»).
 // Опыт идёт только из игры: заказы, большой заказ дня, ремонт дома, рыбалка, задания дня. За деньги и Stars — нельзя.
-export const GOAL_LEVELS = [1, 22, 50, 80];
+export const GOAL_LEVELS = [1, 21, 45, 75];
 export const goalLevel = (tier) => GOAL_LEVELS[tier] ?? GOAL_LEVELS[GOAL_LEVELS.length - 1] + (tier - GOAL_LEVELS.length + 1) * 10;
 // Украшения фермы — куда тратить деньги, пока копишь опыт: каждое +2% ко всему доходу, на картинке фермы.
+// Цена — от текущего дохода: прибавка +2% окупается за 1–2 часа (cost — нижняя граница).
 // Опыта не дают (иначе опыт можно было бы купить за деньги).
 export const DECOR = [
-  { id: 'flowers',   name: 'Клумбы из шин',      emoji: '🌼', cost: 300000,    tier: 0, desc: 'Дедовы шины — под цветы. Красиво и по-хозяйски.' },
-  { id: 'well',      name: 'Колодец-журавль',    emoji: '🪣', cost: 900000,    tier: 0, desc: 'Старый журавль у дома — как при деде.' },
-  { id: 'scarecrow', name: 'Пугало в шляпе',     emoji: '🎃', cost: 2500000,   tier: 1, desc: 'Охраняет огород. Шляпу дед узнал бы.' },
-  { id: 'gazebo',    name: 'Беседка с самоваром', emoji: '🫖', cost: 7000000,  tier: 1, desc: 'Чай с мёдом для гостей фермы.' },
-  { id: 'swing',     name: 'Качели на дубе',     emoji: '🌳', cost: 20000000,  tier: 2, desc: 'Внуки соседей теперь гостят у нас.' },
-  { id: 'fountain',  name: 'Пруд с утками',      emoji: '🦆', cost: 60000000,  tier: 2, desc: 'Утки, мостик, кувшинки.' },
-  { id: 'statue',    name: 'Памятник деду',      emoji: '🗿', cost: 250000000, tier: 3, desc: '«Деду — от благодарной фермы».' },
-  { id: 'arch',      name: 'Арка «Ферма деда»',  emoji: '⛩️', cost: 900000000, tier: 3, desc: 'Ворота с вывеской — видно с трассы.' },
+  { id: 'flowers',   name: 'Клумбы из шин',      emoji: '🌼', cost: 2000,    tier: 0, desc: 'Дедовы шины — под цветы. Красиво и по-хозяйски.' },
+  { id: 'well',      name: 'Колодец-журавль',    emoji: '🪣', cost: 4000,    tier: 0, desc: 'Старый журавль у дома — как при деде.' },
+  { id: 'scarecrow', name: 'Пугало в шляпе',     emoji: '🎃', cost: 60000,   tier: 1, desc: 'Охраняет огород. Шляпу дед узнал бы.' },
+  { id: 'gazebo',    name: 'Беседка с самоваром', emoji: '🫖', cost: 120000,  tier: 1, desc: 'Чай с мёдом для гостей фермы.' },
+  { id: 'swing',     name: 'Качели на дубе',     emoji: '🌳', cost: 1500000,  tier: 2, desc: 'Внуки соседей теперь гостят у нас.' },
+  { id: 'fountain',  name: 'Пруд с утками',      emoji: '🦆', cost: 3000000,  tier: 2, desc: 'Утки, мостик, кувшинки.' },
+  { id: 'statue',    name: 'Памятник деду',      emoji: '🗿', cost: 30000000, tier: 3, desc: '«Деду — от благодарной фермы».' },
+  { id: 'arch',      name: 'Арка «Ферма деда»',  emoji: '⛩️', cost: 60000000, tier: 3, desc: 'Ворота с вывеской — видно с трассы.' },
 ];
 export const DECOR_BONUS = 0.02;
 // Улучшение работника: 3 уровня, цена ×4 к найму за каждый

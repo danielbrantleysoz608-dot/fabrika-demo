@@ -123,6 +123,7 @@ export function tick(st, now = Date.now()) {
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
   refillOrders(st, now);
+  accrueOrders(st, dt);
   let changed = false;
   for (const id of PRODUCERS) {
     if (!level(st, id)) continue;
@@ -267,12 +268,18 @@ export function upWorker(st, w) {
   const why = canUpWorker(st, w); if (why) return why;
   const p = workerUpPrice(st, w);
   st.money -= p; st.workers[w].lv = wLv(st, w) + 1;
-  st.workerSpent = (st.workerSpent || 0) + p;
+  st.workers[w].spent = (st.workers[w].spent || 0) + p;
   addHistory(st, { m: st.month, t: `👷 ${WORKERS[w].name}: уровень ${st.workers[w].lv} (${fmt(p)}).` });
   return null;
 }
 /* ---------- Украшения фермы ---------- */
 export const hasDecor = (st, id) => !!st.decor?.[id];
+// цена украшения — от текущего дохода: прибавка +2% окупается за 1–2 ч (cost — нижняя граница)
+export function decorPrice(st, id) {
+  const i = DECOR.findIndex(d => d.id === id), d = DECOR[i];
+  const first = DECOR.findIndex(x => x.tier === d.tier);
+  return nice(Math.max(d.cost, perMin(st) * DECOR_BONUS * 60 * (1 + 0.8 * (i - first))));
+}
 export const decorCount = (st) => Object.keys(st.decor || {}).length;
 export function canDecor(st, id) {
   const d = DECOR.find(x => x.id === id);
@@ -280,16 +287,17 @@ export function canDecor(st, id) {
   if (hasDecor(st, id)) return 'уже стоит';
   if (st.phase === 'clean') return 'сначала уборка';
   if (d.tier > st.tier) return `откроется после цели ${tierName(d.tier - 1)}`;
-  if (st.money < d.cost) return 'не хватает ' + fmt(d.cost - st.money);
+  if (st.money < decorPrice(st, id)) return 'не хватает ' + fmt(decorPrice(st, id) - st.money);
   return null;
 }
 export function buyDecor(st, id) {
   const why = canDecor(st, id); if (why) return why;
   const d = DECOR.find(x => x.id === id);
-  st.money -= d.cost;
+  const price = decorPrice(st, id);
+  st.money -= price;
   if (!st.decor) st.decor = {};
-  st.decor[id] = true;
-  addHistory(st, { m: st.month, t: `🌼 Украшение фермы: ${d.name} (${fmt(d.cost)}). +2% к доходу.` });
+  st.decor[id] = price;                     // помним цену — она в капитале фермы
+  addHistory(st, { m: st.month, t: `🌼 Украшение фермы: ${d.name} (${fmt(price)}). +2% к доходу.` });
   checkGoals(st);
   return null;
 }
@@ -318,7 +326,7 @@ export function hire(st, w, now = Date.now()) {
   const p = hirePrice(st, w);
   st.money -= p;
   if (!st.workers) st.workers = {};
-  st.workers[w] = { at: now, last: now, lv: 1 };
+  st.workers[w] = { at: now, last: now, lv: 1, spent: p }; // наём — вложение в ферму, идёт в капитал
   addHistory(st, { m: st.month, t: `👷 Наняли: ${WORKERS[w].name} (${fmt(p)}).` });
   return null;
 }
@@ -424,8 +432,17 @@ function logCapital(st) {
     log.push([Math.round(t * 10) / 10, Math.round(ratingCapital(st))]);
     if (log.length > 20) log.shift();
   }
+  // сосед никогда не беднеет: тянется к цели (85–110% твоего капитала 6 минут назад),
+  // а когда цель ниже — всё равно растёт, на 70% от твоего темпа
+  const dtMin = Math.max(0, t - (st.nbT ?? t)); st.nbT = t;
+  const old = log.find(x => x[0] >= t - NB_DELAY_MIN) || log[0];
+  const now = Math.max(1, ratingCapital(st));
+  const rate = old && old[1] > 0 && t - old[0] > 0.5 ? Math.max(0, (now / old[1]) ** (1 / (t - old[0])) - 1) : 0;
+  const grown = (st.nbVal || 0) * (1 + 0.7 * Math.min(rate, 0.05) * dtMin);   // не быстрее ~3,5% в минуту
+  st.nbVal = Math.min(Math.max(grown, neighborTarget(st)), Math.max(st.nbVal || 0, now * 1.1)); // и не выше 110% твоего
 }
-export function neighborCap(st) {
+export const neighborCap = (st) => Math.round(Math.max(st.nbVal || 0, START_MONEY * 0.9));
+function neighborTarget(st) {
   const t = (st.playMs || 0) / 60000;
   const log = st.capLog || [];
   let base = Math.max(0, ratingCapital(st)) * 0.9;
@@ -481,23 +498,25 @@ export function makeOrder(st, now, big = false) {
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
-  // награда — минуты дохода фермы: обычный 3–8 мин, большой 15–20 мин. Объём — товар на эту сумму,
-  // но копить его не меньше 3 и не больше 12 минут (большой — 20–40). Награда = стоимость товара ×1.3 (кафе/дачники/магазин),
-  // поэтому заказ выгоднее прилавка, но не умножает весь доход фермы.
-  const rewMin = big ? rndRange(r, 15, 20) : rndRange(r, 3, 8);
-  const [tMin, tMax] = big ? [20, 40] : [3, 12];
-  const items = chosen.map(p => {
-    const want = perMin(st) * rewMin / 1.3 / chosen.length / itemPrice(st, p);
-    const t = Math.min(tMax, Math.max(tMin, want / can[p]));
-    return { p, need: Math.max(3, Math.round(can[p] * t)), have: 0 };
-  });
+  // объём — сколько ферма произведёт этого продукта за t минут после появления заказа (обычный 3–10 мин, большой 20–30);
+  // копится только новое производство (it.avail), старый запас амбара разом не засчитывается.
+  // Награда — минуты дохода всей фермы: обычный 3–8 мин (больше объём — больше награда), большой — 15–20 мин.
+  const t = big ? rndRange(r, 20, 30) : rndRange(r, 3, 10);
+  const items = chosen.map(p => ({ p, need: Math.max(3, Math.round(can[p] * t)), have: 0, avail: 0 }));
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
-  const mult = (big ? 1.45 : client.mult) * (1 + 0.2 * level(st, 'market'));
-  const W = items.reduce((a, it) => a + it.need / can[it.p], 0) / items.length; // сколько минут копить
+  const rewMin = big ? 15 + (t - 20) / 2 : 3 + (t - 3) / 7 * 5;
+  const mult = (big ? 1 : client.mult / 1.3) * (1 + 0.2 * level(st, 'market'));
   return {
     client: client.id, name: client.name, emoji: client.emoji, big, items,
-    reward: nice(value * mult), xp: big ? Math.round(XP.big * Math.min(1.3, W / 25)) : Math.round(XP.order[0] + Math.min(1, (W - 3) / 9) * (XP.order[1] - XP.order[0])), at: now,
+    reward: nice(Math.max(perMin(st) * rewMin * mult, value * 1.25)),
+    xp: big ? Math.round(XP.big * t / 25) : Math.round(XP.order[0] + (t - 3) / 7 * (XP.order[1] - XP.order[0])), at: now,
   };
+}
+// сколько продукции для заказа ферма произвела с момента его появления
+function accrueOrders(st, dt) {
+  const act = activeOrders(st); if (!act.length) return;
+  const can = producible(st);
+  for (const { o } of act) for (const it of o.items) if (it.avail !== undefined && can[it.p]) it.avail = Math.min(it.need, it.avail + can[it.p] * dt / 60000);
 }
 function refillOrders(st, now) {
   if (st.phase === 'clean') return;
@@ -525,7 +544,10 @@ function reserveForOrders(st, p, units) {
   for (const { o } of activeOrders(st)) {
     for (const it of o.items) {
       if (it.p !== p || it.have >= it.need || left <= 0) continue;
-      const take = Math.min(left, it.need - it.have);
+      // в заказ идёт только то, что произведено после его появления (старый запас амбара не засчитывается разом)
+      const room = it.avail === undefined ? it.need : Math.floor(it.avail) - it.have;
+      const take = Math.min(left, it.need - it.have, Math.max(0, room));
+      if (take <= 0) continue;
       it.have += take; left -= take; used += take;
     }
   }
@@ -577,8 +599,9 @@ export function priceOf(st, id) {
 export function buildingsValue(st) {
   let v = 0;
   for (let i = 0; i < (st.house || 0); i++) v += HOUSE_STAGES[i].cost;
-  for (const d of DECOR) if (st.decor?.[d.id]) v += d.cost;
-  v += st.workerSpent || 0;                 // улучшения работников — тоже вложения в ферму
+  for (const d of DECOR) if (st.decor?.[d.id] === true) v += d.cost; // старые сохранения
+  for (const w of Object.values(st.workers || {})) v += w.spent || 0; // наём и улучшения работников — тоже вложения в ферму
+  for (const id of Object.keys(st.decor || {})) v += st.decor[id] === true ? 0 : st.decor[id]; // украшения — по цене покупки
   for (const id of Object.keys(st.lv)) {
     const b = BUILDINGS[id], L = level(st, id);
     if (b.kind === 'once') { v += b.cost * L; continue; }
