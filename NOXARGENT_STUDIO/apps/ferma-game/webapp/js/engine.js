@@ -439,20 +439,22 @@ export function makeOrder(st, now, big = false) {
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
-  // объём — сколько ферма произведёт за W минут (копить 3–10 мин; большой — 20–30 мин)
-  const W = big ? rndRange(r, 20, 30) : rndRange(r, 3, 10);
+  // награда — минуты дохода фермы: обычный 3–8 мин, большой 15–20 мин. Объём — товар на эту сумму,
+  // но копить его не меньше 3 и не больше 12 минут (большой — 20–40). Награда = стоимость товара ×1.3 (кафе/дачники/магазин),
+  // поэтому заказ выгоднее прилавка, но не умножает весь доход фермы.
+  const rewMin = big ? rndRange(r, 15, 20) : rndRange(r, 3, 8);
+  const [tMin, tMax] = big ? [20, 40] : [3, 12];
   const items = chosen.map(p => {
-    const need = Math.max(3, Math.round(can[p] * W));
-    return { p, need, have: 0 };
+    const want = perMin(st) * rewMin / 1.3 / chosen.length / itemPrice(st, p);
+    const t = Math.min(tMax, Math.max(tMin, want / can[p]));
+    return { p, need: Math.max(3, Math.round(can[p] * t)), have: 0 };
   });
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
-  // награда — минуты дохода фермы: обычный 3–8 мин (чем больше объём, тем больше), большой — 15–20 мин
-  const rewMin = big ? 15 + (W - 20) / 2 : 3 + (W - 3) / 7 * 5;
-  const mult = (big ? 1 : client.mult / 1.3) * (1 + 0.2 * level(st, 'market'));
-  const reward = Math.max(perMin(st) * rewMin * mult, value * 1.25);
+  const mult = (big ? 1.45 : client.mult) * (1 + 0.2 * level(st, 'market'));
+  const W = items.reduce((a, it) => a + it.need / can[it.p], 0) / items.length; // сколько минут копить
   return {
     client: client.id, name: client.name, emoji: client.emoji, big, items,
-    reward: nice(reward), xp: big ? Math.round(XP.big * W / 25) : Math.round(XP.order[0] + (W - 3) / 7 * (XP.order[1] - XP.order[0])), at: now,
+    reward: nice(value * mult), xp: big ? Math.round(XP.big * Math.min(1.3, W / 25)) : Math.round(XP.order[0] + Math.min(1, (W - 3) / 9) * (XP.order[1] - XP.order[0])), at: now,
   };
 }
 function refillOrders(st, now) {
