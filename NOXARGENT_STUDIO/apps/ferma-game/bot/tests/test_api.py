@@ -112,7 +112,7 @@ async def test_leaderboard_anon_ranking(client):
     # новый игрок без имени получает «Фермер XXXX»
     await client.post("/api/score", json={"capital": 1}, headers=anon("noname-7777"))
     board = await (await client.get("/api/leaderboard", headers=anon("noname-7777"))).json()
-    assert board["me"]["name"] == "Фермер 7777"
+    assert board["me"]["name"] == "Фермер #7777"
 
 
 async def test_bought_money_counts_in_rating(client):

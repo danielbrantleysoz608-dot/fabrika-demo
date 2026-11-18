@@ -100,6 +100,17 @@ def current_week(now: float | None = None) -> str:
     return f"{d.year}-W{d.week:02d}"
 
 
+def shown_name(name: str | None, player_key: str) -> str:
+    import re as _re
+    n = (name or "").strip()
+    return n if _re.sub(r"[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3164\ufeff\u115f\u1160\uffa0]+", "", n) else default_name(player_key)
+
+
+def default_name(player_key: str) -> str:
+    """Игрок без ника и имени: «Фермер #1234» (последние 4 цифры id)."""
+    return "Фермер #" + player_key.split(":")[-1][-4:]
+
+
 def current_month(now: float | None = None) -> str:
     return datetime.fromtimestamp(now or time.time(), MSK).strftime("%Y-%m")
 
@@ -238,7 +249,7 @@ class DB:
         rating = min(claimed, limit)
         if claimed > limit:
             await self.conn.execute("INSERT INTO anticheat(player_key, at, claimed, accepted) VALUES(?,?,?,?)", (player_key, now, claimed, rating))
-        default = "Фермер " + player_key[-4:]
+        default = default_name(player_key)
         await self.conn.execute(
             """INSERT INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)
                ON CONFLICT(player_key) DO UPDATE SET
@@ -304,7 +315,7 @@ class DB:
             args = ()
         async with self.conn.execute(f"{base} ORDER BY value DESC, player_key LIMIT ?", (*args, limit)) as cur:
             rows = await cur.fetchall()
-        top = [{"rank": i + 1, "name": r["name"], "value": r["value"], "tier": r["tier"] or 0, "year": r["year"] or 1,
+        top = [{"rank": i + 1, "name": shown_name(r["name"], r["player_key"]), "value": r["value"], "tier": r["tier"] or 0, "year": r["year"] or 1,
                 "me": r["player_key"] == player_key, "key": r["player_key"]} for i, r in enumerate(rows)]
         me = None
         if player_key:
@@ -313,7 +324,7 @@ class DB:
             if mine:
                 async with self.conn.execute(f"SELECT COUNT(*) c FROM ({base}) WHERE value > ?", (*args, mine["value"])) as cur:
                     rank = (await cur.fetchone())["c"] + 1
-                me = {"rank": rank, "name": mine["name"], "value": mine["value"], "tier": mine["tier"] or 0, "year": mine["year"] or 1}
+                me = {"rank": rank, "name": shown_name(mine["name"], player_key), "value": mine["value"], "tier": mine["tier"] or 0, "year": mine["year"] or 1}
             else:
                 # игрока ещё нет в таблице (не прислал результат / за неделю пока без прироста) —
                 # всё равно показываем место: сколько игроков впереди при его текущем значении

@@ -49,6 +49,13 @@ def current_user(request: web.Request) -> dict:
 
 
 ANON_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
+# невидимые символы (пустые имена в Telegram делают из них) — не считаем за имя
+INVISIBLE = re.compile(r"[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\u2800\u3164\ufeff\u115f\u1160\uffa0]+")
+
+
+def clean_name(name: str | None) -> str:
+    name = re.sub(r"[<>\n\r\t]", "", name or "").strip()
+    return name if INVISIBLE.sub("", name) else ""
 
 
 def player_identity(request: web.Request) -> tuple[str, str, str | None]:
@@ -61,7 +68,9 @@ def player_identity(request: web.Request) -> tuple[str, str, str | None]:
     init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data:
         user = current_user(request)
-        name = " ".join(x for x in (user.get("first_name"), (user.get("last_name") or "")[:1]) if x) or "Фермер"
+        name = clean_name(" ".join(x for x in (user.get("first_name"), (user.get("last_name") or "")[:1]) if x))
+        if not name and user.get("username"):
+            name = "@" + str(user["username"])[:30]
         return f"tg:{user['id']}", name, anon_key
     if cfg.allow_anon and anon_key:
         raw = request.headers.get("X-Player-Name", "")
@@ -70,7 +79,7 @@ def player_identity(request: web.Request) -> tuple[str, str, str | None]:
             raw = unquote(raw)
         except Exception:  # noqa: BLE001
             raw = ""
-        name = re.sub(r"[<>\n\r\t]", "", raw).strip()[:24]
+        name = clean_name(raw)[:24]
         return anon_key, name, None  # пустое имя — сервер оставит прежнее (или даст «Фермер XXXX»)
     raise web.HTTPUnauthorized(text=json.dumps({"error": "no identity"}), content_type="application/json")
 

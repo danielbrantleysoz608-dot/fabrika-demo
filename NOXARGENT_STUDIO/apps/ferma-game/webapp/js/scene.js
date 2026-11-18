@@ -948,8 +948,10 @@ const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 /* ---------- Речка с мостками на ферме деда (рыбалка с самого начала) ---------- */
 // бейдж «🎣 клюёт!» / «⏳ 12:40» — текст обновляет app.js каждую секунду (без перерисовки сцены)
 function fishBadge(spot, x, y) {
-  return `<g transform="translate(${x} ${y})"><g class="fish-badge" id="fishBadge-${spot}"><rect x="-38" y="-12" width="76" height="21" rx="10.5" fill="#fbf3e3" stroke="#2f6fb5" stroke-width="2"/>
-    <text x="0" y="3.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10.5" fill="#2f6fb5">🎣 РЫБАЛКА</text></g></g>`;
+  return `<g transform="translate(${x} ${y})" class="fish-wrap"><g class="fish-badge" id="fishBadge-${spot}"><rect x="-38" y="-12" width="76" height="21" rx="10.5" fill="#fbf3e3" stroke="#2f6fb5" stroke-width="2"/>
+    <text x="0" y="3.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10.5" fill="#2f6fb5">🎣 РЫБАЛКА</text></g>
+    <g class="fish-plus" data-tap="fishplus" data-spot="${spot}"><circle cx="48" cy="-1.5" r="13" fill="transparent"/><circle cx="48" cy="-1.5" r="9" fill="#3fa34d" stroke="#1f5e2a" stroke-width="2"/>
+      <path d="M43.5 -1.5 H52.5 M48 -6 V3" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></g></g>`;
 }
 function creek(m) {
   const w = m.season === 'winter' ? '#dce9f2' : '#6fb6ec', wl = m.season === 'winter' ? '#f4f9fc' : '#a9d8f6';
@@ -960,8 +962,8 @@ function creek(m) {
     <path d="M250 752 l-6 -24" stroke="#8b5a36" stroke-width="2.5" stroke-linecap="round"/><path d="M244 728 Q214 740 206 772" stroke="#3b2a1f" stroke-width="1" fill="none" opacity=".6"/>
     <g transform="translate(206 774)"><ellipse rx="3.5" ry="5" fill="#fff" stroke="#3b2a1f" stroke-width="1.2"/><path d="M-3.5 -1 A3.5 5 0 0 1 3.5 -1z" fill="#e2403a"/></g>
     <path d="M124 790 l-3 -20 M130 794 l2 -22 M292 790 l4 -20 M298 796 l-2 -18" stroke="#6b8f3a" stroke-width="3" stroke-linecap="round"/>
-    ${fishBadge('home', 186, 734)}
     <rect x="112" y="720" width="196" height="88" fill="transparent"/>
+    ${fishBadge('home', 186, 734)}
   </g></g>`;
 }
 

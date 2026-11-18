@@ -231,6 +231,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'bld') return collect(id);
   if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
   if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
+  if (tap === 'fishplus') { haptic(); sfx.click(); return confirmPurchase('cast'); } // «+» у таймера рыбалки — ещё заброс за звёзды
   if (tap === 'fish') { haptic(); sfx.click(); return openFishing(el.dataset.spot || 'home'); }
   if (tap === 'dog') return petDog();
   if (tap === 'workers') { haptic(); sfx.click(); return openWorkers(); }
@@ -1132,14 +1133,20 @@ function workerCard(w) {
   const price = locked ? 0 : E.hirePrice(st, w);
   const why = isOn ? null : E.canHire(st, w);
   return `<div class="card wcard ${isOn ? 'on' : ''} ${locked ? 'lock' : ''}" id="w-${w}">
-    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn && st.workers[w].freeUntil ? `<b class="w-on">на неделю, до ${new Date(st.workers[w].freeUntil).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</b>` : isOn ? `<b class="w-on">работает · ур. ${E.wLv(st, w)}/${WORKER_MAX}</b>` : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
+    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn && st.workers[w].freeUntil ? `<b class="w-on">по звёздам: ещё <span data-free="${st.workers[w].freeUntil}">${freeLeft(st.workers[w].freeUntil)}</span></b>` : isOn ? `<b class="w-on">работает · ур. ${E.wLv(st, w)}/${WORKER_MAX}</b>` : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
     <p>${d.desc}</p>${isOn ? `<p class="w-up">${W_UP[w]}</p>` : ''}
     ${locked ? '' : `<div class="tags"><span class="tag">${isOn ? 'зарплата' : 'зарплата'} ≈ ${short(E.wageEstimate(st, w))}/мес</span>${isOn ? '' : `<span class="tag inc">наём ${short(price)}</span>`}</div>`}
     ${locked ? `<div class="tag">🔒 Уровень фермы ${d.lvl}</div>`
+      : isOn && st.workers[w].freeUntil ? `${shopEnabled() ? `<button class="btn star-btn wide" data-act="shopItem" data-id="helper7">⭐ Продлить на 7 дней за ${starPrice('helper7')}</button>` : ''}<button class="btn wide go" data-act="hire" data-id="${w}">Нанять насовсем · ${short(E.hirePrice(st, w))}</button>`
       : isOn ? `${E.wLv(st, w) < WORKER_MAX ? (() => { const why = E.canUpWorker(st, w); return `<button class="btn primary go" data-act="upWorker" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>Улучшить до ур. ${E.wLv(st, w) + 1} · ${short(E.workerUpPrice(st, w))}</button>`; })() : '<div class="tag ok">✔ Максимальный уровень</div>'}
         <button class="btn wide ghost-dark" data-act="fire" data-id="${w}">Уволить</button>`
-      : `<button class="btn primary go" data-act="hire" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Нанять · ${short(price)}`}</button>`}
+      : `<div class="row w-btns"><button class="btn primary go" data-act="hire" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Нанять · ${short(price)}`}</button>${w === 'helper' && shopEnabled() ? `<button class="btn star-btn" data-act="shopItem" data-id="helper7">⭐ 7 дней за ${starPrice('helper7')}</button>` : ''}</div>`}
   </div>`;
+}
+// «5 д 3 ч» / «3 ч 12 мин»
+function freeLeft(until) {
+  const m = Math.max(0, Math.round((until - Date.now()) / 60000));
+  return m >= 1440 ? `${Math.floor(m / 1440)} д ${Math.floor((m % 1440) / 60)} ч` : `${Math.floor(m / 60)} ч ${m % 60} мин`;
 }
 function openWorkers() {
   const n = WORKER_ORDER.filter(w => E.hired(st, w));
@@ -1247,7 +1254,7 @@ function fishBadges() {
     if (!g) continue;
     const w = E.fishWait(st, spot), t = w > 0 ? `⏳ ${waitTxt(w)}` : '🎣 клюёт!';
     const tx = g.querySelector('text');
-    if (tx.textContent !== t) { tx.textContent = t; g.classList.toggle('ready', w <= 0); }
+    if (tx.textContent !== t) { tx.textContent = t; g.classList.toggle('ready', w <= 0); g.parentNode.classList.toggle('ready', w <= 0); }
   }
   const tm = layer.querySelector('#fishTimer');
   if (tm) { const w = E.fishWait(st, tm.dataset.spot); if (w > 0) tm.textContent = waitTxt(w); else if (layer.dataset.kind === 'fishing-intro') openFishing(tm.dataset.spot); }
@@ -1380,7 +1387,7 @@ function shopBlocked(id) {
   if (id === 'cast' && Object.keys(FISH_SPOTS).every(sp => !E.spotOpen(st, sp) || E.fishWait(st, sp) <= 0)) return 'удочка и так готова';
   return null;
 }
-async function openShop() {
+async function openShop(section) {
   if (shopEnabled() && !shopCatalog) { try { shopCatalog = await shopApi.catalog(); } catch { /* цены по умолчанию */ } }
   const on = shopEnabled();
   const row = (id) => {
@@ -1392,9 +1399,34 @@ async function openShop() {
   };
   sheet('⭐ Магазин', `${on ? (shopCatalog?.test ? '<p class="note warn-test">Режим проверки оплаты: всё по 1 ⭐</p>' : '') : '<p class="note">Покупки за звёзды работают в Telegram: откройте игру через бота @ferma_deda_bot.</p>'}
     <div class="sub">Для фермы</div>${['skip', 'cast', 'helper7', 'samovar', 'patron'].map(row).join('')}
-    <div class="sub">💰 Деньги фермы</div>${['bag', 'wallet', 'chest'].map(row).join('')}
+    <div class="sub" id="shop-money">💰 Деньги фермы</div>${['bag', 'wallet', 'chest'].map(row).join('')}
     <p class="note">Купленные деньги идут в капитал и рейтинг, как заработанные. Вопросы по оплате — команда /paysupport в боте.</p>`, 'shop');
+  if (section) scrollSheetTo('#' + section);
 }
+// пролистать открытую шторку к элементу (без анимации «выезда», чтобы прокрутка не сбилась)
+function scrollSheetTo(sel) {
+  const sc = layer.querySelector('.sheet'), el = layer.querySelector(sel);
+  if (!sc || !el) return;
+  requestAnimationFrame(() => { sc.scrollTop += el.getBoundingClientRect().top - sc.getBoundingClientRect().top - 70; el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1400); });
+}
+// плюсики на панели сверху (как в мобильных играх)
+function chipPlus(k) {
+  if (!st) return;
+  haptic(); sfx.click();
+  if (k === 'money') return openShop('shop-money');
+  if (st.phase === 'clean') return say('Сначала <b>уборка</b> — потом стройка!', 'worried', 2500);
+  openBuild();
+  scrollSheetTo(k === 'hens' ? '#card-coop' : '#card-apiary');
+}
+(() => {
+  const chips = document.querySelectorAll('.chips .chip');
+  [[1, 'money', 'Купить деньги фермы'], [2, 'hens', 'Курятник в «Стройке»'], [3, 'hives', 'Пасека в «Стройке»']].forEach(([i, k, label]) => {
+    const b = document.createElement('button');
+    b.className = 'chip-plus'; b.textContent = '+'; b.setAttribute('aria-label', label);
+    fastTap(b, () => chipPlus(k));
+    chips[i]?.appendChild(b);
+  });
+})();
 // окно перед покупкой: что получишь, точная сумма или эффект, цена
 function confirmPurchase(id) {
   if (!shopEnabled()) return toast('Покупки за звёзды — в Telegram, через бота @ferma_deda_bot');
@@ -1450,7 +1482,7 @@ function goalStatus(name) {
 }
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
-const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
+const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span><span class="plus" data-q="lvlplus" aria-label="Опыт — доска заказов">+</span></button>
       <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
       <button class="qbtn" data-q="map" aria-label="Карта"><span>🗺</span><small>Карта</small></button>
       <button class="qbtn" data-q="workers" aria-label="Работники"><span>👷</span><small>Работники</small></button>
@@ -1468,6 +1500,7 @@ fastTap($('#quick'), (e) => {
   if (q === 'settings') return openSettings();
   if (q === 'menu') return ACTIONS.menu();
   if (q === 'shop') return openShop();
+  if (q === 'lvlplus') return openBoard(); // опыт — за заказы
   if (q === 'level') { const lp = E.levelProgress(st); const next = E.unlockedAt(lp.level + 1).map(id => BUILDINGS[id].name); return toast(`Уровень фермы ${lp.level}: ${lp.have}/${lp.need} ⭐${next.length ? ' · дальше: ' + next.join(', ') : ''}`); }
 });
 

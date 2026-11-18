@@ -351,7 +351,7 @@ export function canHire(st, w) {
   const d = WORKERS[w];
   if (!d) return 'нет такого работника';
   if (st.phase === 'clean') return 'сначала уборка';
-  if (hired(st, w)) return 'уже работает';
+  if (hired(st, w) && !st.workers[w].freeUntil) return 'уже работает'; // Ваню «по звёздам» можно нанять насовсем
   if (farmLevel(st) < d.lvl) return `нужен уровень фермы ${d.lvl}`;
   if (st.money < hirePrice(st, w)) return 'не хватает ' + fmt(hirePrice(st, w) - st.money);
   return null;

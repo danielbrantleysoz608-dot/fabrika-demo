@@ -238,3 +238,17 @@ async def test_subscription_api(aiohttp_client, tmp_path):
     await c.get("/api/sub?fresh=1", headers={"X-Telegram-Init-Data": init_data(44)})
     assert r["ok"] is True and len([1 for chat, _ in bot.sent if chat == 999]) == 1
     await db.close()
+
+
+async def test_blank_name_and_single_player_month(env):
+    # имя из невидимых символов (так делают «пустые» ники в Telegram) — показываем «Фермер #1234»
+    blank = sign_init_data({"auth_date": str(int(time.time())), "query_id": "q",
+                            "user": json.dumps({"id": 55551234, "first_name": "⠀ ​"})}, TOKEN)
+    h = {"X-Telegram-Init-Data": blank}
+    await env.c.post("/api/score", json={"capital": 20_000}, headers=h)
+    await env.db.conn.execute("UPDATE scores SET updated_at = updated_at - 3600")
+    await env.db.conn.commit()
+    await env.c.post("/api/score", json={"capital": 90_000}, headers=h)
+    m = await (await env.c.get("/api/leaderboard?period=month", headers=h)).json()
+    assert m["total"] == 1 and m["top"][0]["name"] == "Фермер #1234" and m["top"][0]["me"] is True
+    assert m["me"]["name"] == "Фермер #1234"

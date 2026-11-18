@@ -77,12 +77,13 @@ export async function openRating(ctx, period = 'week') {
   const prizes = data.prizes || {};
   const prize = (rank) => { const p = prizes[rank]; if (!p) return ''; return p.nft ? `<button class="r-prize nft" data-nft-open="1">${giftSVG}<small>NFT</small></button>` : `<span class="r-prize">${p.icon}<small>${p.label}</small></span>`; };
   const row = (r) => `<li class="${r.me ? 'me' : ''}"><span class="rk">${medal(r.rank)}</span><span class="nm">${esc(r.name)}${badges(r.badges)}${r.year > 1 ? `<small>год ${r.year}</small>` : ''}</span>${gain ? prize(r.rank) : ''}<b>${gain && r.value > 0 ? '+' : ''}${short(r.value)}</b></li>`;
-  const others = data.top.filter(r => !r.me);
-  const top = others.length
+  // заглушка «Стань первым» — только если в периоде ещё никого нет; сам игрок в таблице тоже считается
+  const top = data.top.length
     ? `<ol class="r-top">${data.top.map(row).join('')}</ol>`
     : `<div class="r-empty"><div class="r-empty-ico">🏆</div><b>Стань первым фермером в рейтинге!</b><span>${gain ? 'Период только начался — расти ферму, и попадёшь в топ.' : 'Расти ферму — и твоё имя будет первым в списке.'}</span></div>`;
   const meData = data.me || { rank: 1, name: null, value: myValue };
   const me = row({ ...meData, name: meData.name || playerName() || tgName() || 'Ты', me: true });
+  const meInTop = data.top.some(r => r.me);
   const canRename = !tgName();
   const timer = data.endsAt ? `<div class="r-timer">⏳ Итоги через <b data-ends="${data.endsAt}">${left(data.endsAt)}</b> · ${period === 'week' ? 'вс 20:00' : 'последний день месяца 20:00'} МСК</div>` : '';
   const plaque = period === 'month' && data.nft ? `<button class="r-plaque" data-nft-open="1"><span class="pl-pic">${giftSVG}<img src="${esc(data.nft.img)}" alt="" onerror="this.remove()"></span><span>🏆 Приз месяца — <b>NFT-подарок ${esc(data.nft.name)}</b><small>посмотреть подарок ›</small></span></button>` : '';
@@ -95,7 +96,7 @@ export async function openRating(ctx, period = 'week') {
   layer.querySelector('.r-list').innerHTML = `${timer}${plaque}
     ${winners.length ? `<div class="r-winner"><div class="rw-t">Победители прошлой недели / прошлого месяца</div>${winners.map(w => `<div>${w}</div>`).join('')}</div>` : ''}
     ${top}
-    <div class="r-me"><div class="r-me-lbl">Твоё место · ${unit}${data.total ? ` · игроков: ${data.total}` : ''}</div><ol>${me}</ol>
+    <div class="r-me"><div class="r-me-lbl">Твоё место · ${unit}${data.total ? ` · игроков: ${data.total}` : ''}</div>${meInTop && data.top.length <= 3 ? '' : `<ol>${me}</ol>`}
     ${canRename ? `<div class="r-name"><input id="rName" maxlength="24" placeholder="Твоё имя в рейтинге" value="${esc(playerName())}"><button class="btn primary" data-r="name">ОК</button></div>` : ''}</div>
     <p class="note">${gain ? 'Место — по приросту капитала за период: новички тоже могут победить.' : 'Место — по капиталу фермы: деньги + постройки − долг.'}</p>
     <button class="btn wide" data-r="rules">ℹ️ Правила</button>`;

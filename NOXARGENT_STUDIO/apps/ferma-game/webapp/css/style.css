@@ -666,3 +666,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .r-plaque .pl-pic { position: relative; }
 .r-plaque .pl-pic .gift-ico { width: 38px; height: 38px; }
 .r-plaque .pl-pic img { position: absolute; inset: 0; }
+/* ===== Плюсики на панели ===== */
+.chip { position: relative; }
+.chip-plus { position: absolute; top: -7px; right: -6px; width: 20px; height: 20px; border-radius: 50%; padding: 0; border: 2px solid #1f5e2a; background: #3fa34d; color: #fff;
+  font: 900 15px/1 Rubik, sans-serif; display: grid; place-items: center; pointer-events: auto; box-shadow: 0 2px 0 rgba(59,42,31,.3); touch-action: manipulation; }
+.chip-plus::after { content: ""; position: absolute; inset: -9px; }            /* палец попадает легче, а кружок маленький */
+.chip-plus:active { transform: translateY(1px); }
+#app.clean-phase .chip-plus { display: none; }
+.lvl-pill { position: relative; }
+.lvl-pill .plus { position: absolute; top: -7px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #1f5e2a; background: #3fa34d; color: #fff;
+  font: 900 15px/16px Rubik, sans-serif; text-align: center; box-shadow: 0 2px 0 rgba(59,42,31,.3); }
+.lvl-pill .plus::after { content: ""; position: absolute; inset: -9px; }
+.fish-wrap.ready .fish-plus { display: none; }
+.flash { animation: flashCard 1.4s ease-out; }
+@keyframes flashCard { 0%, 40% { box-shadow: 0 0 0 4px rgba(63,174,79,.6); } 100% { box-shadow: 0 0 0 0 rgba(63,174,79,0); } }
+.w-btns { gap: 8px; }
+.w-btns .btn { flex: 1; }
+.star-btn { background: #fff3d6; border-color: #e8a21a; color: #8a5a00; font-weight: 900; }
