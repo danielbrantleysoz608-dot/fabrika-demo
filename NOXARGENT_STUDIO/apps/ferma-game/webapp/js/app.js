@@ -123,8 +123,9 @@ function hud() {
   const sky = SKY[m.season];
   music.setSeason(m.season); // плавная смена мелодии вместе с сезоном (если музыка уже играет)
   if (hud.sky !== sky) {
-    hud.sky = sky; tg?.setHeaderColor?.(sky); tg?.setBackgroundColor?.(sky); document.body.style.background = sky;
+    hud.sky = sky; try { tg?.setHeaderColor?.(sky); tg?.setBackgroundColor?.(sky); } catch { /* */ } document.body.style.background = sky;
     const grass = { winter: '#c9d5de', autumn: '#9a9548', late: '#9a9548', early: '#7f8f4d' }[m.season] || '#3f8f31';
+    try { if (tg?.isVersionAtLeast?.('7.10')) tg.setBottomBarColor?.(grass); } catch { /* */ }
     document.documentElement.style.setProperty('--meadow', grass);
   }
 }
@@ -544,7 +545,7 @@ const ACTIONS = {
   goLoc: (id) => { closeLayer(); goLoc(id); },
   locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
   map: () => openMap(),
-  subOpen: () => { const url = subInfo?.url || 'https://t.me/predstav_kanal'; if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank'); },
+  subOpen: (key) => { const url = (subInfo?.items || []).find(i => i.key === key)?.url || subInfo?.url || 'https://t.me/predstav_kanal'; if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank'); },
   subCheck: () => subCheck(),
   shop: () => openShop(),
   shopItem: (id) => confirmPurchase(id),
@@ -1572,6 +1573,23 @@ function backToFull() {
   fitViewport();
   setTimeout(fitViewport, 300); setTimeout(fitViewport, 900); // Android дорисовывает окно не сразу
 }
+// Полноэкранный режим (Bot API 8.0+): только на телефоне. Небо уходит под статус-бар и кнопки Telegram,
+// а панель игры начинается ниже: safeAreaInset.top + contentSafeAreaInset.top (+6px в CSS).
+const MOBILE_TG = ['android', 'android_x', 'ios'].includes(tg?.platform);
+function applySafeArea() {
+  const sa = tg?.safeAreaInset || {}, ca = tg?.contentSafeAreaInset || {};
+  const root = document.documentElement.style;
+  root.setProperty('--tg-top', ((sa.top || 0) + (ca.top || 0)) + 'px');
+  root.setProperty('--tg-bot', ((sa.bottom || 0) + (ca.bottom || 0)) + 'px');
+}
+function goFullscreen() {
+  try {
+    if (MOBILE_TG && tg.isVersionAtLeast?.('8.0') && !tg.isFullscreen) tg.requestFullscreen();
+  } catch { /* старый Telegram — остаётся обычный режим с шапкой цвета неба */ }
+}
+['safeAreaChanged', 'contentSafeAreaChanged', 'fullscreenChanged'].forEach(ev => tg?.onEvent?.(ev, () => { applySafeArea(); fitViewport(); }));
+tg?.onEvent?.('fullscreenFailed', () => { applySafeArea(); fitViewport(); });
+applySafeArea();
 fitViewport();
 window.addEventListener('resize', fitViewport);
 window.visualViewport?.addEventListener('resize', fitViewport);
@@ -1585,6 +1603,7 @@ tg?.onEvent?.('activated', backToFull);
 async function boot() {
   if (tg) {
     tg.ready(); tg.expand();
+    goFullscreen(); // один раз при запуске; если игрок сам вышел из полноэкранного — не навязываем
     tg.disableVerticalSwipes?.();
     tg.enableClosingConfirmation?.();
   }
@@ -1606,17 +1625,27 @@ async function subscribed(fresh = false) {
   return !subInfo.required || subInfo.ok;
 }
 function showSubGate() {
+  const items = subInfo?.items?.length ? subInfo.items : [{ key: 'channel', title: '📺 Канал «Ферма с нуля»', url: 'https://t.me/predstav_kanal', button: 'Подписаться', ok: false }];
+  const rows = items.map(i => `<div class="sg-row ${i.ok ? 'ok' : ''}"><span class="sg-mark">${i.ok ? '✅' : '❌'}</span><b>${i.title}</b>
+    ${i.ok ? '<span class="sg-done">готово</span>' : `<button class="btn primary sg-btn" data-act="subOpen" data-id="${i.key}">${i.button}</button>`}</div>`).join('');
   openLayer(`<div class="dialog sub-gate"><div class="sg-farmer">${farmerSVG('wink')}</div>
-    <h3>Подпишитесь на канал</h3>
-    <p>Чтобы играть в «Ферму деда», подпишитесь на канал <b>«Ферма с нуля»</b> — там сериал, по которому сделана игра, и итоги рейтинга фермеров.</p>
-    <button class="btn primary big" data-act="subOpen">📺 Подписаться на канал</button>
-    <button class="btn wide" data-act="subCheck">✅ Я подписался</button></div>`, 'screen dim', false);
+    <h3>Чтобы играть — подпишись на канал и вступи в чат фермеров 🐔</h3>
+    <div class="sg-list">${rows}</div>
+    <button class="btn wide" data-act="subCheck">🔄 Проверить подписку</button>
+    <p class="note">Прогресс фермы никуда не денется — он сохранён.</p></div>`, 'screen dim', false);
   layer.dataset.kind = 'subgate';
 }
 async function subCheck() {
-  if (await subscribed(true)) { sfx.fanfare(); toast('Спасибо за подписку! 🌾'); return showSplash(); }
-  haptic('rigid'); toast('Подписка пока не видна — подпишитесь и нажмите ещё раз');
+  if (await subscribed(true)) { sfx.fanfare(); toast('Всё на месте — добро пожаловать на ферму! 🌾'); return st && profile.game && st.phase !== 'clean' && layer.dataset.kind === 'subgate' && subWasPlaying ? (closeLayer(), render()) : showSplash(); }
+  haptic('rigid'); showSubGate();
+  toast('Пока не всё: ' + (subInfo?.items || []).filter(i => !i.ok).map(i => i.title).join(', '));
 }
+// раз в 6 часов (и при возвращении в игру) — проверка, не отписался ли игрок; прогресс не трогаем
+let subWasPlaying = false;
+setInterval(async () => {
+  if (!api.online || layer.dataset.kind === 'subgate') return;
+  if (!(await subscribed())) { subWasPlaying = true; persist(true); showSubGate(); }
+}, 10 * 60 * 1000); // сервер сам помнит подписку 6 часов — запрос лёгкий
 // вернулся из канала — проверяем сами
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && layer.dataset.kind === 'subgate') setTimeout(subCheck, 600); });
 boot();

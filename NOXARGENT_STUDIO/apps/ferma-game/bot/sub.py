@@ -1,13 +1,15 @@
-"""Обязательная подписка на канал: и в боте (/start), и в игре (GET /api/sub).
+"""Обязательная подписка: канал «Ферма с нуля» И чат фермеров. Проверка — на сервере, getChatMember.
 
-Проверка — getChatMember(канал, user_id). Для этого бот должен быть АДМИНИСТРАТОРОМ канала
-(права не нужны). Если бот ещё не админ или Telegram недоступен — не мешаем играть (пускаем) и
-пишем об этом в лог и владельцу один раз, чтобы игроки не упёрлись в ошибку.
+Бот должен быть администратором и канала, и чата (права не нужны — только статус админа).
+- Проверяем при входе (/start, открытие игры) и не чаще раза в 6 часов, пока подписка есть.
+- Если Telegram не ответил или бот ещё не админ — НЕ блокируем игрока (пускаем) и один раз пишем владельцу.
+- Владельцу (ADMIN_ID) проверка не нужна. Прогресс при отписке не трогаем — просто снова просим подписаться.
 """
 from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -15,36 +17,66 @@ from aiohttp import web
 
 log = logging.getLogger("ferma.sub")
 OK_STATUSES = {"creator", "administrator", "member", "restricted"}
-CACHE_OK, CACHE_NO = 10 * 60, 5   # подписан — помним 10 минут; не подписан — перепроверяем почти сразу
+CACHE_OK = 6 * 3600      # подписан — следующая проверка через 6 часов
+CACHE_NO = 5             # не подписан — перепроверяем почти сразу (нажал «Проверить»)
+
+
+@dataclass(frozen=True)
+class Need:
+    key: str      # channel | chat
+    chat: str     # @predstav_kanal
+    url: str      # https://t.me/predstav_kanal
+    title: str    # «📺 Канал «Ферма с нуля»»
+    button: str   # «Подписаться»
+
+
+def default_needs(channel_id="@predstav_kanal", channel_url="https://t.me/predstav_kanal",
+                  chat_id="@predstav_chat", chat_url="https://t.me/predstav_chat") -> list[Need]:
+    out = [Need("channel", channel_id, channel_url, "📺 Канал «Ферма с нуля»", "Подписаться")]
+    if chat_id:
+        out.append(Need("chat", chat_id, chat_url, "💬 Чат фермеров", "Вступить"))
+    return out
 
 
 class SubChecker:
-    def __init__(self, bot, channel: str, required: bool, admin_id: int = 0):
-        self.bot, self.channel, self.required, self.admin_id = bot, channel, required, admin_id
-        self.cache: dict[int, tuple[bool, float]] = {}
-        self.warned = False
+    def __init__(self, bot, needs: list[Need] | str, required: bool, admin_id: int = 0):
+        if isinstance(needs, str):  # совместимость: только канал
+            needs = default_needs(channel_id=needs, chat_id="")
+        self.bot, self.needs, self.required, self.admin_id = bot, needs, required, admin_id
+        self.cache: dict[tuple[int, str], tuple[bool, float]] = {}
+        self.warned: set[str] = set()
 
-    async def check(self, uid: int, fresh: bool = False) -> bool:
-        if not self.required or self.bot is None:
-            return True
-        hit = self.cache.get(uid)
+    async def one(self, uid: int, need: Need, fresh: bool) -> bool:
+        hit = self.cache.get((uid, need.key))
         if hit and not fresh and time.time() - hit[1] < (CACHE_OK if hit[0] else CACHE_NO):
             return hit[0]
         try:
-            m = await self.bot.get_chat_member(chat_id=self.channel, user_id=uid)
+            m = await self.bot.get_chat_member(chat_id=need.chat, user_id=uid)
             ok = m.status in OK_STATUSES and getattr(m, "is_member", True) is not False
-        except Exception as e:  # noqa: BLE001 — чаще всего бот не админ канала
-            log.warning("проверка подписки не работает (%s): %s", self.channel, e)
-            if not self.warned and self.admin_id:
-                self.warned = True
+        except Exception as e:  # noqa: BLE001 — сбой Telegram или бот не админ: не блокируем
+            log.warning("проверка %s не работает: %s", need.chat, e)
+            if need.key not in self.warned and self.admin_id:
+                self.warned.add(need.key)
                 try:
-                    await self.bot.send_message(self.admin_id, f"⚠️ Не могу проверить подписку на {self.channel}: {e}\n"
-                                                               "Добавьте бота администратором канала (без прав). Пока игроков пускаю без проверки.")
+                    await self.bot.send_message(self.admin_id, f"⚠️ Не могу проверить подписку на {need.chat}: {e}\n"
+                                                               "Сделайте бота администратором (права не нужны). Пока игроков пускаю без этой проверки.")
                 except Exception:  # noqa: BLE001
                     pass
             return True
-        self.cache[uid] = (ok, time.time())
+        self.cache[(uid, need.key)] = (ok, time.time())
         return ok
+
+    async def status(self, uid: int, fresh: bool = False) -> dict:
+        """{'ok': bool, 'items': [{key, title, url, button, ok}]}"""
+        if not self.required or self.bot is None or (self.admin_id and uid == self.admin_id):
+            return {"ok": True, "items": []}
+        items = []
+        for n in self.needs:
+            items.append({"key": n.key, "title": n.title, "url": n.url, "button": n.button, "ok": await self.one(uid, n, fresh)})
+        return {"ok": all(i["ok"] for i in items), "items": items}
+
+    async def check(self, uid: int, fresh: bool = False) -> bool:
+        return (await self.status(uid, fresh))["ok"]
 
 
 SUB = web.AppKey("sub", SubChecker)
@@ -55,23 +87,21 @@ def setup_api(app: web.Application, sub: SubChecker, channel_url: str, current_u
 
     async def get_sub(request: web.Request) -> web.Response:
         user = current_user(request)
-        fresh = request.query.get("fresh") == "1"
-        ok = await request.app[SUB].check(int(user["id"]), fresh=fresh)
-        return web.json_response({"required": request.app[SUB].required, "ok": ok, "url": channel_url})
+        st = await request.app[SUB].status(int(user["id"]), fresh=request.query.get("fresh") == "1")
+        return web.json_response({"required": request.app[SUB].required, "ok": st["ok"], "items": st["items"],
+                                  "url": channel_url, "recheckHours": CACHE_OK // 3600})
 
     app.router.add_get("/api/sub", get_sub)
 
 
-SUB_TEXT = ("🧑‍🌾 Чтобы играть в «Ферму деда», подпишитесь на канал <b>«Ферма с нуля»</b> — "
-            "там сериал, по которому сделана игра, и итоги рейтинга фермеров.\n\n"
-            "Подпишитесь и нажмите «✅ Я подписался».")
+SUB_TEXT = "🧑‍🌾 Чтобы играть — подпишись на канал и вступи в чат фермеров 🐔"
 
 
-def sub_keyboard(channel_url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📺 Подписаться на канал", url=channel_url)],
-        [InlineKeyboardButton(text="✅ Я подписался", callback_data="check_sub")],
-    ])
+def sub_message(items: list[dict]) -> tuple[str, InlineKeyboardMarkup]:
+    lines = [f"{'✅' if i['ok'] else '❌'} {i['title']}" for i in items]
+    kb = [[InlineKeyboardButton(text=f"{i['button']}: {i['title']}", url=i["url"])] for i in items if not i["ok"]]
+    kb.append([InlineKeyboardButton(text="🔄 Проверить подписку", callback_data="check_sub")])
+    return SUB_TEXT + "\n\n" + "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
 
 
 def make_router(sub: SubChecker, channel_url: str, welcome: str, play_keyboard) -> Router:
@@ -79,21 +109,29 @@ def make_router(sub: SubChecker, channel_url: str, welcome: str, play_keyboard) 
 
     @r.callback_query(F.data == "check_sub")
     async def check_sub(cb: CallbackQuery) -> None:
-        if await sub.check(cb.from_user.id, fresh=True):
-            await cb.answer("Спасибо за подписку! 🌾")
+        st = await sub.status(cb.from_user.id, fresh=True)
+        if st["ok"]:
+            await cb.answer("Всё на месте — добро пожаловать на ферму! 🌾")
             try:
                 await cb.message.edit_text(welcome, reply_markup=play_keyboard())
             except Exception:  # noqa: BLE001
                 await cb.message.answer(welcome, reply_markup=play_keyboard())
         else:
-            await cb.answer("Подписка пока не видна. Подпишитесь на канал и нажмите ещё раз.", show_alert=True)
+            text, kb = sub_message(st["items"])
+            await cb.answer("Пока не всё: " + ", ".join(i["title"] for i in st["items"] if not i["ok"]), show_alert=True)
+            try:
+                await cb.message.edit_text(text, reply_markup=kb)
+            except Exception:  # noqa: BLE001 — текст не изменился
+                pass
 
     return r
 
 
 async def gate(message: Message, sub: SubChecker, channel_url: str) -> bool:
-    """True — можно играть. Иначе отправляет просьбу подписаться."""
-    if await sub.check(message.from_user.id):
+    """True — можно играть. Иначе отправляет экран подписки с галочками."""
+    st = await sub.status(message.from_user.id)
+    if st["ok"]:
         return True
-    await message.answer(SUB_TEXT, reply_markup=sub_keyboard(channel_url))
+    text, kb = sub_message(st["items"])
+    await message.answer(text, reply_markup=kb)
     return False

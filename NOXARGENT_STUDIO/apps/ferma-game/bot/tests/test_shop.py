@@ -203,40 +203,58 @@ from sub import SubChecker  # noqa: E402
 
 class SubBot:
     def __init__(self):
-        self.members, self.calls, self.sent, self.fail = set(), 0, [], False
+        from collections import defaultdict
+        self.members, self.calls, self.sent, self.fail = defaultdict(set), 0, [], False
 
     async def get_chat_member(self, chat_id, user_id):
         self.calls += 1
         if self.fail:
             raise RuntimeError("Bad Request: member list is inaccessible")
-        return SimpleNamespace(status="member" if user_id in self.members else "left")
+        return SimpleNamespace(status="member" if user_id in self.members[chat_id] else "left")
 
     async def send_message(self, chat_id, text, **kw):
         self.sent.append((chat_id, text))
 
 
 async def test_subscription_api(aiohttp_client, tmp_path):
+    from sub import default_needs
     cfg = replace(load(), bot_token=TOKEN, db_path=tmp_path / "sub.db", dev_mode=False,
                   webapp_dir=Path(__file__).resolve().parents[2] / "webapp")
     db = DB(cfg.db_path); await db.open()
     bot = SubBot()
-    sub = SubChecker(bot, "@predstav_kanal", True, admin_id=999)
+    sub = SubChecker(bot, default_needs(), True, admin_id=999)
     c = await aiohttp_client(make_app(cfg, db, "ferma_test_bot", sub=sub))
     h = {"X-Telegram-Init-Data": init_data(42)}
-    r = await (await c.get("/api/sub", headers=h)).json()
-    assert r["required"] and r["ok"] is False and r["url"].startswith("https://t.me/")
-    bot.members.add(42)                                     # подписался
-    r = await (await c.get("/api/sub?fresh=1", headers=h)).json()
+    get = lambda q="": c.get("/api/sub" + q, headers=h)  # noqa: E731
+    # ничего → экран, обе галочки красные
+    r = await (await get()).json()
+    assert r["ok"] is False and [i["ok"] for i in r["items"]] == [False, False]
+    assert [i["url"] for i in r["items"]] == ["https://t.me/predstav_kanal", "https://t.me/predstav_chat"]
+    # только канал → одна зелёная
+    bot.members[("@predstav_kanal")].add(42)
+    r = await (await get("?fresh=1")).json()
+    assert r["ok"] is False and [i["ok"] for i in r["items"]] == [True, False]
+    # оба → игра
+    bot.members["@predstav_chat"].add(42)
+    r = await (await get("?fresh=1")).json()
     assert r["ok"] is True
     calls = bot.calls
-    await c.get("/api/sub", headers=h)                      # подписан — из кэша, без лишних запросов
+    await get()                                              # подписан — следующая проверка через 6 ч, не на каждый вход
     assert bot.calls == calls
-    assert (await c.get("/api/sub")).status == 401          # без Telegram — нельзя
-    # бот не админ канала → не мешаем играть, владельцу пишем один раз
+    # вышел из чата → при следующей проверке (вход после 6 ч) снова экран
+    bot.members["@predstav_chat"].discard(42)
+    for k in list(sub.cache):
+        sub.cache[k] = (sub.cache[k][0], sub.cache[k][1] - 6 * 3600 - 1)
+    r = await (await get()).json()
+    assert r["ok"] is False and [i["ok"] for i in r["items"]] == [True, False]
+    # владельцу проверка не нужна
+    assert (await (await c.get("/api/sub", headers={"X-Telegram-Init-Data": init_data(999)})).json())["ok"] is True
+    assert (await c.get("/api/sub")).status == 401
+    # сбой Telegram / бот не админ → пускаем, владельцу пишем один раз на чат
     bot.fail = True
     r = await (await c.get("/api/sub?fresh=1", headers={"X-Telegram-Init-Data": init_data(43)})).json()
     await c.get("/api/sub?fresh=1", headers={"X-Telegram-Init-Data": init_data(44)})
-    assert r["ok"] is True and len([1 for chat, _ in bot.sent if chat == 999]) == 1
+    assert r["ok"] is True and len([1 for chat, _ in bot.sent if chat == 999]) == 2
     await db.close()
 
 

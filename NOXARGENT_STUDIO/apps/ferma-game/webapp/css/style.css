@@ -14,8 +14,9 @@
   --red: #d8392d;
   --sky: #55b0f1;
   --font: "Rubik", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bot: env(safe-area-inset-bottom, 0px);
+  /* отступы: вырез/статус-бар телефона и кнопки Telegram в полноэкранном режиме (--tg-top/--tg-bot ставит app.js) */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-top, 0px));
+  --safe-bot: max(env(safe-area-inset-bottom, 0px), var(--tg-bot, 0px));
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
@@ -31,7 +32,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .farm-spacer { height: calc(96px + var(--safe-bot)); background: var(--meadow, #8dc95a); }
 
 /* ---------- HUD ---------- */
-.hud { position: absolute; left: 0; right: 0; top: 0; padding: calc(8px + var(--safe-top)) 10px 0; display: grid; gap: 6px; pointer-events: none; z-index: 5; }
+.hud { position: absolute; left: 0; right: 0; top: 0; padding: calc(6px + var(--safe-top)) 10px 0; display: grid; gap: 6px; pointer-events: none; z-index: 5; }
 .chips { display: grid; grid-template-columns: 1.25fr 1.2fr .8fr .8fr; gap: 6px; }
 .chip, .bar { background: var(--cream); border: 2.5px solid var(--line); border-radius: 10px; box-shadow: 0 2px 0 rgba(59,42,31,.25); }
 .chip { display: flex; flex-direction: column; align-items: center; padding: 3px 4px 4px; min-width: 0; }
@@ -683,3 +684,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .w-btns { gap: 8px; }
 .w-btns .btn { flex: 1; }
 .star-btn { background: #fff3d6; border-color: #e8a21a; color: #8a5a00; font-weight: 900; }
+.sub-gate h3 { font-size: 19px; line-height: 1.25; }
+.sg-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 6px; text-align: left; }
+.sg-row { display: flex; align-items: center; gap: 8px; background: #fff8ea; border: 2.5px solid #e3d3b4; border-radius: 14px; padding: 8px 10px; }
+.sg-row.ok { border-color: #3fae4f; background: #eef9ea; }
+.sg-row b { flex: 1; font-size: 14px; color: var(--brown); }
+.sg-mark { font-size: 18px; }
+.sg-btn { min-height: 38px; padding: 0 12px; font-size: 14px; flex: none; flex-direction: row; margin-top: 0 !important; }
+.sg-done { font-size: 12px; font-weight: 900; color: #2f8a2f; }
+
+/* полноэкранный режим Telegram: шторки не залезают под кнопки «✕» и «⌄ ⋮» */
+.sheet { max-height: calc(100% - var(--safe-top) - 12px); }
+#layer.sheet-wrap { padding-top: var(--safe-top); }

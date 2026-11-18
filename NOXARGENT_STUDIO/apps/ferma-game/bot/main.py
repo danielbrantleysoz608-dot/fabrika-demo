@@ -81,7 +81,8 @@ async def run(web_only: bool) -> None:
                                    BotCommand(command="paysupport", description="Вопросы по оплате")])
         dp.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))
         global SUB
-        SUB = subscription.SubChecker(bot, CFG.channel_id, CFG.require_sub, CFG.admin_id)
+        SUB = subscription.SubChecker(bot, subscription.default_needs(CFG.channel_id, CFG.channel_url, CFG.chat_id, CFG.chat_url),
+                                      CFG.require_sub, CFG.admin_id)
         dp.include_router(subscription.make_router(SUB, CFG.channel_url, WELCOME, play_keyboard))
 
         @dp.message(F.text)
