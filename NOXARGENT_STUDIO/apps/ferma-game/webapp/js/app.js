@@ -2,11 +2,12 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_PER_DAY, FISH_GAME_MS,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_PER_DAY, FISH_GAME_MS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
 import { farmerSVG } from './farmer.js';
+import { workerPortrait } from './workers-art.js';
 import { ICONS, POSTCARD_ART } from './icons.js';
 import * as api from './api.js';
 import { playerName, setPlayerName, tgName } from './api.js';
@@ -69,6 +70,7 @@ function view() {
     ordersActive: E.activeOrders(st).filter(x => x.i !== 'big').length,
     ordersDone: E.activeOrders(st).filter(x => E.orderDone(x.o)).length,
     canBuild: st.phase !== 'clean',
+    workers: WORKER_ORDER.filter(w => E.hired(st, w)),
     dog: E.hasDog(st) ? { name: st.dog.name, boosted: st.dog.boostUntil > Date.now(), canPet: E.petLeft(st) <= 0 } : null,
   };
 }
@@ -219,6 +221,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
   if (tap === 'fish') { haptic(); sfx.click(); return openFishing(); }
   if (tap === 'dog') return petDog();
+  if (tap === 'workers') { haptic(); sfx.click(); return openWorkers(); }
 });
 
 function hitTrash(id) {
@@ -293,6 +296,7 @@ setInterval(() => {
   if (!st || !profile.game || st.phase === 'clean' || coach.isOpen()) return;
   const r = E.tick(st);
   if (r.changed) render('ready');
+  autoNotes(r.auto);
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
@@ -418,12 +422,19 @@ function openBoard() {
   sheet('📋 Доска заказов', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Отказался — новый заказ через 10 минут.</p>${list.join('')}`, 'board');
 }
 function showLevelUp(lvl) {
-  const opened = E.unlockedAt(lvl).map(id => BUILDINGS[id].name);
+  const ids = E.unlockedAt(lvl).filter(id => BUILDINGS[id].tier <= st.tier);
+  const fresh = ids.filter(id => !E.level(st, id)).map(id => BUILDINGS[id].name);
+  const have = ids.filter(id => E.level(st, id)).map(id => BUILDINGS[id].name);
+  const workers = E.workersAt ? E.workersAt(lvl).map(w => w.name) : [];
+  const lines = [fresh.length ? 'Открыто: <b>' + fresh.join(', ') + '</b>' : '', have.length ? 'Теперь можно улучшать: <b>' + have.join(', ') + '</b>' : '',
+    workers.length ? 'Можно нанять: <b>' + workers.join(', ') + '</b>' : ''].filter(Boolean);
   notify('success'); sfx.fanfare();
   openLayer(`<div class="ending"><div class="confetti">${Array.from({ length: 18 }, (_, k) => `<i style="--x:${(k * 41) % 100}%;--d:${(k % 6) * 0.15}s;--c:${['#e8a21a', '#3fa34d', '#4a90d9', '#d8392d'][k % 4]}"></i>`).join('')}</div>
     <div class="kicker">УРОВЕНЬ ФЕРМЫ</div><div class="lvl-big">⭐ ${lvl}</div>
-    <p class="pc-sub">${opened.length ? 'Открыто: <b>' + opened.join(', ') + '</b>' : 'Ферма растёт! Заказчики стали щедрее.'}</p>
-    <button class="btn primary big" data-act="${opened.length ? 'buildNow' : 'close'}">${opened.length ? 'В «Стройку»' : 'Отлично!'}</button></div>`, 'screen dim', false);
+    <p class="pc-sub">${lines.length ? lines.join('<br>') : 'Ферма растёт! Заказчики стали щедрее.'}</p>
+    <button class="btn primary big" data-act="close">Отлично!</button>
+    ${fresh.length || have.length ? '<button class="btn wide" data-act="buildNow">В «Стройку»</button>' : workers.length ? '<button class="btn wide" data-act="workers">К работникам</button>' : ''}
+    <p class="note light">Тапни в любом месте, чтобы закрыть</p></div>`, 'screen dim', true);
   layer.dataset.kind = 'levelup';
 }
 
@@ -461,11 +472,11 @@ function closeLayer() {
 tg?.BackButton.onClick(() => {
   if (coach.isOpen()) return coach.close();
   const k = layer.dataset.kind;
-  if (k === 'event' || k === 'report') return;
+  if (k === 'event' || k === 'report' || k === 'evres' || k === 'fishing') return;
   if (k === 'intro' || k === 'album-start' || k === 'rating-start') return showSplash();
   closeLayer();
 });
-const sheet = (title, body, kind) => { openLayer(`<div class="sheet"><div class="grab"></div><h2>${title}</h2>${body}</div>`); layer.dataset.kind = kind; };
+const sheet = (title, body, kind) => { openLayer(`<div class="sheet"><div class="grab"></div><div class="sheet-head"><h2>${title}</h2><button class="x-close" data-act="close">✕ Закрыть</button></div>${body}</div>`); layer.dataset.kind = kind; };
 
 // нажатие считается, только если палец опустили уже на открытом окне (нет «призрачных» кликов)
 layer.addEventListener('pointerdown', () => { layer.dataset.down = Date.now(); });
@@ -473,6 +484,7 @@ layer.addEventListener('click', (e) => {
   if ((+layer.dataset.down || 0) < (+layer.dataset.opened || 0) && e.pointerType !== '' && e.detail !== 0) return;
   const a = e.target.closest('[data-act]');
   if (e.target === layer && layer.classList.contains('sheet-wrap')) return closeLayer();
+  if (!a && layer.dataset.kind === 'levelup') return closeLayer(); // окно уровня — закрыть тапом мимо кнопок
   if (!a) return;
   haptic(); sfx.click();
   const fn = ACTIONS[a.dataset.act];
@@ -487,6 +499,7 @@ const ACTIONS = {
   repay: () => { const why = E.repay(st); if (why) return toast(why); notify('success'); render(); persist(); openBook('costs'); say('Долг вернули! Теперь спим спокойно.', 'happy'); },
   opt: (id) => pickOption(+id),
   next: () => afterReport(),
+  evDone: () => afterEvent(),
   close: () => closeLayer(),
   skip: () => doSkip(),
   play: () => startOrContinue(),
@@ -514,6 +527,11 @@ const ACTIONS = {
   goLoc: (id) => { closeLayer(); goLoc(id); },
   locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
   map: () => openMap(),
+  workers: () => openWorkers(),
+  hire: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.hire(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openWorkers, '#w-' + id); say(`${WORKERS[id].name} теперь работает на ферме! ${WORKERS[id].desc}`, 'happy', 6000); },
+  fire: (id) => { openLayer(`<div class="dialog"><h3>Уволить: ${WORKERS[id].name}?</h3><p>Зарплату платить больше не придётся, но и помощи не будет. Нанять снова можно за ${short(E.hirePrice(st, id))}.</p>
+    <div class="row"><button class="btn wide" data-act="workers">Оставить</button><button class="btn wide danger" data-act="fireYes" data-id="${id}">Уволить</button></div></div>`, 'screen dim keep-ui', true); layer.dataset.kind = 'fire'; },
+  fireYes: (id) => { E.fire(st, id); render(); persist(true); openWorkers(); toast(`${WORKERS[id].name} больше не работает`); },
   dogName: () => { const v = layer.querySelector('#dogName')?.value || ''; E.nameDog(st, v); closeLayer(); render(); persist(true); sfx.woof(); say(`<b>${escH(st.dog.name)}</b> теперь живёт у крыльца! Гладь его раз в 4 часа — <b>+10% к доходу</b> на 30 минут.`, 'happy', 7000); },
   fishGo: () => startFishGame(),
   repair: (id, el) => {
@@ -657,17 +675,36 @@ function card(id) {
   </div>`;
 }
 
-function openBuild(focus) {
-  const open = BUILD_ORDER.filter(id => BUILDINGS[id].tier <= st.tier && !(id === 'garden' && st.flags.fieldSold));
+function openBuild(focus, keep = false) {
+  let open = BUILD_ORDER.filter(id => BUILDINGS[id].tier <= st.tier && !(id === 'garden' && st.flags.fieldSold));
   const soon = BUILD_ORDER.filter(id => BUILDINGS[id].tier === st.tier + 1);
-  open.sort((a, b) => (!E.canBuy(st, b)) - (!E.canBuy(st, a))); // сначала то, что можно купить сейчас
-  if (focus) open.sort((a, b) => (b === focus) - (a === focus));
+  if (keep && openBuild.order) open = openBuild.order.filter(id => open.includes(id)).concat(open.filter(id => !openBuild.order.includes(id)));
+  else {
+    open.sort((a, b) => (!E.canBuy(st, b)) - (!E.canBuy(st, a))); // сначала то, что можно купить сейчас
+    if (focus) open.sort((a, b) => (b === focus) - (a === focus));
+  }
+  openBuild.order = open;
   const nr = E.nextRepair(st);
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
   sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
-    ${houseCard}${open.map(card).join('')}
+    ${houseCard}${workersCard()}${open.map(card).join('')}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
+}
+// перерисовать шторку, не сбрасывая прокрутку: та же карточка остаётся на том же месте экрана
+function reopenKeepScroll(draw, anchor) {
+  const sc = layer.querySelector('.sheet');
+  const before = sc?.querySelector(anchor)?.getBoundingClientRect().top;
+  const top = sc?.scrollTop || 0;
+  draw();
+  const sc2 = layer.querySelector('.sheet');
+  if (!sc2) return;
+  sc2.style.animation = 'none'; layer.style.animation = 'none'; // без «выезда» — это та же шторка
+  setTimeout(() => { layer.style.animation = ''; }, 50);
+  sc2.scrollTop = top;
+  const after = sc2.querySelector(anchor)?.getBoundingClientRect().top;
+  if (before != null && after != null) sc2.scrollTop += after - before;
+  layer.dataset.opened = 0; // это та же шторка — тапы по ней сразу работают
 }
 function openBuilding(id) {
   if (!BUILDINGS[id]) return;
@@ -694,7 +731,9 @@ function doBuy(id, sure = false) {
   render(); persist(true);
   const p = SLOT_POS[id] || READY_POSITIONS[id];
   if (p) { const [x, y] = Array.isArray(p) ? p : [p.x, p.y]; puff(svg, x, y + 10); floatText(svg, x, y - 10, firstTime ? BUILDINGS[id].name + '!' : `ур. ${st.lv[id]}!`, '#2f8a2f'); }
-  if (layer.dataset.kind === 'building') openBuilding(id); else openBuild();
+  if (layer.dataset.kind === 'building') openBuilding(id);
+  else if (layer.dataset.kind === 'build') reopenKeepScroll(() => openBuild(null, true), '#card-' + id);
+  else openBuild();
   if (firstTime) say({
     coop: 'Куры заселились! Яйца появятся над курятником — <b>собирай тапом</b>.',
     stall: 'Прилавок «ЯЙЦА деревенские» готов! Всё продаём дороже.',
@@ -730,11 +769,11 @@ function openBook(tab = 'tasks') {
       <div class="row"><button class="btn wide" data-act="rating">🏆 Рейтинг</button><button class="btn wide" data-act="settings">⚙️ Звук и музыка</button></div>`;
   }
   if (tab === 'costs') {
-    const rows = [...st.ledger].reverse().map(l => `<tr><td>${monthOf(l.m).name}${yearOf(l.m) > 1 ? ` <small>г.${yearOf(l.m)}</small>` : ''}</td><td class="plus">+${short(l.income, '')}</td><td class="minus">−${short(l.expense, '')}</td><td><b>${short(l.money, '')}</b></td></tr>`).join('');
+    const rows = [...st.ledger].reverse().map(l => `<tr><td>${monthOf(l.m).name}${yearOf(l.m) > 1 ? ` <small>г.${yearOf(l.m)}</small>` : ''}</td><td class="plus">+${short(l.income, '')}</td><td class="minus">−${short(l.expense, '')}${l.wages ? `<small>зарплаты ${short(l.wages, '')}</small>` : ''}</td><td><b>${short(l.money, '')}</b></td></tr>`).join('');
     body = `<div class="money-line">Этот месяц: собрано <b>${short(st.monthIncome)}</b> · доход ${short(E.totalRate(st))}/мин</div>
       <table class="ledger"><thead><tr><th>Месяц</th><th>Доход</th><th>Расход</th><th>В кармане</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="4" class="empty">Первые итоги — в конце месяца</td></tr>'}</tbody></table>
-      <p class="note">В конце месяца: корм, свет и налоги — 10% от собранного${st.debt ? ', проценты по кредиту — 5% от долга' : ''}.</p>
+      <p class="note">В конце месяца: корм, свет и налоги — 10% от собранного${st.debt ? ', проценты по кредиту — 5% от долга' : ''}${WORKER_ORDER.some(w => E.hired(st, w)) ? ', зарплаты работникам: ' + WORKER_ORDER.filter(w => E.hired(st, w)).map(w => `${WORKERS[w].role.toLowerCase()} ≈ ${short(E.wageEstimate(st, w))}`).join(', ') : ''}.</p>
       ${st.debt ? `<div class="debt">Долг банку: <b>${fmt(st.debt)}</b> · 5% в месяц<button class="btn primary go" data-act="repay">Вернуть долг</button></div>` : ''}`;
   }
   if (tab === 'story') body = `<ul class="todo story">${[...st.history].reverse().slice(0, 80).map(h => `<li><span class="m">${monthOf(h.m).name}${yearOf(h.m) > 1 ? ' г.' + yearOf(h.m) : ''}</span>${h.t}</li>`).join('')}</ul>`;
@@ -748,10 +787,14 @@ function nextMonth() {
   if (st.phase === 'event') return showEvent();
   E.tick(st);
   if (!E.monthReady(st)) return askSkip();
-  const e = E.endMonth(st);
+  E.endMonth(st);
   persist(true);
-  const nm = monthOf(st.month + 1).name;
-  important(`Наступил <b>${nm.toLowerCase()}</b>! А на ферме — «${e.title.replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
+  submitScore(st, profile, true); // капитал в рейтинг — сразу после месяца
+  showReport(st.report);          // сначала итоги прошедшего месяца, потом событие нового
+}
+function announceEvent() {
+  const e = EVENT_BY_ID[st.event];
+  important(`Наступил <b>${monthOf(st.month).name.toLowerCase()}</b>! А на ферме — «${e.title.replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
 }
 function askSkip() {
   const cost = E.skipCost(st), left = E.monthLeft(st), lack = Math.max(0, cost - st.money);
@@ -775,8 +818,8 @@ function showEvent() {
   render();
   const opts = e.options.map((_, i) => E.optionState(st, e, i));
   const blocked = E.allBlocked(st, e);
-  const nm = monthOf(st.month + 1);
-  openLayer(`<div class="ev-title"><div class="kicker">${nm.name.toUpperCase()}${yearOf(st.month + 1) > 1 ? ' · ГОД ' + yearOf(st.month + 1) : ''} · ${e.kicker.toUpperCase()}</div>
+  const nm = monthOf(st.month);
+  openLayer(`<div class="ev-title"><div class="kicker">${nm.name.toUpperCase()}${yearOf(st.month) > 1 ? ' · ГОД ' + yearOf(st.month) : ''} · ${e.kicker.toUpperCase()}</div>
       <h2>${e.title}</h2><p>${E.resolveText(e.text, st)}</p></div>
     <div class="ev-opts">${opts.map((o, i) => `<button class="opt ${o.why ? 'off' : ''}" data-act="opt" data-id="${i}">${ICONS[o.icon] || ''}<b>${o.label}</b><span>${o.desc}</span>${o.why ? `<em>${cap1(o.why)}</em>` : ''}</button>`).join('')}</div>
     ${blocked ? '<button class="btn wide pass" data-act="opt" data-id="-1">Не по карману — пропустить</button>' : ''}`, 'event-wrap', false);
@@ -785,23 +828,30 @@ function showEvent() {
 function pickOption(i) {
   const e = EVENT_BY_ID[st.event];
   if (i >= 0) { const o = E.optionState(st, e, i); if (o.why) { haptic('rigid'); sfx.error(); return toast(cap1(o.why)); } }
-  const rep = E.choose(st, i);
-  if (!rep) return;
+  const res = E.choose(st, i);
+  if (!res) return;
   haptic('medium');
   persist(true);
-  submitScore(st, profile);
-  showReport(rep);
+  submitScore(st, profile, true);
+  showEventResult(res);
+}
+function showEventResult(r) {
+  const log = (r.log || []).map(l => `<li><span>${l.label}</span><b class="${l.amount > 0 ? 'plus' : 'minus'}">${l.amount > 0 ? '+' : '−'}${short(Math.abs(l.amount), '')}</b></li>`).join('');
+  openLayer(`<div class="report">
+      <div class="kicker">${monthOf(r.month).name.toUpperCase()} · ВЫБОР СДЕЛАН</div><h2>${r.title}</h2>
+      <div class="ev-res"><b>${r.choice}.</b> ${r.text}</div>
+      ${log ? `<ul class="lines">${log}</ul>` : ''}
+      <div class="total sm"><span>В кармане</span><b>${short(st.money)}</b></div>
+      <button class="btn primary big" data-act="evDone">Дальше</button></div>`, 'screen dim', false);
+  layer.dataset.kind = 'evres';
 }
 
 function showReport(r) {
   sfx.bell(); // новый месяц — колокольчик
-  const evLog = (r.event?.log || []).map(l => `<li><span>${l.label}</span><b class="${l.amount > 0 ? 'plus' : 'minus'}">${l.amount > 0 ? '+' : '−'}${short(Math.abs(l.amount), '')}</b></li>`).join('');
   const costs = r.costs.map(c => `<li><span>${c.label}</span><b class="minus">−${short(c.amount, '')}</b></li>`).join('');
   openLayer(`<div class="report">
       <div class="kicker">ИТОГИ МЕСЯЦА${r.year > 1 ? ' · ГОД ' + r.year : ''}</div><h2>${r.name}</h2>
       <ul class="lines"><li><span>Собрано с фермы</span><b class="plus">+${short(r.income, '')}</b></li>${costs}</ul>
-      ${r.event ? `<div class="ev-res"><b>${r.event.title}</b> → ${r.event.choice}. ${r.event.text}</div>` : ''}
-      ${evLog ? `<ul class="lines">${evLog}</ul>` : ''}
       ${r.notes.map(t => `<div class="warn">${t}</div>`).join('')}
       <div class="total sm"><span>В кармане</span><b>${short(r.after)}</b></div>
       <div class="total sm"><span>Капитал</span><b>${short(r.capital)}</b></div>
@@ -809,6 +859,10 @@ function showReport(r) {
   layer.dataset.kind = 'report';
 }
 function afterReport() {
+  closeLayer(); render();
+  if (st.phase === 'event') return announceEvent(); // итоги показали — теперь событие нового месяца
+}
+function afterEvent() {
   closeLayer(); render();
   const r = st.report;
   const m = monthOf(st.month);
@@ -881,6 +935,7 @@ function farmInfo() {
       <div class="fi-btns">
         <button class="btn" data-fi="board">📋<small>Заказы</small></button>
         <button class="btn" data-fi="build">🔨<small>Стройка</small></button>
+        <button class="btn" data-fi="workers">👷<small>Работники</small></button>
         <button class="btn" data-fi="rating">🏆<small>Рейтинг</small></button>
         <button class="btn" data-fi="book">📒<small>Тетрадь</small></button>
         <button class="btn" data-fi="settings">⚙️<small>Настройки</small></button>
@@ -901,6 +956,7 @@ $('#farmInfo').addEventListener('click', (e) => {
   const k = b.dataset.fi;
   if (k === 'build') return openBuild();
   if (k === 'board') return openBoard();
+  if (k === 'workers') return openWorkers();
   if (k === 'rating') return ACTIONS.rating();
   if (k === 'book') return openBook();
   if (k === 'settings') return openSettings();
@@ -981,7 +1037,10 @@ function openMap() {
         ${open && l.letter ? `<button class="mletter" data-act="locLetter" data-id="${l.id}">✉️ письмо деда</button>` : ''}
       </div></div>`;
   }).join('');
-  sheet('🗺 Карта', `<p class="note">Переходить между локациями — кнопками ◀ ▶ сверху или <b>свайпом</b> по ферме влево-вправо.</p>${cards}`, 'map');
+  const nav = openLocations().length > 1
+    ? 'Переходить между локациями — кнопками ◀ ▶ сверху или <b>свайпом</b> по ферме влево-вправо.'
+    : 'Новые локации открываются целями по капиталу. Когда откроется вторая, сверху появятся кнопки ◀ ▶, а ферму можно будет листать свайпом.';
+  sheet('🗺 Карта', `<p class="note">${nav}</p>${cards}`, 'map');
 }
 function showLocOpen(l, reread = false) {
   if (!reread) { notify('success'); sfx.fanfare(); }
@@ -1002,6 +1061,51 @@ function showLocOpen(l, reread = false) {
     if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) stepLoc(dx < 0 ? 1 : -1);
   }, { passive: true });
 })();
+
+/* ================= Работники ================= */
+function workersCard() {
+  const lvl = E.farmLevel(st);
+  const avail = WORKER_ORDER.filter(w => WORKERS[w].lvl <= lvl && !E.hired(st, w)).length;
+  const n = WORKER_ORDER.filter(w => E.hired(st, w)).length;
+  return `<div class="card workers-card"><h3>👷 Работники</h3><div class="price">${n ? n + ' на ферме' : ''}</div>
+    <p>${avail ? `Можно нанять: <b>${avail}</b>. Помощник сам собирает урожай, птичница и доярка — +25%, водитель сам сдаёт заказы.` : 'Помощники открываются с 3-го уровня фермы.'}</p>
+    <button class="btn primary go" data-act="workers">Открыть «Работники»</button></div>`;
+}
+function workerCard(w) {
+  const d = WORKERS[w], lvl = E.farmLevel(st), isOn = E.hired(st, w);
+  const locked = lvl < d.lvl;
+  const price = locked ? 0 : E.hirePrice(st, w);
+  const why = isOn ? null : E.canHire(st, w);
+  return `<div class="card wcard ${isOn ? 'on' : ''} ${locked ? 'lock' : ''}" id="w-${w}">
+    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn ? '<b class="w-on">работает</b>' : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
+    <p>${d.desc}</p>
+    ${locked ? '' : `<div class="tags"><span class="tag">${isOn ? 'зарплата' : 'зарплата'} ≈ ${short(E.wageEstimate(st, w))}/мес</span>${isOn ? '' : `<span class="tag inc">наём ${short(price)}</span>`}</div>`}
+    ${locked ? `<div class="tag">🔒 Уровень фермы ${d.lvl}</div>`
+      : isOn ? `<button class="btn wide ghost-dark" data-act="fire" data-id="${w}">Уволить</button>`
+      : `<button class="btn primary go" data-act="hire" data-id="${w}" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Нанять · ${short(price)}`}</button>`}
+  </div>`;
+}
+function openWorkers() {
+  const n = WORKER_ORDER.filter(w => E.hired(st, w));
+  const wages = n.reduce((a, w) => a + E.wageEstimate(st, w), 0);
+  sheet('👷 Работники', `<div class="money-line">В кармане: <b>${short(st.money)}</b>${n.length ? ` · зарплаты ≈ <b>${short(wages)}</b>/мес` : ''}</div>
+    <p class="note">Работники нанимаются за деньги фермы. Зарплата — раз в месяц, строкой в «Итогах месяца» и в «Расходах». Уволить можно в любой момент.</p>
+    ${WORKER_ORDER.map(workerCard).join('')}`, 'workers');
+}
+// помощник собрал / водитель отвёз — показываем на ферме
+function autoNotes(a) {
+  if (!a) return;
+  if (a.collected > 0) {
+    const sold = a.collected;
+    floatText(svg, 238, 630, `Ваня собрал +${short(sold)}`, '#2f8a2f');
+    if (a.reserved > 0) setTimeout(() => floatText(svg, 238, 612, `в заказы: ${a.reserved}`, '#8a5a3c'), 150);
+    render();
+  }
+  for (const o of a.delivered || []) {
+    sfx.coin(); toast(`🚚 Коля отвёз заказ «${o.name}»: +${short(o.reward)}, +${o.xp} ⭐`);
+    render();
+  }
+}
 
 /* ================= Сосед-соперник ================= */
 const NB_TEASE = ['Петрович через забор: «Что, сосед, отстаём? Мои куры несутся быстрее!»', 'Петрович машет из-за забора: «Догоняй, внучок!»',

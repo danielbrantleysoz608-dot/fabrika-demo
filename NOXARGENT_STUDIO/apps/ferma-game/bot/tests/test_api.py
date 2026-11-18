@@ -105,10 +105,10 @@ async def test_leaderboard_anon_ranking(client):
     assert [t["value"] for t in board["top"]] == [2_000_000_000, 5_000_000, 120_000]
     assert board["me"]["rank"] == 3 and board["me"]["name"] == "Игрок 1"
     assert board["top"][2]["me"] is True and board["total"] == 3
-    # лучший результат не уменьшается, а отправка без имени не стирает имя
+    # в рейтинге — текущий капитал (может и уменьшиться), а отправка без имени не стирает имя
     await client.post("/api/score", json={"capital": 50_000}, headers=anon("player-0001"))
     board = await (await client.get("/api/leaderboard", headers=anon("player-0001"))).json()
-    assert board["me"]["value"] == 120_000 and board["me"]["name"] == "Игрок 1"
+    assert board["me"]["value"] == 50_000 and board["me"]["name"] == "Игрок 1"
     # новый игрок без имени получает «Фермер XXXX»
     await client.post("/api/score", json={"capital": 1}, headers=anon("noname-7777"))
     board = await (await client.get("/api/leaderboard", headers=anon("noname-7777"))).json()

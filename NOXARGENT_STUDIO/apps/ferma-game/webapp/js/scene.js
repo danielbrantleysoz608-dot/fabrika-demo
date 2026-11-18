@@ -2,6 +2,7 @@
 // плоский вектор, тёмные контуры, вид сбоку-сверху, смена сезонов.
 // viewBox 460×890 — вертикальный кадр; важное держим в x 25..435.
 
+import { workerFigure, WORKER_SPOT } from './workers-art.js';
 import { monthOf } from './data.js';
 
 export const W = 460, H = 890;
@@ -627,6 +628,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       if (b.stall) s += stall(m);
       if (st.fox) s += fox();
       if (st.dog) s += puppy(st.dog);
+      for (const w of st.workers || []) if (WORKER_SPOT[w]) s += workerFigure(w, ...WORKER_SPOT[w]);
       if (clean && st.canBuild) s += orderBoard(st);
     } else s += LOC_OBJ[loc](m, st);
     svg.querySelector('#far').innerHTML = '';

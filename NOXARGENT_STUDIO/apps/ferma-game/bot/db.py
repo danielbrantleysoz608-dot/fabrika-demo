@@ -178,7 +178,7 @@ class DB:
         await self.conn.execute(
             """INSERT INTO scores(player_key, capital, tier, year, paid_coins, updated_at) VALUES(?,?,?,?,?,?)
                ON CONFLICT(player_key) DO UPDATE SET
-                 capital=MAX(scores.capital, excluded.capital), tier=MAX(scores.tier, excluded.tier),
+                 capital=excluded.capital, tier=MAX(scores.tier, excluded.tier),
                  year=MAX(scores.year, excluded.year), paid_coins=excluded.paid_coins, updated_at=excluded.updated_at""",
             (player_key, rating, int(tier), int(year), paid, now))
         week = current_week(now)

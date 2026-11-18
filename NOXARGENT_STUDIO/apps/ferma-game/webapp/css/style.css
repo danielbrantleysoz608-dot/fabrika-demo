@@ -567,3 +567,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes nib { 30% { transform: translateY(3px) rotate(-8deg); } 70% { transform: translateY(-1px) rotate(6deg); } }
 @keyframes bite { from { transform: translateY(7px) scale(.92); } to { transform: translateY(11px) scale(.86); } }
 .fish-res h3 { text-align: center; }
+.money-line { white-space: nowrap; font-size: 14px; overflow: hidden; text-overflow: ellipsis; }
+.note.light { color: rgba(255,255,255,.75); margin-top: 10px; }
+.sheet .sheet-head h2 { font-size: 22px; min-width: 0; }
+
+/* ===== Работники ===== */
+.wcard .w-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.w-portrait { width: 64px; height: 64px; flex: none; border-radius: 50%; border: 2.5px solid var(--line); background: #bfe3fb; }
+.wcard .w-txt h3 { margin: 0; }
+.wcard .w-txt small { font-size: 12px; font-weight: 700; color: #8a7660; }
+.w-on { color: #2f8a2f; }
+.wcard.on { border-color: #3fae4f; box-shadow: 0 0 0 3px rgba(63,174,79,.18); }
+.wcard.lock .w-portrait { filter: grayscale(.8); opacity: .7; }
+.ledger td small { display: block; font-size: 10px; color: #9a8670; font-weight: 600; }
+.worker-fig { cursor: pointer; }

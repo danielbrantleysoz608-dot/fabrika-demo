@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_PER_DAY, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS,
+  FISH_PER_DAY, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -86,6 +86,7 @@ export function globalMult(st, withMods = true) {
   let k = 1;
   for (const id of ['stall', 'brand']) k *= 1 + (BUILDINGS[id].boost || 0) * level(st, id);
   k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
+  if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all; // продавец на прилавке
   if (withMods) {
     k *= st.mods.sales ?? 1;
     if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
@@ -93,13 +94,21 @@ export function globalMult(st, withMods = true) {
   }
   return k;
 }
-export const seasonMult = (st, id, m = st.month) => BUILDINGS[id].season(((m % 12) + 12) % 12, st);
+export const seasonMult = (st, id, m = st.month) => {
+  const k = BUILDINGS[id].season(((m % 12) + 12) % 12, st);
+  if (id === 'coop' && hired(st, 'henwife')) return Math.max(k, 1); // птичница: зимой куры несутся как летом
+  return k;
+};
+// бонус работников к постройке (птичница, пасечник, доярка)
+export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id]; return k; };
 // текущая скорость, ₽/мин
-export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
+export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
 export const totalRate = (st) => PRODUCERS.reduce((a, id) => a + rate(st, id), 0);
 // вместимость склада: 2 часа номинального производства
 export const storageCap = (st, id) => baseIncome(id, level(st, id)) * globalMult(st, false) * 1.5 * STORAGE_MIN;
 // «масштаб» экономики для событий: доход за месяц без сезонов
+// доход фермы в минуту для наград и цен: текущий, но не меньше половины номинального (зимой не обесценивается)
+export const perMin = (st) => Math.max(totalRate(st), PRODUCERS.reduce((a, id) => a + baseIncome(id, level(st, id)), 0) * globalMult(st, false) * 0.5, 30);
 export const monthScale = (st) => Math.max(15000, PRODUCERS.reduce((a, id) => a + baseIncome(id, level(st, id)), 0) * globalMult(st, false) * MONTH_MS / 60000);
 
 /* ---------- Реальное время ---------- */
@@ -108,6 +117,7 @@ export function tick(st, now = Date.now()) {
   st.lastTick = now;
   if (st.phase === 'clean') return { changed: false, offline: 0 };
   st.playMs = (st.playMs || 0) + Math.min(real, 60000); // время в игре (офлайн не считается) — для соседа
+  logCapital(st);
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
@@ -117,12 +127,13 @@ export function tick(st, now = Date.now()) {
     if (!level(st, id)) continue;
     const before = Math.floor(st.acc[id] || 0);
     const add = rate(st, id) * dt / 60000;
-    if (st.flags.helper) { gain(st, add); continue; } // Ваня собирает сам
     st.acc[id] = Math.min(storageCap(st, id), (st.acc[id] || 0) + add);
     if (Math.floor(st.acc[id]) !== before) changed = true;
   }
+  const auto = workersTick(st, now);
+  if (auto.collected) changed = true;
   checkGoals(st);
-  return { changed, offline: real > 60000 ? dt : 0 };
+  return { changed, offline: real > 60000 ? dt : 0, auto };
 }
 export const ready = (st, id) => Math.floor(st.acc[id] || 0);
 export const unitsReady = (st, id) => Math.floor((st.acc[id] || 0) / BUILDINGS[id].price);
@@ -134,7 +145,7 @@ function gain(st, sum) { st.money += sum; st.monthIncome += sum; }
 export let lastFresh = 0;
 export let lastReserved = { units: 0, value: 0 };
 export const freshShare = (st, id) => { const a = st.acc[id] || 0; return a > 0 ? Math.min(1, rate(st, id) * FRESH_MIN / a) : 0; };
-export function collect(st, id) {
+export function collect(st, id, auto = false) {
   const amt = ready(st, id);
   lastFresh = 0; lastReserved = { units: 0, value: 0 };
   if (amt <= 0 || st.phase === 'clean') return 0;
@@ -145,8 +156,8 @@ export function collect(st, id) {
   lastReserved = reserved;
   gain(st, amt + fresh - reserved.value);
   lastFresh = fresh;
-  st.taps++;
-  dailyProgress(st, 'collect', amt + fresh);
+  if (!auto) { st.taps++; dailyProgress(st, 'collect', amt + fresh); }
+  else if (st.daily) st.daily.sold += amt + fresh;
   checkGoals(st);
   return amt + fresh;
 }
@@ -237,6 +248,69 @@ export const productPrice = (p) => PRODUCTS[p]?.price || 1;
 // рыба своя, не с постройки: одна рыбина стоит ~минуту дохода фермы (но не дешевле базовой цены)
 export const itemPrice = (st, p) => (p === 'fish' ? Math.max(PRODUCTS.fish.price, Math.round(totalRate(st))) : productPrice(p));
 
+/* ---------- Работники ---------- */
+export const hired = (st, w) => !!st.workers?.[w];
+export const workersAt = (n) => WORKER_ORDER.filter(w => WORKERS[w].lvl === n).map(w => ({ id: w, ...WORKERS[w] }));
+// цена найма фиксируется, когда работник открылся: hireMin минут дохода фермы на тот момент
+export function hirePrice(st, w) {
+  if (!st.wprice) st.wprice = {};
+  if (!st.wprice[w]) st.wprice[w] = nice(Math.max(1000, perMin(st) * WORKERS[w].hireMin));
+  return st.wprice[w];
+}
+// зарплата: доля собранного за месяц (не меньше 3 минут дохода — чтобы зимой не работали бесплатно)
+const wageFloor = (st, w) => perMin(st) * (MONTH_MS / 60000) * WORKERS[w].wage * 0.5; // зимой собрано мало — платим хотя бы половину обычной
+export const wageOf = (st, w, income = st.monthIncome) => nice(Math.max(WORKERS[w].wage * income, wageFloor(st, w)));
+export const wageEstimate = (st, w) => nice(Math.max(WORKERS[w].wage * perMin(st) * MONTH_MS / 60000, wageFloor(st, w)));
+export function canHire(st, w) {
+  const d = WORKERS[w];
+  if (!d) return 'нет такого работника';
+  if (st.phase === 'clean') return 'сначала уборка';
+  if (hired(st, w)) return 'уже работает';
+  if (farmLevel(st) < d.lvl) return `нужен уровень фермы ${d.lvl}`;
+  if (st.money < hirePrice(st, w)) return 'не хватает ' + fmt(hirePrice(st, w) - st.money);
+  return null;
+}
+export function hire(st, w, now = Date.now()) {
+  const why = canHire(st, w); if (why) return why;
+  const p = hirePrice(st, w);
+  st.money -= p;
+  if (!st.workers) st.workers = {};
+  st.workers[w] = { at: now, last: now };
+  addXp(st, XP.build);
+  addHistory(st, { m: st.month, t: `👷 Наняли: ${WORKERS[w].name} (${fmt(p)}).` });
+  return null;
+}
+export function fire(st, w) {
+  if (!hired(st, w)) return 'не работает';
+  delete st.workers[w];
+  addHistory(st, { m: st.month, t: `👷 ${WORKERS[w].name} больше не работает на ферме.` });
+  return null;
+}
+// автосбор помощника и доставка заказов водителем — каждый тик
+export let lastAuto = { collected: 0, reserved: 0, delivered: [] };
+function workersTick(st, now) {
+  const out = { collected: 0, reserved: 0, delivered: [] };
+  if (st.flags.helper) delete st.flags.helper; // старое событие «Ваня на каникулах» — теперь раздел «Работники»
+  if (st.phase === 'clean') return (lastAuto = out);
+  // открылись новые работники — фиксируем цену найма на этот момент
+  const lvl = farmLevel(st);
+  for (const w of WORKER_ORDER) if (WORKERS[w].lvl <= lvl) hirePrice(st, w);
+  if (!st.workers) return (lastAuto = out);
+  const h = st.workers.helper;
+  if (h && now - (h.last || 0) >= WORKERS.helper.every * 60000) {
+    h.last = now;
+    for (const id of PRODUCERS) {
+      if (!level(st, id) || ready(st, id) <= 0) continue;
+      out.collected += collect(st, id, true);
+      out.reserved += lastReserved.units;
+    }
+  }
+  if (st.workers.driver) {
+    (st.orders || []).forEach((o, i) => { if (orderDone(o)) { const r = deliverOrder(st, i, now); if (r) out.delivered.push(r); } });
+  }
+  return (lastAuto = out);
+}
+
 /* ---------- Рыбалка, щенок, сосед ---------- */
 export const fishLeft = (st, now = Date.now()) => (st.fishing?.day === dayKey(st, now) ? Math.max(0, FISH_PER_DAY - st.fishing.n) : FISH_PER_DAY);
 export function startFishing(st, now = Date.now()) {
@@ -264,18 +338,25 @@ export function petDog(st, now = Date.now()) {
   addXp(st, 3);
   return true;
 }
-// Сосед-соперник: капитал растёт по своей кривой от времени в игре (как у среднего игрока ×0.93)
-const NB = [[0, 1e4], [40, 1e5], [190, 1e6], [1700, 1e7], [8600, 1e8], [29000, 1e9]];
+// Сосед-соперник Петрович: идёт вровень с игроком — 85–110% твоего капитала с запаздыванием ~6 минут игры.
+// Множитель медленно «гуляет» (период ~47 мин), поэтому он то обгоняет, то отстаёт.
+const NB_DELAY_MIN = 6;
+function logCapital(st) {
+  const t = (st.playMs || 0) / 60000;
+  const log = st.capLog || (st.capLog = []);
+  if (!log.length || t - log[log.length - 1][0] >= 1) {
+    log.push([Math.round(t * 10) / 10, Math.round(ratingCapital(st))]);
+    if (log.length > 20) log.shift();
+  }
+}
 export function neighborCap(st) {
   const t = (st.playMs || 0) / 60000;
-  let v;
-  if (t >= NB[NB.length - 1][0]) v = 1e9 * 10 ** ((t - 29000) / 25000);
-  else {
-    let i = 0; while (t > NB[i + 1][0]) i++;
-    const [t0, a] = NB[i], [t1, b] = NB[i + 1];
-    v = a * (b / a) ** ((t - t0) / (t1 - t0));
-  }
-  return Math.round(v * 0.93);
+  const log = st.capLog || [];
+  let base = Math.max(0, ratingCapital(st)) * 0.9;
+  for (let i = log.length - 1; i >= 0; i--) if (log[i][0] <= t - NB_DELAY_MIN) { base = log[i][1]; break; }
+  if (log.length && log[0][0] > t - NB_DELAY_MIN) base = log[0][1]; // истории ещё мало — берём самое раннее
+  const f = 0.975 + 0.125 * Math.sin(2 * Math.PI * t / 47 + (st.seed % 7));
+  return Math.max(START_MONEY * 0.9, Math.round(Math.max(0, base) * f));
 }
 // перегнал соседа / отстал: возвращает событие один раз при смене лидера
 export function neighborCheck(st, now = Date.now()) {
@@ -320,16 +401,20 @@ export function makeOrder(st, now, big = false) {
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
+  // объём — сколько ферма произведёт за W минут (копить 3–10 мин; большой — 20–30 мин)
+  const W = big ? rndRange(r, 20, 30) : rndRange(r, 3, 10);
   const items = chosen.map(p => {
-    const mins = big ? rndRange(r, 25, 40) : rndRange(r, 4, 10) / k;
-    const need = p === 'fish' ? 3 + Math.floor(r() * 4) : Math.max(3, Math.round(can[p] * mins));
+    const need = p === 'fish' ? 3 + Math.floor(r() * 4) : Math.max(3, Math.round(can[p] * W));
     return { p, need, have: 0 };
   });
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
-  const mult = client.mult * (1 + 0.2 * level(st, 'market'));
+  // награда — минуты дохода фермы: обычный 3–8 мин (чем больше объём, тем больше), большой — 15–20 мин
+  const rewMin = big ? 15 + (W - 20) / 2 : 3 + (W - 3) / 7 * 5;
+  const mult = (big ? 1 : client.mult / 1.3) * (1 + 0.2 * level(st, 'market'));
+  const reward = Math.max(perMin(st) * rewMin * mult, value * 1.25);
   return {
     client: client.id, name: client.name, emoji: client.emoji, big, items,
-    reward: nice(value * mult), xp: big ? XP.big : Math.round(rndRange(r, XP.order[0], XP.order[1])), at: now,
+    reward: nice(reward), xp: big ? Math.round(XP.big * W / 25) : Math.round(XP.order[0] + (W - 3) / 7 * (XP.order[1] - XP.order[0])), at: now,
   };
 }
 function refillOrders(st, now) {
@@ -537,6 +622,7 @@ function helpers(st, log) {
   return {
     fmt, S,
     amt: (k) => nice(S * k),
+    mins: (n) => nice(perMin(st) * n),   // цена события: n минут дохода фермы
     pay: (sum, label) => { st.money -= sum; log.push({ label, amount: -sum }); },
     gain: (sum, label) => { st.money += sum; log.push({ label, amount: sum }); },
     mod: (key, v) => addMod(st.mods, key, v),
@@ -563,12 +649,19 @@ export function pickEvent(st) {
   return pool[pool.length - 1] || EVENT_BY_ID.quiet;
 }
 
-// «Следующий месяц»: только когда месяц прошёл. Выпадает событие нового месяца.
+// «Следующий месяц»: только когда месяц прошёл. Сначала итоги прошедшего месяца (st.report),
+// потом — событие нового месяца (st.event), выбор в нём действует уже на новый месяц.
 export function endMonth(st) {
   if (!monthReady(st)) return null;
   const e = pickEvent(st);
+  st.eventKey = eventKey(e, st);
+  const report = closeMonth(st);
+  report.after = Math.round(st.money);
+  report.capital = capital(st);
+  st.report = report;
   st.event = e.id;
   st.phase = 'event';
+  checkGoals(st);
   return e;
 }
 export function optionState(st, e, i) {
@@ -584,22 +677,19 @@ export function choose(st, i) {
   const e = EVENT_BY_ID[st.event];
   const o = i === -1 && allBlocked(st, e) ? PASS : e.options[i];
   if (!o || (o.can && o.can(st, helpers(st, [])))) return null;
-  const report = closeMonth(st);              // итоги прошедшего месяца
   const log = [];
-  const text = o.effect(st, helpers(st, log)); // событие действует на новый месяц
-  st.usedEvents.push(eventKey(e, st));
+  const text = o.effect(st, helpers(st, log)); // событие действует на новый (уже начавшийся) месяц
+  st.usedEvents.push(st.eventKey || e.id);
+  delete st.eventKey;
   // помним события только этого года (и разовые) — иначе список растёт бесконечно
   const y = yearOf(st.month);
   st.usedEvents = st.usedEvents.filter(k => !k.includes('@') || +k.split('@')[1] >= y);
   addHistory(st, { m: st.month, t: `${stripTags(e.title)}: ${o.label.toLowerCase()}. ${text}` });
-  report.event = { title: stripTags(e.title), choice: o.label, text, log };
-  report.after = Math.round(st.money);
-  report.capital = capital(st);
+  const result = { title: stripTags(e.title), choice: o.label, text, log, month: st.month };
   st.event = null;
   st.phase = 'play';
   checkGoals(st);
-  st.report = report;
-  return report;
+  return result;
 }
 
 function closeMonth(st) {
@@ -608,22 +698,21 @@ function closeMonth(st) {
   const costs = [];
   if (income > 0) costs.push({ label: 'Корм, свет и налоги', amount: Math.round(income * UPKEEP_SHARE) });
   if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE) });
-  if (st.flags.helper) costs.push({ label: 'Зарплата Ване', amount: nice(monthScale(st) * 0.08) });
+  for (const w of WORKER_ORDER) if (hired(st, w)) costs.push({ label: `Зарплата: ${WORKERS[w].name}`, amount: wageOf(st, w, income), wage: true });
   const notes = [];
   if (st.flags.contract) {
     const c = st.flags.contract;
     if (income < c.min) { costs.push({ label: 'Штраф кафе', amount: c.fine }); notes.push('Кафе недовольно: выручка меньше нормы.'); }
     if (--c.left <= 0) { delete st.flags.contract; notes.push('Контракт с кафе закончился.'); }
   }
-  if (st.flags.helper && --st.flags.helper.left <= 0) { delete st.flags.helper; notes.push('Ваня уехал учиться. Собирать — снова самим!'); }
   const expense = costs.reduce((a, c) => a + c.amount, 0);
   st.money -= expense;
-  if (m % 12 === 9 && level(st, 'apiary') > 1 && !level(st, 'omshanik')) {
+  if (m % 12 === 9 && level(st, 'apiary') > 1 && !level(st, 'omshanik') && !hired(st, 'beekeeper')) {
     notes.push('Без омшаника пчёлы замёрзли — пасека откатилась на 1-й уровень.');
     addHistory(st, { m, t: 'Пасека замёрзла без омшаника.' });
     st.lv.apiary = 1;
   }
-  st.ledger.push({ m, income, expense, money: Math.round(st.money) });
+  st.ledger.push({ m, income, expense, wages: costs.filter(c => c.wage).reduce((a, c) => a + c.amount, 0), money: Math.round(st.money) });
   if (st.ledger.length > 36) st.ledger.shift();
   const report = { month: m, name: monthOf(m).name, year: yearOf(m), income, costs, expense, notes };
   st.month++;

@@ -2,7 +2,7 @@
 //   node tools/sim.mjs               — таблица: время до 100 тыс … 1 млрд для 5 типов игроков
 //   node tools/sim.mjs trace [часы]  — что и когда покупает средний игрок
 import * as E from '../webapp/js/engine.js';
-import { BUILDINGS, BUILD_ORDER } from '../webapp/js/data.js';
+import { BUILDINGS, BUILD_ORDER, WORKERS, WORKER_ORDER } from '../webapp/js/data.js';
 
 const MIN = 60000, HOUR = 3600000, DAY = 24 * HOUR;
 const MILESTONES = [1e5, 1e6, 1e7, 1e8, 1e9];
@@ -43,6 +43,27 @@ function shop(st, now, trace, log) {
   }
 }
 
+// работники: нанимаем тех, кто окупается быстрее чем за 400 минут (помощник и водитель — для удобства, сим и так собирает сам)
+function hireWorkers(st, now, trace, log) {
+  for (const w of WORKER_ORDER) {
+    const def = WORKERS[w];
+    if (E.hired(st, w) && (def.bonus || def.all)) { // зарплата стала больше пользы — увольняем
+      const c = structuredClone(st); delete c.workers[w];
+      if (E.totalRate(st) - E.totalRate(c) < E.wageEstimate(st, w) / 15) { E.fire(st, w); if (trace) log.push(`${fmtT(now).padStart(12)}  Уволен: ${def.name}`); }
+      continue;
+    }
+    if (E.canHire(st, w)) continue;
+    if (!def.bonus && !def.all) continue;
+    const c = structuredClone(st); c.workers = { ...(c.workers || {}), [w]: { at: now } };
+    const gain = E.totalRate(c) - E.totalRate(st);
+    const wagePerMin = E.wageEstimate(c, w) / 15;
+    if (gain - wagePerMin > 0 && E.hirePrice(st, w) / (gain - wagePerMin) < 400) {
+      E.hire(st, w, now);
+      if (trace) log.push(`${fmtT(now).padStart(12)}  Нанят: ${def.name}`);
+    }
+  }
+}
+
 function visit(st, now, r, trace, log) {
   E.tick(st, now);
   E.claimLogin(st);
@@ -54,6 +75,7 @@ function visit(st, now, r, trace, log) {
     if (E.orderDone(o)) E.deliverOrder(st, i, now);
     else if (now - o.at > 40 * MIN) E.declineOrder(st, i, now);
   }
+  hireWorkers(st, now, trace, log);
   shop(st, now, trace, log);
   if (E.monthReady(st)) {
     const e = E.endMonth(st);

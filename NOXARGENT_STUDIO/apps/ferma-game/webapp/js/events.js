@@ -1,6 +1,6 @@
 // События месяца: карточка с выбором из 2 вариантов (как голосование в серии).
 // Выпадают в начале нового месяца; months — номера месяцев 0…11 (0 = март).
-// Суммы масштабируются под размер фермы: h.amt(k) = k × месячный доход (S), округлённо.
+// Суммы масштабируются под размер фермы: h.amt(k) = k × месячный доход (S), h.mins(n) = n минут дохода фермы.
 // option.can(st, h) — причина, если вариант недоступен; option.effect(st, h) — текст для итогов.
 
 const ALL = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -16,8 +16,8 @@ export const EVENTS = [
     kicker: 'Река и луг', title: 'Половодье <em>на реке!</em>',
     text: 'Река вышла из берегов, вода подбирается к коровнику и мельнице.',
     options: [
-      { icon: 'tools', label: 'Мешки с песком', desc: (st, h) => `${h.fmt(h.amt(0.06))} — укрепим берег`, can: (st, h) => need(st, h.amt(0.06)),
-        effect: (st, h) => { h.pay(h.amt(0.06), 'Мешки с песком'); return 'Берег выстоял — луг сухой.'; } },
+      { icon: 'tools', label: 'Мешки с песком', desc: (st, h) => `${h.fmt(h.mins(3))} — укрепим берег`, can: (st, h) => need(st, h.mins(3)),
+        effect: (st, h) => { h.pay(h.mins(3), 'Мешки с песком'); return 'Берег выстоял — луг сухой.'; } },
       { icon: 'dice', label: 'Авось пронесёт', desc: 'коровник, мельница и сыроварня −50% весь месяц',
         effect: (st, h) => { h.mod('cowshed', 0.5); h.mod('mill', 0.5); h.mod('cheese', 0.5); return 'Луг подтопило — месяц работали вполсилы.'; } },
     ],
@@ -27,8 +27,8 @@ export const EVENTS = [
     kicker: 'Река и луг', title: 'Пекарня просит <em>нашу муку</em>',
     text: 'Пекарня из соседнего села распробовала муку с дедовой мельницы и просит возить ещё.',
     options: [
-      { icon: 'truck', label: 'Возить', desc: (st, h) => `мельница +60% весь месяц, бензин ${h.fmt(h.amt(0.03))}`, can: (st, h) => need(st, h.amt(0.03)),
-        effect: (st, h) => { h.pay(h.amt(0.03), 'Бензин до пекарни'); h.mod('mill', 1.6); return 'Мука уходит пекарне мешками!'; } },
+      { icon: 'truck', label: 'Возить', desc: (st, h) => `мельница +60% весь месяц, бензин ${h.fmt(h.mins(2))}`, can: (st, h) => need(st, h.mins(2)),
+        effect: (st, h) => { h.pay(h.mins(2), 'Бензин до пекарни'); h.mod('mill', 1.6); return 'Мука уходит пекарне мешками!'; } },
       { icon: 'no', label: 'Не до того', desc: 'своих дел хватает', effect: () => 'Пекарня нашла другую мельницу.' },
     ],
   },
@@ -37,8 +37,8 @@ export const EVENTS = [
     kicker: 'Райцентр', title: 'Проверка <em>в магазине</em>',
     text: 'В магазин «Ферма деда» пришла проверка: ценники не те, холодильник старый.',
     options: [
-      { icon: 'tools', label: 'Всё исправить', desc: (st, h) => `${h.fmt(h.amt(0.05))} на новый холодильник`, can: (st, h) => need(st, h.amt(0.05)),
-        effect: (st, h) => { h.pay(h.amt(0.05), 'Холодильник в магазин'); return 'Проверка ушла довольная.'; } },
+      { icon: 'tools', label: 'Всё исправить', desc: (st, h) => `${h.fmt(h.mins(2.5))} на новый холодильник`, can: (st, h) => need(st, h.mins(2.5)),
+        effect: (st, h) => { h.pay(h.mins(2.5), 'Холодильник в магазин'); return 'Проверка ушла довольная.'; } },
       { icon: 'dice', label: 'Спорить', desc: 'магазин и кафе −50% весь месяц',
         effect: (st, h) => { h.mod('shop', 0.5); h.mod('cafe', 0.5); return 'Магазин месяц работал с перебоями.'; } },
     ],
@@ -48,8 +48,8 @@ export const EVENTS = [
     kicker: 'Райцентр', title: 'День города!',
     text: 'В райцентре праздник: концерт, ярмарка и полная площадь народу.',
     options: [
-      { icon: 'stall', label: 'Палатка на площади', desc: (st, h) => `${h.fmt(h.amt(0.04))}, магазин и кафе +50% весь месяц`, can: (st, h) => need(st, h.amt(0.04)),
-        effect: (st, h) => { h.pay(h.amt(0.04), 'Палатка на Дне города'); h.mod('shop', 1.5); h.mod('cafe', 1.5); return 'Пироги разлетелись за час!'; } },
+      { icon: 'stall', label: 'Палатка на площади', desc: (st, h) => `${h.fmt(h.mins(2))}, магазин и кафе +50% весь месяц`, can: (st, h) => need(st, h.mins(2)),
+        effect: (st, h) => { h.pay(h.mins(2), 'Палатка на Дне города'); h.mod('shop', 1.5); h.mod('cafe', 1.5); return 'Пироги разлетелись за час!'; } },
       { icon: 'no', label: 'Обычный день', desc: 'работаем как всегда', effect: () => 'Праздник прошёл мимо.' },
     ],
   },
@@ -58,8 +58,8 @@ export const EVENTS = [
     kicker: 'Агрохолдинг', title: 'Рекордный <em>урожай</em>',
     text: 'Зерна столько, что своя техника не успевает. Можно нанять комбайны.',
     options: [
-      { icon: 'truck', label: 'Нанять комбайны', desc: (st, h) => `${h.fmt(h.amt(0.08))}, поля и элеватор +50% весь месяц`, can: (st, h) => need(st, h.amt(0.08)),
-        effect: (st, h) => { h.pay(h.amt(0.08), 'Аренда комбайнов'); h.mod('tractor', 1.5); h.mod('elevator', 1.5); return 'Убрали всё до зёрнышка!'; } },
+      { icon: 'truck', label: 'Нанять комбайны', desc: (st, h) => `${h.fmt(h.mins(4))}, поля и элеватор +50% весь месяц`, can: (st, h) => need(st, h.mins(4)),
+        effect: (st, h) => { h.pay(h.mins(4), 'Аренда комбайнов'); h.mod('tractor', 1.5); h.mod('elevator', 1.5); return 'Убрали всё до зёрнышка!'; } },
       { icon: 'dice', label: 'Своими силами', desc: 'часть урожая уйдёт под снег', effect: (st, h) => { h.mod('tractor', 0.8); return 'Не всё успели убрать.'; } },
     ],
   },
@@ -79,8 +79,8 @@ export const EVENTS = [
     kicker: 'Погода', title: 'Заморозок <em>−20°</em>',
     text: 'Ночью обещают мороз. Рассада и куры под угрозой.',
     options: [
-      { icon: 'blanket', label: 'Укрыть всё', desc: (st, h) => `${h.fmt(h.amt(0.08))} на плёнку и обогрев`, can: (st, h) => need(st, h.amt(0.08)),
-        effect: (st, h) => { h.pay(h.amt(0.08), 'Плёнка и обогрев'); return 'Укрыли — всё живо.'; } },
+      { icon: 'blanket', label: 'Укрыть всё', desc: (st, h) => `${h.fmt(h.mins(4))} на плёнку и обогрев`, can: (st, h) => need(st, h.mins(4)),
+        effect: (st, h) => { h.pay(h.mins(4), 'Плёнка и обогрев'); return 'Укрыли — всё живо.'; } },
       { icon: 'dice', label: 'Рискнуть', desc: 'теплица и куры −50% весь месяц',
         effect: (st, h) => { h.mod('greenhouse', 0.5); h.mod('coop', 0.5); return 'Мороз побил рассаду, куры не неслись.'; } },
     ],
@@ -100,8 +100,8 @@ export const EVENTS = [
     kicker: 'Тревога', title: 'Лиса <em>у курятника!</em>',
     text: (st) => (lv(st, 'fence') ? 'Лиса ходит вдоль сетки. Забор держит, но она не уходит…' : 'Ночью у курятника видели следы. Забора-то нет!'),
     options: [
-      { icon: 'trap', label: 'Капканы', desc: (st, h) => `${h.fmt(h.amt(0.04))}, куры целы`, can: (st, h) => need(st, h.amt(0.04)),
-        effect: (st, h) => { h.pay(h.amt(0.04), 'Капканы'); return 'Лиса ушла ни с чем.'; } },
+      { icon: 'trap', label: 'Капканы', desc: (st, h) => `${h.fmt(h.mins(2))}, куры целы`, can: (st, h) => need(st, h.mins(2)),
+        effect: (st, h) => { h.pay(h.mins(2), 'Капканы'); return 'Лиса ушла ни с чем.'; } },
       { icon: 'dice', label: 'И так сойдёт', desc: (st) => (lv(st, 'fence') ? 'забор защитит' : 'без забора курятник −1 уровень'),
         effect: (st) => {
           if (lv(st, 'fence')) return 'Забор не подвёл — лиса ушла ни с чем.';
@@ -124,8 +124,8 @@ export const EVENTS = [
     kicker: 'Погода', title: 'Засуха!',
     text: 'Месяц без дождя. Огород сохнет, пчёлам нечего собирать.',
     options: [
-      { icon: 'water', label: 'Полив', desc: (st, h) => `${h.fmt(h.amt(0.07))} на насос и шланги`, can: (st, h) => need(st, h.amt(0.07)),
-        effect: (st, h) => { h.pay(h.amt(0.07), 'Полив'); return 'Насос спас урожай.'; } },
+      { icon: 'water', label: 'Полив', desc: (st, h) => `${h.fmt(h.mins(3.5))} на насос и шланги`, can: (st, h) => need(st, h.mins(3.5)),
+        effect: (st, h) => { h.pay(h.mins(3.5), 'Полив'); return 'Насос спас урожай.'; } },
       { icon: 'dice', label: 'Ждать дождя', desc: 'огород и мёд −40% весь месяц',
         effect: (st, h) => { h.mod('garden', 0.6); h.mod('apiary', 0.6); h.mod('honeyfield', 0.6); return 'Дождь так и не пришёл.'; } },
     ],
@@ -135,8 +135,8 @@ export const EVENTS = [
     kicker: 'Гости', title: 'Блогер хочет <em>снять ролик</em>',
     text: 'Блогер с миллионом подписчиков хочет снять про ферму деда. Просит оплатить дорогу.',
     options: [
-      { icon: 'camera', label: 'Пустить', desc: (st, h) => `${h.fmt(h.amt(0.06))}, весь месяц доход +30%`, can: (st, h) => need(st, h.amt(0.06)),
-        effect: (st, h) => { h.pay(h.amt(0.06), 'Дорога блогеру'); h.mod('sales', 1.3); return 'Ролик вышел! Покупатели едут.'; } },
+      { icon: 'camera', label: 'Пустить', desc: (st, h) => `${h.fmt(h.mins(3))}, весь месяц доход +30%`, can: (st, h) => need(st, h.mins(3)),
+        effect: (st, h) => { h.pay(h.mins(3), 'Дорога блогеру'); h.mod('sales', 1.3); return 'Ролик вышел! Покупатели едут.'; } },
       { icon: 'no', label: 'Не до того', desc: 'работаем', effect: () => 'Блогер уехал снимать соседа.' },
     ],
   },
@@ -145,8 +145,8 @@ export const EVENTS = [
     kicker: 'Пасека', title: 'Рой улетел <em>к соседу</em>',
     text: 'Пчёлы роем ушли на соседскую яблоню. Сосед готов вернуть — не бесплатно.',
     options: [
-      { icon: 'money', label: 'Выкупить', desc: (st, h) => `${h.fmt(h.amt(0.05))}, пасека цела`, can: (st, h) => need(st, h.amt(0.05)),
-        effect: (st, h) => { h.pay(h.amt(0.05), 'Выкуп роя'); return 'Рой вернули в улей.'; } },
+      { icon: 'money', label: 'Выкупить', desc: (st, h) => `${h.fmt(h.mins(2.5))}, пасека цела`, can: (st, h) => need(st, h.mins(2.5)),
+        effect: (st, h) => { h.pay(h.mins(2.5), 'Выкуп роя'); return 'Рой вернули в улей.'; } },
       { icon: 'no', label: 'Пусть летят', desc: 'пасека −1 уровень', effect: (st) => { st.lv.apiary -= 1; return 'Пасека потеряла уровень.'; } },
     ],
   },
@@ -165,8 +165,8 @@ export const EVENTS = [
     kicker: 'Ярмарка', title: 'Ярмарка <em>в райцентре</em>',
     text: 'Осенняя ярмарка! Народ скупает всё деревенское.',
     options: [
-      { icon: 'truck', label: 'Везти всё', desc: (st, h) => `весь месяц доход +30%, бензин ${h.fmt(h.amt(0.05))}`, can: (st, h) => need(st, h.amt(0.05)),
-        effect: (st, h) => { h.pay(h.amt(0.05), 'Бензин на ярмарку'); h.mod('sales', 1.3); return 'Торгуем на ярмарке весь месяц!'; } },
+      { icon: 'truck', label: 'Везти всё', desc: (st, h) => `весь месяц доход +30%, бензин ${h.fmt(h.mins(2.5))}`, can: (st, h) => need(st, h.mins(2.5)),
+        effect: (st, h) => { h.pay(h.mins(2.5), 'Бензин на ярмарку'); h.mod('sales', 1.3); return 'Торгуем на ярмарке весь месяц!'; } },
       { icon: 'stall', label: 'Остаться', desc: 'торгуем у дороги', effect: () => 'Остались дома.' },
     ],
   },
@@ -175,8 +175,8 @@ export const EVENTS = [
     kicker: 'Погода', title: 'Град <em>побил теплицу</em>',
     text: 'Град размером с вишню. Три дедовых рамы — вдребезги.',
     options: [
-      { icon: 'tools', label: 'Ремонт', desc: (st, h) => `${h.fmt(h.amt(0.08))} на стёкла`, can: (st, h) => need(st, h.amt(0.08)),
-        effect: (st, h) => { h.pay(h.amt(0.08), 'Стёкла для теплицы'); return 'Вставили новые стёкла.'; } },
+      { icon: 'tools', label: 'Ремонт', desc: (st, h) => `${h.fmt(h.mins(4))} на стёкла`, can: (st, h) => need(st, h.mins(4)),
+        effect: (st, h) => { h.pay(h.mins(4), 'Стёкла для теплицы'); return 'Вставили новые стёкла.'; } },
       { icon: 'dice', label: 'Плёнкой', desc: 'теплица −60% в этом и следующем месяце',
         effect: (st, h) => { h.mod('greenhouse', 0.4); h.next('greenhouse', 0.4); return 'Затянули плёнкой — урожай упал.'; } },
     ],
@@ -199,8 +199,8 @@ export const EVENTS = [
     kicker: 'Мороз', title: 'Трубы <em>замёрзли!</em>',
     text: 'В сарае лёд, поилки замёрзли. Животные без воды.',
     options: [
-      { icon: 'tools', label: 'Мастер', desc: (st, h) => `${h.fmt(h.amt(0.06))}, всё работает`, can: (st, h) => need(st, h.amt(0.06)),
-        effect: (st, h) => { h.pay(h.amt(0.06), 'Сантехник'); return 'Мастер отогрел трубы.'; } },
+      { icon: 'tools', label: 'Мастер', desc: (st, h) => `${h.fmt(h.mins(3))}, всё работает`, can: (st, h) => need(st, h.mins(3)),
+        effect: (st, h) => { h.pay(h.mins(3), 'Сантехник'); return 'Мастер отогрел трубы.'; } },
       { icon: 'bucket', label: 'Вёдрами', desc: 'корова и куры −50% весь месяц',
         effect: (st, h) => { h.mod('cow', 0.5); h.mod('coop', 0.5); return 'Таскаем воду вёдрами — надои упали.'; } },
     ],
@@ -224,8 +224,8 @@ export const EVENTS = [
     kicker: 'Мороз', title: 'Мороз <em>−35°!</em>',
     text: 'Синоптики обещают неделю лютого мороза. Утеплим ферму?',
     options: [
-      { icon: 'blanket', label: 'Утеплить', desc: (st, h) => `${h.fmt(h.amt(0.07))} на дрова и утеплитель`, can: (st, h) => need(st, h.amt(0.07)),
-        effect: (st, h) => { h.pay(h.amt(0.07), 'Дрова и утеплитель'); return 'Перезимовали в тепле.'; } },
+      { icon: 'blanket', label: 'Утеплить', desc: (st, h) => `${h.fmt(h.mins(3.5))} на дрова и утеплитель`, can: (st, h) => need(st, h.mins(3.5)),
+        effect: (st, h) => { h.pay(h.mins(3.5), 'Дрова и утеплитель'); return 'Перезимовали в тепле.'; } },
       { icon: 'dice', label: 'Переживём', desc: 'шанс 50%: ферма замёрзнет, весь доход −50% на месяц',
         effect: (st, h) => {
           if (!h.chance(0.5)) return 'Обошлось — мороз ударил по соседям.';
@@ -246,16 +246,6 @@ export const EVENTS = [
           h.ach('sold'); return 'Полфермы теперь у соседа. Строимся заново!';
         } },
       { icon: 'heart', label: 'Не продам', desc: '«дедову землю не продаю»', effect: () => 'Ферма остаётся в семье.' },
-    ],
-  },
-  {
-    id: 'helper', months: [2, 3, 4, 5, 6], weight: 2, cond: (st) => !st.flags.helper && Object.keys(st.lv).length >= 3,
-    kicker: 'Помощник', title: 'Внук соседа <em>хочет помогать</em>',
-    text: 'Ваня на каникулах, хочет заработать. 3 месяца будет сам собирать всё, что произвела ферма.',
-    options: [
-      { icon: 'boy', label: 'Нанять', desc: (st, h) => `сбор сам идёт в кошелёк, зарплата ${h.fmt(h.amt(0.08))}/мес`,
-        effect: (st) => { st.flags.helper = { left: 3 }; return 'Ваня теперь работает на ферме.'; } },
-      { icon: 'no', label: 'Сами справимся', desc: 'экономим', effect: () => 'Справимся сами.' },
     ],
   },
   {
