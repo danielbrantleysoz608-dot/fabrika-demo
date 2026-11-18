@@ -173,7 +173,7 @@ async def no_cache_js(request: web.Request, handler):
     return resp
 
 
-def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None) -> web.Application:
+def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None, sub=None) -> web.Application:
     app = web.Application(middlewares=[no_cache_js], client_max_size=512 * 1024)
     app[CFG] = cfg
     app[DBK] = db
@@ -189,5 +189,8 @@ def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None) -
     if shop is not None:
         from shop import setup_api
         setup_api(app, shop, bot, cfg.test_prices, current_user)
+    if sub is not None:
+        from sub import setup_api as setup_sub
+        setup_sub(app, sub, cfg.channel_url, current_user)
     app.router.add_static("/", cfg.webapp_dir, show_index=False)
     return app

@@ -23,6 +23,8 @@ class Config:
     admin_id: int = 0  # Telegram id владельца: сообщения об итогах недели и подарках
     channel_url: str = "https://t.me/predstav_kanal"
     test_prices: bool = False  # все покупки по 1 ⭐ — для проверки оплаты перед запуском
+    channel_id: str = "@predstav_kanal"  # канал для обязательной подписки (бот — админ канала)
+    require_sub: bool = True
 
 
 def load() -> Config:
@@ -43,4 +45,6 @@ def load() -> Config:
         admin_id=int("".join(ch for ch in os.getenv("ADMIN_ID", "") if ch.isdigit()) or 0),  # «ID: 123» → 123
         channel_url=os.getenv("CHANNEL_URL", "https://t.me/predstav_kanal"),
         test_prices=os.getenv("TEST_PRICES", "0") == "1",
+        channel_id=os.getenv("CHANNEL_ID", "@predstav_kanal"),
+        require_sub=os.getenv("REQUIRE_SUB", "1") == "1",
     )

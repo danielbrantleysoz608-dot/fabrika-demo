@@ -635,3 +635,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* рейтинг */
 .r-badge { display: inline-block; font-size: 10px; font-weight: 800; color: #b0662a; background: #fff3d6; border: 1.5px solid #e8c27a; border-radius: 8px; padding: 0 5px; margin-left: 5px; vertical-align: middle; white-space: nowrap; }
 .r-winner { background: #fff3d6; border: 2px solid #e8a21a; border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; font-weight: 700; color: var(--brown); text-align: center; }
+/* ===== Подписка на канал ===== */
+.sub-gate { text-align: center; }
+.sub-gate .sg-farmer { width: 120px; height: 126px; margin: -6px auto 4px; }
+.sub-gate .sg-farmer svg { width: 100%; height: 100%; }
+.sub-gate .btn { margin-top: 8px; }

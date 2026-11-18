@@ -485,7 +485,7 @@ function closeLayer() {
 tg?.BackButton.onClick(() => {
   if (coach.isOpen()) return coach.close();
   const k = layer.dataset.kind;
-  if (k === 'event' || k === 'report' || k === 'evres' || k === 'fishing') return;
+  if (k === 'event' || k === 'report' || k === 'evres' || k === 'fishing' || k === 'subgate') return;
   if (k === 'fish-res' && fishGame?.fish && !fishGame.taken) return takeCatch(false); // улов не теряем — продаём
   if (k === 'intro' || k === 'album-start' || k === 'rating-start') return showSplash();
   closeLayer();
@@ -541,6 +541,8 @@ const ACTIONS = {
   goLoc: (id) => { closeLayer(); goLoc(id); },
   locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
   map: () => openMap(),
+  subOpen: () => { const url = subInfo?.url || 'https://t.me/predstav_kanal'; if (tg?.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank'); },
+  subCheck: () => subCheck(),
   shop: () => openShop(),
   shopItem: (id) => confirmPurchase(id),
   buyStars: (id) => buyStars(id),
@@ -1536,6 +1538,28 @@ async function boot() {
   if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile };
   render();
   say('Привет! Я помогу с фермой.', 'wink');
-  showSplash();
+  if (await subscribed()) showSplash(); else showSubGate();
 }
+
+/* ================= Обязательная подписка на канал ================= */
+let subInfo = null;
+async function subscribed(fresh = false) {
+  if (!api.online) return true;                 // вне Telegram (проверка на ПК) — без подписки
+  try { subInfo = await api.request('GET', '/api/sub' + (fresh ? '?fresh=1' : '')); } catch { return true; } // сервер не ответил — не мешаем играть
+  return !subInfo.required || subInfo.ok;
+}
+function showSubGate() {
+  openLayer(`<div class="dialog sub-gate"><div class="sg-farmer">${farmerSVG('wink')}</div>
+    <h3>Подпишитесь на канал</h3>
+    <p>Чтобы играть в «Ферму деда», подпишитесь на канал <b>«Ферма с нуля»</b> — там сериал, по которому сделана игра, и итоги рейтинга фермеров.</p>
+    <button class="btn primary big" data-act="subOpen">📺 Подписаться на канал</button>
+    <button class="btn wide" data-act="subCheck">✅ Я подписался</button></div>`, 'screen dim', false);
+  layer.dataset.kind = 'subgate';
+}
+async function subCheck() {
+  if (await subscribed(true)) { sfx.fanfare(); toast('Спасибо за подписку! 🌾'); return showSplash(); }
+  haptic('rigid'); toast('Подписка пока не видна — подпишитесь и нажмите ещё раз');
+}
+// вернулся из канала — проверяем сами
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && layer.dataset.kind === 'subgate') setTimeout(subCheck, 600); });
 boot();

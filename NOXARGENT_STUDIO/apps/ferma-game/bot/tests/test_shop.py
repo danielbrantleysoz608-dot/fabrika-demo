@@ -150,3 +150,46 @@ async def test_gift_sent_when_stars_enough(env):
     await db.conn.commit()
     res = await week_results(db, shop, bot, admin_id=999, now=now)
     assert res[0]["status"] == "ok" and bot.gifts == [(7, "g150")]
+
+
+# ---------- Обязательная подписка на канал ----------
+from sub import SubChecker  # noqa: E402
+
+
+class SubBot:
+    def __init__(self):
+        self.members, self.calls, self.sent, self.fail = set(), 0, [], False
+
+    async def get_chat_member(self, chat_id, user_id):
+        self.calls += 1
+        if self.fail:
+            raise RuntimeError("Bad Request: member list is inaccessible")
+        return SimpleNamespace(status="member" if user_id in self.members else "left")
+
+    async def send_message(self, chat_id, text, **kw):
+        self.sent.append((chat_id, text))
+
+
+async def test_subscription_api(aiohttp_client, tmp_path):
+    cfg = replace(load(), bot_token=TOKEN, db_path=tmp_path / "sub.db", dev_mode=False,
+                  webapp_dir=Path(__file__).resolve().parents[2] / "webapp")
+    db = DB(cfg.db_path); await db.open()
+    bot = SubBot()
+    sub = SubChecker(bot, "@predstav_kanal", True, admin_id=999)
+    c = await aiohttp_client(make_app(cfg, db, "ferma_test_bot", sub=sub))
+    h = {"X-Telegram-Init-Data": init_data(42)}
+    r = await (await c.get("/api/sub", headers=h)).json()
+    assert r["required"] and r["ok"] is False and r["url"].startswith("https://t.me/")
+    bot.members.add(42)                                     # подписался
+    r = await (await c.get("/api/sub?fresh=1", headers=h)).json()
+    assert r["ok"] is True
+    calls = bot.calls
+    await c.get("/api/sub", headers=h)                      # подписан — из кэша, без лишних запросов
+    assert bot.calls == calls
+    assert (await c.get("/api/sub")).status == 401          # без Telegram — нельзя
+    # бот не админ канала → не мешаем играть, владельцу пишем один раз
+    bot.fail = True
+    r = await (await c.get("/api/sub?fresh=1", headers={"X-Telegram-Init-Data": init_data(43)})).json()
+    await c.get("/api/sub?fresh=1", headers={"X-Telegram-Init-Data": init_data(44)})
+    assert r["ok"] is True and len([1 for chat, _ in bot.sent if chat == 999]) == 1
+    await db.close()
