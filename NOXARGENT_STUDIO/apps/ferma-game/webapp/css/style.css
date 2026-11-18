@@ -613,3 +613,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .lvl-pill { min-width: 60px; padding: 4px 6px; }
 @media (max-width: 370px) { .qbtn { width: 49px; } .qbtn small { font-size: 8px; } .lvl-pill { min-width: 54px; } .quick { gap: 4px; } }
 .sheet .sheet-head h2 { font-size: 21px; line-height: 1.1; }
+/* счётчик заказа не наезжает на полоску, даже «12 853/12 855» */
+.oi { grid-template-columns: 26px max-content minmax(40px, 1fr); }
+.oi .on { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 14px; }
