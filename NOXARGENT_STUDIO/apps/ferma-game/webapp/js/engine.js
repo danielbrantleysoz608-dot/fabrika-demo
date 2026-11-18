@@ -151,7 +151,7 @@ export const freshShare = (st, id) => { const a = st.acc[id] || 0; return a > 0 
 export function collect(st, id, auto = false) {
   const amt = ready(st, id);
   lastFresh = 0; lastReserved = { units: 0, value: 0 };
-  if (amt <= 0 || st.phase === 'clean') return 0;
+  if (amt <= 0 || st.phase === 'clean' || unitsReady(st, id) < 1) return 0; // собирается только созревшее (пузырь над постройкой)
   const fresh = Math.floor(Math.min(amt, rate(st, id) * FRESH_MIN) * FRESH_BONUS);
   st.acc[id] -= amt;
   // часть урожая, нужная для заказов на доске, откладывается в амбар — остальное продаётся на прилавке

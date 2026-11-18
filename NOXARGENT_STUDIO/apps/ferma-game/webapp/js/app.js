@@ -202,7 +202,7 @@ function hint() {
   const L = (id) => E.level(st, id), m = st.month % 12;
   if (st.phase === 'clean') return say('Дед оставил нам ферму… и <b>бурьян</b>. Тапай по мусору — наведём порядок!');
   if (!Object.keys(st.lv).length) return say('Чисто! Жми зелёный <b>＋</b> — начнём с курятника, он самый быстрый.', 'happy');
-  if (E.PRODUCERS.some(id => E.ready(st, id) >= 1)) return say('Продукция готова — <b>тапай</b> по значкам над постройками!');
+  if (E.PRODUCERS.some(id => E.level(st, id) && E.unitsReady(st, id) >= 1)) return say('Продукция готова — <b>тапай</b> по значкам над постройками!');
   if (L('coop') && !L('fence') && m <= 8) return say('Кур без забора лиса утащит. <b>Забор</b> — в «Стройке».', 'worried');
   if (L('apiary') && !L('omshanik') && m >= 6 && m <= 9) return say('Нужен <b>омшаник</b>, иначе в декабре пчёлы замёрзнут!', 'worried');
   if (L('greenhouse') && !L('stove') && m >= 7) return say('Зимой теплица встанет. <b>Печка</b> — и огурцы в мороз втридорога!');
@@ -265,6 +265,8 @@ function hitTrash(id) {
 
 function collect(id) {
   const pos = READY_POSITIONS[id];
+  // собираем только из пузыря: пока урожай не созрел хотя бы на 1 штуку — тап открывает карточку постройки
+  if (!pos || E.unitsReady(st, id) < 1) { haptic(); return openBuilding(id); }
   const amt = E.collect(st, id);
   if (!pos || amt <= 0) { haptic(); return openBuilding(id); } // нечего собирать — открываем карточку улучшения
   const fresh = E.lastFresh, res = E.lastReserved;
@@ -1558,6 +1560,28 @@ $('.goal').onclick = () => st && toast(E.goalNeedsLevel(st) ? `Капитал е
 window.addEventListener('error', (e) => { try { toast('Ошибка: ' + e.message); } catch { /* */ } });
 
 /* ================= Старт ================= */
+/* ================= Полный экран в Telegram ================= */
+// После сворачивания мини-аппа (свайп вниз) «стабильная» высота Telegram застревает на свёрнутой —
+// поэтому высоту игры берём из текущего окна и пересчитываем на каждое изменение; при возврате — снова разворачиваем.
+function fitViewport() {
+  const h = Math.round(window.visualViewport?.height || window.innerHeight || tg?.viewportHeight || 0);
+  if (h > 100) document.documentElement.style.setProperty('--app-h', h + 'px');
+}
+function backToFull() {
+  try { tg?.ready?.(); if (tg && !tg.isExpanded) tg.expand(); } catch { /* */ }
+  fitViewport();
+  setTimeout(fitViewport, 300); setTimeout(fitViewport, 900); // Android дорисовывает окно не сразу
+}
+fitViewport();
+window.addEventListener('resize', fitViewport);
+window.visualViewport?.addEventListener('resize', fitViewport);
+window.addEventListener('orientationchange', () => setTimeout(backToFull, 250));
+window.addEventListener('pageshow', backToFull);
+window.addEventListener('focus', backToFull);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') backToFull(); });
+tg?.onEvent?.('viewportChanged', () => { fitViewport(); if (!tg.isExpanded) tg.expand(); });
+tg?.onEvent?.('activated', backToFull);
+
 async function boot() {
   if (tg) {
     tg.ready(); tg.expand();
