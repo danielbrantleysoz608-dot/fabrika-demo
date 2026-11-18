@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS purchases (
 CREATE INDEX IF NOT EXISTS purchases_user_day ON purchases(user_id, created_at);
 
 -- Рейтинг. player_key: "tg:<telegram id>" или "anon:<временный id>" (заглушка без бота).
--- capital — лучший капитал фермы на ИГРОВЫХ деньгах (без монет за Stars).
+-- capital — текущий капитал фермы (деньги + постройки − долг), включая купленные за звёзды деньги.
 CREATE TABLE IF NOT EXISTS players (
     player_key  TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -165,10 +165,10 @@ class DB:
 
     async def submit_score(self, player_key: str, name: str, capital: int, paid: int, tier: int, year: int,
                            now: float | None = None) -> int:
-        """Сохраняет капитал. В рейтинг идёт капитал минус монеты за Stars (берём большее из двух источников)."""
+        """Сохраняет текущий капитал фермы для рейтинга."""
         now = int(now or time.time())
-        paid = max(int(paid or 0), await self.paid_coins(player_key))
-        rating = max(0, min(int(capital) - paid, MAX_CAPITAL))
+        paid = int(paid or 0)
+        rating = max(0, min(int(capital), MAX_CAPITAL))  # купленные за звёзды деньги идут в рейтинг как обычные
         default = "Фермер " + player_key[-4:]
         await self.conn.execute(
             """INSERT INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)
@@ -213,7 +213,7 @@ class DB:
         async with self.conn.execute(f"{base} ORDER BY value DESC, player_key LIMIT ?", (*args, limit)) as cur:
             rows = await cur.fetchall()
         top = [{"rank": i + 1, "name": r["name"], "value": r["value"], "tier": r["tier"] or 0, "year": r["year"] or 1,
-                "me": r["player_key"] == player_key} for i, r in enumerate(rows)]
+                "me": r["player_key"] == player_key, "key": r["player_key"]} for i, r in enumerate(rows)]
         me = None
         if player_key:
             async with self.conn.execute(f"SELECT * FROM ({base}) WHERE player_key = ?", (*args, player_key)) as cur:

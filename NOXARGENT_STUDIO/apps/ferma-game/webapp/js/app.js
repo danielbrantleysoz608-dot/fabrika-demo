@@ -10,7 +10,7 @@ import { farmerSVG } from './farmer.js';
 import { workerPortrait } from './workers-art.js';
 import { ICONS, POSTCARD_ART } from './icons.js';
 import * as api from './api.js';
-import { playerName, setPlayerName, tgName } from './api.js';
+import { playerName, setPlayerName, tgName, shopEnabled, shopApi, openInvoice } from './api.js';
 import { sfx } from './sfx.js';
 import * as coach from './coach.js';
 import { music } from './music.js';
@@ -71,7 +71,7 @@ function view() {
     ordersDone: E.activeOrders(st).filter(x => E.orderDone(x.o)).length,
     canBuild: st.phase !== 'clean',
     workers: WORKER_ORDER.filter(w => E.hired(st, w)),
-    decor: Object.keys(st.decor || {}),
+    decor: [...Object.keys(st.decor || {}), ...(st.paid?.samovar ? ['samovar'] : [])],
     dog: E.hasDog(st) ? { name: st.dog.name, boosted: st.dog.boostUntil > Date.now(), canPet: E.petLeft(st) <= 0 } : null,
   };
 }
@@ -541,6 +541,9 @@ const ACTIONS = {
   goLoc: (id) => { closeLayer(); goLoc(id); },
   locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
   map: () => openMap(),
+  shop: () => openShop(),
+  shopItem: (id) => confirmPurchase(id),
+  buyStars: (id) => buyStars(id),
   workers: () => openWorkers(),
   hire: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.hire(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openWorkers, '#w-' + id); say(`${WORKERS[id].name} теперь работает на ферме! ${WORKERS[id].desc}`, 'happy', 6000); },
   fire: (id) => { openLayer(`<div class="dialog"><h3>Уволить: ${WORKERS[id].name}?</h3><p>Зарплату платить больше не придётся, но и помощи не будет. Нанять снова можно за ${short(E.hirePrice(st, id))}.</p>
@@ -635,6 +638,7 @@ function enterGame() {
   st.tzOff = new Date().getTimezoneOffset();
   render(); hint();
   welcomeBack();
+  setTimeout(claimPurchases, 1200); // оплаченное, пока игра была закрыта, — выдаём сейчас
   if (st.phase === 'event') showEvent();
   else setTimeout(maybeLoginBonus, 600);
 }
@@ -786,7 +790,7 @@ function openBook(tab = 'tasks') {
   let body = '';
   if (tab === 'tasks') {
     body = dailyBlock() + `<div class="sub">Задания фермы</div><ul class="todo">${E.tasks(st).map(([t, ok]) => `<li class="${ok ? 'ok' : ''}"><span class="box">${ok ? '✓' : ''}</span>${t}</li>`).join('')}</ul>
-      <p class="note">Капитал = деньги + стоимость построек − долг. Сейчас: <b>${short(E.capital(st))}</b>. Покупки за Telegram Stars в рейтинг не идут.</p>
+      <p class="note">Капитал = деньги + стоимость построек − долг. Сейчас: <b>${short(E.capital(st))}</b>.</p>
       <ul class="settings"><li><span>🧑‍🌾 Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}<small>кто уже знает игру — может отключить</small></span><button class="switch ${prefs.hints ? 'on' : ''}" data-act="pref" data-id="hints" data-from="book" aria-label="переключить"></button></li></ul>
       <div class="row"><button class="btn wide" data-act="rating">🏆 Рейтинг</button><button class="btn wide" data-act="settings">⚙️ Звук и музыка</button></div>`;
   }
@@ -825,7 +829,7 @@ function askSkip() {
     <p>Можно поторопить время за <b>${short(cost)}</b>. Продукция за пропущенное время не накопится.</p>
     <div class="row"><button class="btn wide" data-act="close">Подожду</button>
       <button class="btn primary wide skip-btn ${lack ? 'off' : ''}" data-act="skip" ${lack ? 'aria-disabled="true"' : ''}>⏩ ${short(cost)}${lack ? `<small>не хватает ${short(lack)}</small>` : ''}</button></div>
-    <p class="note">Ускорение — только за монеты фермы. На рейтинг не влияет.</p></div>`, 'screen dim keep-ui', true);
+    ${shopEnabled() ? `<div class="row star-row"><button class="btn wide" data-act="shopItem" data-id="skip">⏩ ускорить за ${starPrice('skip')} ⭐</button></div>` : ''}</div>`, 'screen dim keep-ui', true);
   layer.dataset.kind = 'skip';
 }
 function doSkip() {
@@ -1126,7 +1130,7 @@ function workerCard(w) {
   const price = locked ? 0 : E.hirePrice(st, w);
   const why = isOn ? null : E.canHire(st, w);
   return `<div class="card wcard ${isOn ? 'on' : ''} ${locked ? 'lock' : ''}" id="w-${w}">
-    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn ? `<b class="w-on">работает · ур. ${E.wLv(st, w)}/${WORKER_MAX}</b>` : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
+    <div class="w-row">${workerPortrait(w)}<div class="w-txt"><h3>${d.name}</h3><small>${d.role} · ${isOn && st.workers[w].freeUntil ? `<b class="w-on">на неделю, до ${new Date(st.workers[w].freeUntil).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</b>` : isOn ? `<b class="w-on">работает · ур. ${E.wLv(st, w)}/${WORKER_MAX}</b>` : locked ? `откроется на уровне ${d.lvl}` : 'можно нанять'}</small></div></div>
     <p>${d.desc}</p>${isOn ? `<p class="w-up">${W_UP[w]}</p>` : ''}
     ${locked ? '' : `<div class="tags"><span class="tag">${isOn ? 'зарплата' : 'зарплата'} ≈ ${short(E.wageEstimate(st, w))}/мес</span>${isOn ? '' : `<span class="tag inc">наём ${short(price)}</span>`}</div>`}
     ${locked ? `<div class="tag">🔒 Уровень фермы ${d.lvl}</div>`
@@ -1145,6 +1149,7 @@ function openWorkers() {
 // помощник собрал / водитель отвёз — показываем на ферме
 function autoNotes(a) {
   if (!a) return;
+  if (a.helperGone) { render(); say('Неделя Вани закончилась. Нанять его насовсем можно в «Работниках».', 'wink', 6000); }
   if (a.collected > 0) {
     const sold = a.collected;
     floatText(svg, 238, 630, `Ваня собрал +${short(sold)}`, '#2f8a2f');
@@ -1251,7 +1256,7 @@ function openFishing(spot = 'home') {
   const uk = E.ukhaOrder(st);
   const rows = FISH.map(f => `<li>${fishArt(f, 46)}<span>${f.name}${f.rare ? ' <em>редкая</em>' : ''}</span><b>≈ ${short(E.fishValue(st, f, spot))}</b></li>`).join('');
   sheet(`🎣 ${S.name}`, `<div class="fish-intro">
-    ${w > 0 ? `<div class="fish-wait">Клюёт через <b id="fishTimer" data-spot="${spot}">${waitTxt(w)}</b></div><p class="note">Рыбачить можно раз в ${S.cd} минут.</p>`
+    ${w > 0 ? `<div class="fish-wait">Клюёт через <b id="fishTimer" data-spot="${spot}">${waitTxt(w)}</b></div><p class="note">Рыбачить можно раз в ${S.cd} минут.</p>${shopEnabled() ? `<button class="btn star-mini" data-act="shopItem" data-id="cast">🎣 ещё заброс · ${starPrice('cast')} ⭐</button>` : ''}`
       : `<p><b>Смотри на поплавок.</b> Когда он <b>нырнёт</b> и появится «!» — сразу тапай! Поторопишься или опоздаешь — рыба сорвётся, а следующий заброс — через ${S.cd} мин.</p>
          <button class="btn primary big" data-act="fishGo" data-id="${spot}">Закинуть удочку</button>`}
     ${uk ? `<div class="tag inc fish-uk">🍲 Кафе ждёт рыбу на уху: ${uk.o.items[0].have}/${uk.o.items[0].need} — награда ${short(uk.o.reward)}</div>` : ''}
@@ -1349,6 +1354,90 @@ function takeCatch(toOrder) {
   else { flyToMoney(g.spot === 'home' ? 'creek' : 'pond', `+${short(r.sold)}`); toast(`${g.fish.name}: +${short(r.sold)}`); }
 }
 
+/* ================= Магазин за звёзды ================= */
+// Цены — с сервера (в режиме проверки оплаты всё стоит 1 ⭐). Деньги фермы — от текущего дохода в минуту.
+const SHOP_LOOK = {
+  skip: { e: '⏩', t: 'Ускорить месяц', d: () => 'Месяц сразу заканчивается — можно жать «Следующий месяц».' },
+  cast: { e: '🎣', t: 'Ещё один заброс', d: () => 'Удочка готова сразу — без ожидания (мостки и пруд).' },
+  helper7: { e: '👷', t: 'Помощник Ваня на 7 дней', d: () => 'Сам собирает урожай раз в 5 минут — 7 дней, без найма и без зарплаты.' },
+  samovar: { e: '🫖', t: 'Украшение «Дедов самовар»', d: () => 'Только за звёзды: +3% ко всему доходу навсегда, стоит у дома деда.' },
+  patron: { e: '💌', t: 'Поддержать автора', d: () => 'Значок «Меценат» у ника в рейтинге и открытка «Меценат фермы». Спасибо!' },
+  bag: { e: '👝', t: 'Мешочек', pack: true },
+  wallet: { e: '👛', t: 'Кошелёк деда', pack: true, best: true },
+  chest: { e: '🧰', t: 'Сундук', pack: true },
+};
+const SHOP_DEFAULT = { skip: 15, cast: 10, helper7: 50, samovar: 75, patron: 100, bag: 25, wallet: 75, chest: 150 };
+const PACKS = { bag: [30, 10000], wallet: [180, 50000], chest: [720, 150000] };
+let shopCatalog = null;
+const starPrice = (id) => shopCatalog?.items?.[id]?.stars ?? SHOP_DEFAULT[id];
+const packSum = (id) => E.packAmount(st, ...PACKS[id]);
+function shopBlocked(id) {
+  if (id === 'samovar' && st.paid?.samovar) return 'уже стоит на ферме';
+  if (id === 'helper7' && E.hired(st, 'helper') && !st.workers.helper.freeUntil) return 'Ваня уже нанят насовсем';
+  if (id === 'skip' && (st.phase !== 'play' || E.monthReady(st))) return 'месяц уже прошёл';
+  if (id === 'cast' && Object.keys(FISH_SPOTS).every(sp => !E.spotOpen(st, sp) || E.fishWait(st, sp) <= 0)) return 'удочка и так готова';
+  return null;
+}
+async function openShop() {
+  if (shopEnabled() && !shopCatalog) { try { shopCatalog = await shopApi.catalog(); } catch { /* цены по умолчанию */ } }
+  const on = shopEnabled();
+  const row = (id) => {
+    const L = SHOP_LOOK[id], why = shopBlocked(id);
+    const sub = L.pack ? `<b class="pk-sum">+${short(packSum(id))}</b> — ${PACKS[id][0] >= 60 ? PACKS[id][0] / 60 + ' ч' : PACKS[id][0] + ' мин'} дохода фермы` : L.d();
+    return `<div class="shop-row ${L.best ? 'best' : ''}">${L.best ? '<span class="pk-badge">выгодно</span>' : ''}<span class="sh-e">${L.e}</span>
+      <div class="sh-t"><b>${L.t}</b><small>${why ? '✓ ' + why : sub}</small></div>
+      <button class="btn primary sh-btn" data-act="shopItem" data-id="${id}" ${!on || why ? 'disabled' : ''}>${starPrice(id)} ⭐</button></div>`;
+  };
+  sheet('⭐ Магазин', `${on ? (shopCatalog?.test ? '<p class="note warn-test">Режим проверки оплаты: всё по 1 ⭐</p>' : '') : '<p class="note">Покупки за звёзды работают в Telegram: откройте игру через бота @ferma_deda_bot.</p>'}
+    <div class="sub">Для фермы</div>${['skip', 'cast', 'helper7', 'samovar', 'patron'].map(row).join('')}
+    <div class="sub">💰 Деньги фермы</div>${['bag', 'wallet', 'chest'].map(row).join('')}
+    <p class="note">Купленные деньги идут в капитал и рейтинг, как заработанные. Вопросы по оплате — команда /paysupport в боте.</p>`, 'shop');
+}
+// окно перед покупкой: что получишь, точная сумма или эффект, цена
+function confirmPurchase(id) {
+  if (!shopEnabled()) return toast('Покупки за звёзды — в Telegram, через бота @ferma_deda_bot');
+  const why = shopBlocked(id); if (why) return toast(cap1(why));
+  const L = SHOP_LOOK[id];
+  const what = L.pack ? `На счёт фермы придёт <b>${short(packSum(id))}</b> — это ${PACKS[id][0] >= 60 ? PACKS[id][0] / 60 + ' ч' : PACKS[id][0] + ' мин'} твоего дохода (не меньше ${short(PACKS[id][1])}).` : L.d();
+  openLayer(`<div class="dialog buy-dlg"><div class="dog-pic">${L.e}</div><h3>${L.t}</h3><p>${what}</p>
+    <div class="row"><button class="btn wide" data-act="close">Не сейчас</button><button class="btn primary wide" data-act="buyStars" data-id="${id}">Купить за ${starPrice(id)} ⭐</button></div>
+    <p class="note">Оплата — звёздами Telegram. Покупка придёт сразу после оплаты, а если игра закроется — при следующем входе.</p></div>`, 'screen dim keep-ui', true);
+  layer.dataset.kind = 'buy';
+}
+let buying = false;
+async function buyStars(id) {
+  if (buying) return;
+  buying = true;
+  try {
+    const amount = PACKS[id] ? packSum(id) : 0;
+    const inv = await shopApi.invoice(id, amount);
+    closeLayer();
+    const status = await openInvoice(inv.link);
+    if (status === 'paid') { toast('⭐ Оплата прошла! Зачисляем…'); for (const d of [1500, 4000, 9000]) setTimeout(claimPurchases, d); }
+    else if (status === 'failed') toast('Оплата не прошла. Попробуйте ещё раз');
+  } catch (e) { console.warn(e); toast('Магазин сейчас недоступен — попробуйте позже'); } finally { buying = false; }
+}
+// забрать оплаченные покупки: применить → сохранить → подтвердить серверу (повтор не применится: id в сохранении)
+let claiming = false;
+async function claimPurchases() {
+  if (!st || !shopEnabled() || claiming) return;
+  claiming = true;
+  try {
+    const { items } = await shopApi.pending();
+    if (!items?.length) return;
+    const ids = [];
+    for (const p of items) {
+      const text = E.applyPurchase(st, p);
+      ids.push(p.charge_id);
+      if (text) { notify('success'); sfx.fanfare(); toast(`⭐ ${text}`); }
+    }
+    render(); persist(true); await api.flush();
+    await shopApi.ack(ids);
+    afterGain();
+  } catch (e) { console.warn('claim', e); } finally { claiming = false; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(claimPurchases, 800); });
+
 /* ================= Цель: капитал + уровень фермы ================= */
 const XP_HINT = 'Опыт ⭐ — за заказы (новый каждые 2–5 мин), большой заказ дня, ремонт дома деда, рыбалку и задания дня.';
 // «Райцентр: капитал ✅ · уровень 12/15 ⭐» + откуда брать опыт
@@ -1364,7 +1453,7 @@ const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уров
       <button class="qbtn" data-q="map" aria-label="Карта"><span>🗺</span><small>Карта</small></button>
       <button class="qbtn" data-q="workers" aria-label="Работники"><span>👷</span><small>Работники</small></button>
       <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
-      <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>`;
+      <button class="qbtn" data-q="shop" aria-label="Магазин"><span>⭐</span><small>Магазин</small></button>`;
 fastTap($('#quick'), (e) => {
   const b = e.target.closest('[data-q]');
   if (!b || !st) return;
@@ -1376,6 +1465,7 @@ fastTap($('#quick'), (e) => {
   if (q === 'workers') return openWorkers();
   if (q === 'settings') return openSettings();
   if (q === 'menu') return ACTIONS.menu();
+  if (q === 'shop') return openShop();
   if (q === 'level') { const lp = E.levelProgress(st); const next = E.unlockedAt(lp.level + 1).map(id => BUILDINGS[id].name); return toast(`Уровень фермы ${lp.level}: ${lp.have}/${lp.need} ⭐${next.length ? ' · дальше: ' + next.join(', ') : ''}`); }
 });
 
@@ -1403,7 +1493,7 @@ function openRules() {
     <p><b>3. Сбор.</b> Постройки работают сами. Над ними появляются значки — тапай, чтобы собрать деньги. Пока тебя нет, ферма копит до 2 часов.</p>
     <p><b>4. Месяцы.</b> Месяц длится 15 минут. Потом жми «Следующий месяц» — будет событие с выбором и итоги. Сезоны меняются: мёд летом, огород с мая, теплице зимой нужна печка.</p>
     <p><b>5. Цели.</b> Первая — 1 000 000 ₽. Дальше 10 млн, 100 млн… На каждой цели открываются новые постройки, а ферма растёт прямо на картинке.</p>
-    <p><b>6. Рейтинг.</b> Место — по капиталу фермы: деньги + постройки − долг. Покупки за Telegram Stars в рейтинг не идут.</p>
+    <p><b>6. Рейтинг.</b> Место — по капиталу фермы: деньги + постройки − долг. Каждое воскресенье в 20:00 (МСК) — итоги недели и приз лучшему фермеру.</p>
     <p><b>7. Заказы.</b> Доска у дороги: кафе, дачники и магазин платят дороже прилавка и дают ⭐ опыт. Опыт поднимает уровень фермы — открываются постройки.</p>
     <p><b>8. Дом деда.</b> Тап по дому: ремонт по этапам (+3% к доходу за каждый) и письма деда. После крыльца прибежит щенок — гладь его раз в 4 часа: +10% к доходу на 30 минут.</p>
     <p><b>9. Рыбалка.</b> Мостки у речки внизу фермы: раз в 20 минут. Тапни, когда поплавок нырнёт! Рыбу можно продать или отдать в заказ «Уха». Удочку улучшают в «Стройке».</p>

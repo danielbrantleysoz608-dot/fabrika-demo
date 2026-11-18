@@ -975,6 +975,10 @@ const DECOR_ART = {
     <path d="M190 380 V356 M208 380 V356" stroke="#7b5236" stroke-width="3"/><path d="M186 356 L199 346 L212 356z" fill="#c4553e" ${O2}/><path d="M199 362 v10" stroke="#3b2a1f" stroke-width="1.4"/><rect x="195" y="370" width="8" height="7" fill="#7b5236" stroke="#3b2a1f" stroke-width="1"/></g>`,
   scarecrow: () => `<g class="decor"><path d="M428 520 V470 M412 484 H444" stroke="#7b5236" stroke-width="3.5" stroke-linecap="round"/><path d="M416 482 h24 l-4 22 h-16z" fill="#4a90d9" ${O2}/>
     <circle cx="428" cy="468" r="8" fill="#f2d6a0" ${O2}/><path d="M416 464 h24 l-5 -8 h-14z" fill="#e8b24a" ${O2}/><path d="M412 464 h32" stroke="#3b2a1f" stroke-width="2"/></g>`,
+  samovar: () => `<g class="decor"><g transform="translate(118 404)"><ellipse cx="0" cy="12" rx="14" ry="3" fill="#000" opacity=".15"/>
+    <path d="M-9 10 h18 l-3 -4 h-12z" fill="#b8801a" ${O2}/><ellipse cx="0" cy="-2" rx="11" ry="9" fill="#f2c84b" ${O2}/><rect x="-4" y="-16" width="8" height="6" fill="#e8a21a" ${O2}/>
+    <path d="M11 0 q7 1 6 6" stroke="#3b2a1f" stroke-width="2" fill="none"/><path d="M-11 -4 q-5 0 -5 4 q0 4 5 4" stroke="#3b2a1f" stroke-width="2" fill="none"/>
+    <path d="M-2 -20 q3 -5 0 -9 M3 -21 q3 -4 0 -8" stroke="#c3cfd8" stroke-width="2" fill="none"/></g></g>`,
   swing: () => `<g class="decor"><path d="M210 330 V370 M240 330 V370" stroke="#3b2a1f" stroke-width="1.5"/><rect x="206" y="370" width="38" height="5" fill="#b9844f" ${O2}/></g>`,
   // на лугу внизу фермы (видно, если чуть пролистать вниз)
   gazebo: () => `<g class="decor"><path d="M44 872 V836 M100 872 V836" stroke="#7b5236" stroke-width="4"/><path d="M36 838 L72 808 L108 838z" fill="#3fa34d" ${O2}/>

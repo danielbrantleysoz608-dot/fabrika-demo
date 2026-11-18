@@ -88,6 +88,7 @@ export function globalMult(st, withMods = true) {
   k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
   if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all * wLv(st, 'seller'); // продавец на прилавке (+10% за уровень)
   k *= 1 + DECOR_BONUS * decorCount(st);    // украшения фермы
+  if (st.paid?.samovar) k *= 1.03;          // «Дедов самовар» (за звёзды)
   if (withMods) {
     k *= st.mods.sales ?? 1;
     if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
@@ -272,6 +273,40 @@ export function upWorker(st, w) {
   addHistory(st, { m: st.month, t: `👷 ${WORKERS[w].name}: уровень ${st.workers[w].lv} (${fmt(p)}).` });
   return null;
 }
+/* ---------- Покупки за звёзды (выдаёт сервер после successful_payment) ---------- */
+// p = { charge_id, item, amount }. Каждая покупка применяется один раз: id запоминаются в сохранении.
+export function applyPurchase(st, p, now = Date.now()) {
+  if (!st.paid) st.paid = {};
+  const got = st.paid.applied || (st.paid.applied = []);
+  if (got.includes(p.charge_id)) return null;
+  got.push(p.charge_id); if (got.length > 300) got.splice(0, got.length - 300);
+  let text = '';
+  switch (p.item) {
+    case 'skip': st.monthMs = MONTH_MS; text = 'Месяц ускорен — жми «Следующий месяц»!'; break;
+    case 'cast': st.fishAt = {}; text = 'Удочка готова — можно рыбачить прямо сейчас!'; break;
+    case 'helper7': {
+      if (!st.workers) st.workers = {};
+      const cur = st.workers.helper;
+      if (cur && !cur.freeUntil) { gain(st, hirePrice(st, 'helper')); text = 'Ваня уже работает — вернули деньгами: ' + fmt(hirePrice(st, 'helper')); break; }
+      const from = Math.max(now, cur?.freeUntil || 0);
+      st.workers.helper = { at: now, last: cur?.last || 0, lv: cur?.lv || 1, spent: 0, freeUntil: from + 7 * 86400000 };
+      text = 'Помощник Ваня на 7 дней — сам собирает урожай!'; break;
+    }
+    case 'samovar': st.paid.samovar = true; text = 'Дедов самовар на ферме: +3% ко всему доходу!'; break;
+    case 'patron': st.paid.patron = true; grantAch(st, 'patron'); text = 'Спасибо, что поддержали автора! Значок «Меценат» — в рейтинге.'; break;
+    case 'bag': case 'wallet': case 'chest': {
+      const a = Math.max(0, Math.min(1e16, Math.round(+p.amount || 0)));
+      st.money += a; text = `+${fmt(a)} на счёт фермы!`; break;
+    }
+    default: return null;
+  }
+  addHistory(st, { m: st.month, t: `⭐ Покупка: ${text}` });
+  checkGoals(st);
+  return text;
+}
+// сколько денег даст пакет: N минут дохода фермы, но не меньше минимума
+export const packAmount = (st, minutes, min) => nice(Math.max(min, perMin(st) * minutes));
+
 /* ---------- Украшения фермы ---------- */
 export const hasDecor = (st, id) => !!st.decor?.[id];
 // цена украшения — от текущего дохода: прибавка +2% окупается за 1–2 ч (cost — нижняя граница)
@@ -347,7 +382,11 @@ function workersTick(st, now) {
   for (const w of WORKER_ORDER) if (WORKERS[w].lvl <= lvl) hirePrice(st, w);
   if (!st.workers) return (lastAuto = out);
   const h = st.workers.helper;
-  if (h && now - (h.last || 0) >= helperEvery(st) * 60000) {
+  if (h?.freeUntil && now > h.freeUntil) { // «Ваня на 7 дней» закончился
+    delete st.workers.helper;
+    addHistory(st, { m: st.month, t: '👷 Неделя Вани закончилась. Нанять насовсем — в «Работниках».' });
+    out.helperGone = true;
+  } else if (h && now - (h.last || 0) >= helperEvery(st) * 60000) {
     h.last = now;
     for (const id of PRODUCERS) {
       if (!level(st, id) || ready(st, id) <= 0) continue;
@@ -808,7 +847,7 @@ function closeMonth(st) {
   const costs = [];
   if (income > 0) costs.push({ label: 'Корм, свет и налоги', amount: Math.round(income * UPKEEP_SHARE) });
   if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE) });
-  for (const w of WORKER_ORDER) if (hired(st, w)) costs.push({ label: `Зарплата: ${WORKERS[w].name}`, amount: wageOf(st, w, income), wage: true });
+  for (const w of WORKER_ORDER) if (hired(st, w) && !st.workers[w].freeUntil) costs.push({ label: `Зарплата: ${WORKERS[w].name}`, amount: wageOf(st, w, income), wage: true });
   const notes = [];
   if (st.flags.contract) {
     const c = st.flags.contract;

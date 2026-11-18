@@ -8,6 +8,7 @@ POST /api/result       — итог забега
 POST /api/score        — капитал фермы для рейтинга
 GET  /api/leaderboard  — топ-100 (?period=all|week) + своё место
 GET  /health           — проверка живости
+GET  /api/shop/catalog, POST /api/shop/invoice, GET /api/shop/pending, POST /api/shop/ack — магазин за звёзды
 """
 import json
 import logging
@@ -19,6 +20,7 @@ from aiohttp import web
 from auth import AuthError, validate_init_data
 from config import Config
 from db import DB
+from shop import SHOP
 
 log = logging.getLogger("ferma.web")
 
@@ -98,7 +100,20 @@ async def get_leaderboard(request: web.Request) -> web.Response:
         my_value = int(request.query.get("value", "0"))
     except ValueError:
         my_value = 0
-    return web.json_response(await request.app[DBK].leaderboard(period, key, my_value=my_value))
+    data = await request.app[DBK].leaderboard(period, key, my_value=my_value)
+    shop = request.app.get(SHOP)
+    if shop:  # значки у ников (Меценат, 🥈/🥉 Фермер недели) и победитель прошлой недели
+        keys = [t.pop("key") for t in data["top"]] + ([key] if key else [])
+        b = await shop.badges(keys)
+        for t, k in zip(data["top"], keys):
+            t["badges"] = b.get(k, [])
+        if data.get("me") is not None and key:
+            data["me"]["badges"] = b.get(key, [])
+        data["lastWinner"] = await shop.last_winner()
+    else:
+        for t in data["top"]:
+            t.pop("key", None)
+    return web.json_response(data)
 
 
 async def get_save(request: web.Request) -> web.Response:
@@ -134,7 +149,7 @@ async def post_result(request: web.Request) -> web.Response:
 
 
 async def config_js(request: web.Request) -> web.Response:
-    cfg = {"apiBase": "", "botUsername": request.app.get(BOT_NAME, "")}
+    cfg = {"apiBase": "", "botUsername": request.app.get(BOT_NAME, ""), "shop": SHOP in request.app}
     return web.Response(text=f"window.FERMA_CONFIG = {json.dumps(cfg)};", content_type="application/javascript",
                         headers={"Cache-Control": "no-store"})
 
@@ -158,7 +173,7 @@ async def no_cache_js(request: web.Request, handler):
     return resp
 
 
-def make_app(cfg: Config, db: DB, bot_username: str = "") -> web.Application:
+def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None) -> web.Application:
     app = web.Application(middlewares=[no_cache_js], client_max_size=512 * 1024)
     app[CFG] = cfg
     app[DBK] = db
@@ -171,5 +186,8 @@ def make_app(cfg: Config, db: DB, bot_username: str = "") -> web.Application:
     app.router.add_post("/api/result", post_result)
     app.router.add_post("/api/score", post_score)
     app.router.add_get("/api/leaderboard", get_leaderboard)
+    if shop is not None:
+        from shop import setup_api
+        setup_api(app, shop, bot, cfg.test_prices, current_user)
     app.router.add_static("/", cfg.webapp_dir, show_index=False)
     return app

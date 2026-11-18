@@ -115,18 +115,10 @@ async def test_leaderboard_anon_ranking(client):
     assert board["me"]["name"] == "Фермер 7777"
 
 
-async def test_stars_coins_not_in_rating(client):
-    # клиент сообщает о купленных монетах — они вычитаются
+async def test_bought_money_counts_in_rating(client):
+    # купленные за звёзды деньги идут в капитал и рейтинг как обычные
     r = await (await client.post("/api/score", json={"capital": 1_000_000, "paid": 300_000}, headers=anon("payer-00001"))).json()
-    assert r["rating"] == 700_000
-    # покупки из базы (Telegram Stars) вычитаются, даже если клиент «забыл» их указать
-    h = {"X-Telegram-Init-Data": init_data(55)}
-    await client.get("/api/save", headers=h)
-    db = client.app[__import__("web").DBK]
-    await db.conn.execute("INSERT INTO purchases(user_id,item,stars,charge_id,created_at) VALUES(55,'coins_pack',250000,'c1',0)")
-    await db.conn.commit()
-    r = await (await client.post("/api/score", json={"capital": 1_000_000, "paid": 0}, headers=h)).json()
-    assert r["rating"] == 750_000
+    assert r["rating"] == 1_000_000
 
 
 async def test_week_gain_and_tg_link(client):

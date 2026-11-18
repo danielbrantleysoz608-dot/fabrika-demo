@@ -1,4 +1,4 @@
-// Рейтинг: топ-100 по капиталу фермы (деньги + постройки − долг, БЕЗ монет за Telegram Stars)
+// Рейтинг: топ-100 по капиталу фермы (деньги + постройки − долг; купленные за звёзды деньги — тоже)
 // и вкладка «За неделю» (прирост капитала с понедельника). Своё место всегда видно внизу.
 import * as E from './engine.js';
 import { yearOf } from './data.js';
@@ -17,6 +17,18 @@ export async function submitScore(st, profile, force = false) {
   } catch { /* сервер недоступен — не страшно, отправим позже */ }
 }
 
+const BADGE = { patron: ['💌', 'Меценат'], silver: ['🥈', 'Фермер недели'], bronze: ['🥉', 'Фермер недели'] };
+const badges = (list) => (list || []).filter(b => BADGE[b]).map(b => `<span class="r-badge" title="${BADGE[b][1]}">${BADGE[b][0]} ${BADGE[b][1]}</span>`).join('');
+function showRules(ctx, period) {
+  ctx.layer.querySelector('.r-list').innerHTML = `<div class="rules">
+    <p><b>Как считается место.</b> «Все время» — по капиталу фермы: деньги + постройки − долг. «За неделю» — по приросту капитала с понедельника 00:00 (МСК), поэтому у новичков тоже есть шанс.</p>
+    <p><b>Покупки.</b> Деньги фермы, купленные за звёзды, учитываются в капитале и рейтинге, как заработанные.</p>
+    <p><b>Итоги.</b> Каждое воскресенье в 20:00 по Москве.</p>
+    <p><b>Призы.</b> 1 место — подарок в Telegram от бота (примерно 100–250 ⭐). 2 и 3 место — значок «🥈/🥉 Фермер недели» у ника на всю следующую неделю.</p>
+    <p><b>Условия.</b> В розыгрыше участвуют игроки из Telegram, чья ферма создана не меньше 3 дней назад. Один приз на один Telegram-аккаунт в неделю. Организатор может снять игрока с розыгрыша за накрутку или использование ошибок игры.</p>
+  </div><button class="btn primary wide" data-r="${period}">Назад к рейтингу</button>`;
+  bind(ctx, period);
+}
 const medal = (r) => (r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -30,11 +42,11 @@ export async function openRating(ctx, period = 'all') {
   let data;
   const myValue = period === 'week' || !st || st.phase === 'clean' ? 0 : Math.round(E.ratingCapital(st));
   try { data = await request('GET', `/api/leaderboard?period=${period}&value=${myValue}`); } catch (e) {
-    layer.querySelector('.r-list').innerHTML = `<p class="note">Рейтинг недоступен: нет связи с сервером игры.<br>Локально запустите сервер: <code>python main.py --web-only</code> и откройте http://localhost:8080</p>`;
+    layer.querySelector('.r-list').innerHTML = `<p class="note">Рейтинг временно недоступен: нет связи с сервером игры. Попробуйте чуть позже.</p>`;
     bind(ctx, period); return;
   }
   const unit = period === 'week' ? 'за неделю' : 'капитал';
-  const row = (r) => `<li class="${r.me ? 'me' : ''}"><span class="rk">${medal(r.rank)}</span><span class="nm">${esc(r.name)}${r.year > 1 ? `<small>год ${r.year}</small>` : ''}</span><b>${period === 'week' && r.value > 0 ? '+' : ''}${short(r.value)}</b></li>`;
+  const row = (r) => `<li class="${r.me ? 'me' : ''}"><span class="rk">${medal(r.rank)}</span><span class="nm">${esc(r.name)}${badges(r.badges)}${r.year > 1 ? `<small>год ${r.year}</small>` : ''}</span><b>${period === 'week' && r.value > 0 ? '+' : ''}${short(r.value)}</b></li>`;
   // игроков мало (кроме тебя никого) — заглушка-приглашение
   const others = data.top.filter(r => !r.me);
   const top = others.length
@@ -43,10 +55,13 @@ export async function openRating(ctx, period = 'all') {
   const meData = data.me || { rank: 1, name: null, value: myValue };
   const me = row({ ...meData, name: meData.name || playerName() || tgName() || 'Ты', me: true });
   const canRename = !tgName();
-  layer.querySelector('.r-list').innerHTML = `${top}
+  const lw = data.lastWinner && data.lastWinner.player_key !== '-' && data.lastWinner.name !== '-'
+    ? `<div class="r-winner">🏆 Победитель прошлой недели: <b>${esc(data.lastWinner.name)}</b></div>` : '';
+  layer.querySelector('.r-list').innerHTML = `${lw}${top}
     <div class="r-me"><div class="r-me-lbl">Твоё место · ${unit}${data.total ? ` · игроков: ${data.total}` : ''}</div><ol>${me}</ol>
     ${canRename ? `<div class="r-name"><input id="rName" maxlength="24" placeholder="Твоё имя в рейтинге" value="${esc(playerName())}"><button class="btn primary" data-r="name">ОК</button></div>` : ''}</div>
-    <p class="note">Место — по капиталу фермы: деньги + постройки − долг. Покупки за Telegram Stars в рейтинг не идут.</p>`;
+    <p class="note">Место — по капиталу фермы: деньги + постройки − долг. «За неделю» — прирост капитала с понедельника.</p>
+    <button class="btn wide" data-r="rules">ℹ️ Правила и приз недели</button>`;
   bind(ctx, period);
 }
 
@@ -54,6 +69,7 @@ function bind(ctx, period) {
   ctx.layer.querySelectorAll('[data-r]').forEach((b) => b.addEventListener('click', async (e) => {
     e.stopPropagation();
     const r = b.dataset.r;
+    if (r === 'rules') return showRules(ctx, period);
     if (r === 'name') {
       const v = ctx.layer.querySelector('#rName').value.trim().slice(0, 24);
       setPlayerName(v);

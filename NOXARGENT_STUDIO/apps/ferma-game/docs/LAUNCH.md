@@ -1,5 +1,31 @@
 # Как создать бота и запустить «Ферму деда»
 
+## Боевой запуск на VPS (Beget, Ubuntu 24.04) — коротко
+
+1. Создать VPS (Ubuntu 24.04, самый дешёвый), войти: `ssh root@IP`.
+2. Проверить доступ к Telegram, GitHub и Let's Encrypt (команда — в переписке/ниже в «Проверка сети»).
+3. Скачать установщик и запустить (репозиторий закрытый — установщик сам создаст ключ развёртывания и попросит добавить его в GitHub):
+   `bash install.sh` (файл `deploy/install.sh`). Токен бота вводится на сервере, в git не попадает (`bot/.env`, права 600).
+4. Самопроверка: `/opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/bot/.venv/bin/python /opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/deploy/selftest.py`
+5. @BotFather → `/newapp` → @ferma_deda_bot → название, описание, обложка `deploy/cover-640x360.png`, URL `https://<IP>.sslip.io/`, короткое имя (например `farm`) → ссылка для постов `t.me/ferma_deda_bot/farm`.
+6. Проверка оплаты: в `bot/.env` поставить `TEST_PRICES=1`, `systemctl restart ferma-bot`, купить что-нибудь за 1 ⭐, вернуть звёзды командой `/refund_last` (только владелец, ADMIN_ID), затем `TEST_PRICES=0` и перезапуск.
+
+**Обновить игру после правок:** `bash /opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/deploy/update.sh` (копия базы делается сама).
+**Логи:** `journalctl -u ferma-bot -n 50 --no-pager`. **Перезапуск:** `systemctl restart ferma-bot`.
+
+### Проверка сети
+```bash
+for u in https://api.telegram.org https://github.com https://acme-v02.api.letsencrypt.org/directory; do printf '%-50s ' "$u"; curl -sS -m 15 -o /dev/null -w '%{http_code}  %{time_total}s\n' "$u" || echo "НЕТ ДОСТУПА"; done
+```
+
+### Магазин за звёзды и приз недели
+* Товары и цены — `bot/shop.py` (`ITEMS`). Выдача — только после `successful_payment`, по `telegram_payment_charge_id` (дубли игнорируются),
+  игра забирает покупки при входе (`/api/shop/pending` → применить → сохранить → `/api/shop/ack`).
+* Итоги недели — каждое воскресенье в 20:00 МСК: 1 место — подарок `sendGift` (100–250 ⭐ со счёта бота; не хватило — бот пишет владельцу),
+  2–3 место — значок 🥈/🥉 на неделю. Новички (< 3 дней) приз не получают.
+* `/paysupport` — куда писать по оплате (канал). `/refund_last` — вернуть последнюю покупку (только ADMIN_ID).
+
+
 Всего 3 части: **бот в Telegram** (5 минут) → **сервер (VPS) с доменом** (30–60 минут) → **проверка**.
 Telegram открывает мини-приложения только по **https://**, поэтому нужен домен с сертификатом.
 

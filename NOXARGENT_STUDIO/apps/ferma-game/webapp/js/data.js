@@ -238,6 +238,7 @@ export const ACHIEVEMENTS = {
   goal2:       { title: '100 миллионов', sub: 'Открыт Агрохолдинг — поля до горизонта!', color: '#d8392d', art: 'millionaire' },
   goal3:       { title: 'Миллиард', sub: 'Ферму деда знает вся страна!', color: '#7a4ec9', art: 'millionaire' },
   goal4:       { title: '10 миллиардов', sub: 'Свой завод. Дед бы не поверил!', color: '#2f6fb5', art: 'millionaire' },
+  patron:      { title: 'Меценат фермы', sub: 'Спасибо, что поддержали автора! Дед бы пожал руку.', color: '#d0456a', art: 'patron' },
   chest:       { title: 'Сундук деда', sub: 'Выловили из речки дедов сундук: старые фотографии, медаль и письмо «Внуку — на удачу».', color: '#8a5a3c', art: 'chest' },
 };
 export const ACHIEVEMENT_ORDER = Object.keys(ACHIEVEMENTS);

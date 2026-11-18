@@ -616,3 +616,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* счётчик заказа не наезжает на полоску, даже «12 853/12 855» */
 .oi { grid-template-columns: 26px max-content minmax(40px, 1fr); }
 .oi .on { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 14px; }
+
+/* ===== Магазин за звёзды ===== */
+.shop-row { position: relative; display: flex; align-items: center; gap: 10px; background: #fff8ea; border: 2.5px solid var(--line); border-radius: 14px; padding: 8px 10px; margin-bottom: 8px; }
+.shop-row.best { border-color: #e8a21a; box-shadow: 0 0 0 3px rgba(232,162,26,.2); }
+.sh-e { font-size: 28px; width: 36px; text-align: center; flex: none; }
+.sh-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sh-t b { font-size: 15px; color: var(--brown); }
+.sh-t small { font-size: 12px; font-weight: 600; color: #8a7660; line-height: 1.25; }
+.pk-sum { color: #2f8a2f; font-size: 13px; }
+.sh-btn { min-height: 40px; padding: 0 12px; font-size: 15px; flex: none; flex-direction: row; white-space: nowrap; }
+.sh-btn[disabled] { opacity: .45; }
+.pk-badge { position: absolute; top: -9px; right: 10px; background: #e8a21a; color: #fff; font-size: 11px; font-weight: 900; padding: 1px 8px; border-radius: 8px; border: 2px solid #fff; }
+.warn-test { color: #c8362b !important; font-weight: 800; }
+.star-row { margin-top: 10px; }
+.star-mini { min-height: 36px; padding: 0 14px; font-size: 14px; margin: 4px auto 6px; flex-direction: row; display: flex; }
+.buy-dlg h3, .buy-dlg p { text-align: center; }
+/* рейтинг */
+.r-badge { display: inline-block; font-size: 10px; font-weight: 800; color: #b0662a; background: #fff3d6; border: 1.5px solid #e8c27a; border-radius: 8px; padding: 0 5px; margin-left: 5px; vertical-align: middle; white-space: nowrap; }
+.r-winner { background: #fff3d6; border: 2px solid #e8a21a; border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; font-weight: 700; color: var(--brown); text-align: center; }

@@ -73,3 +73,15 @@ export async function reportResult(result) {
 }
 
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
+
+// ---------- Магазин за звёзды ----------
+// Покупки работают только в Telegram (нужна подпись initData) и когда сервер запущен с ботом.
+export const shopEnabled = () => online && !!window.FERMA_CONFIG?.shop && !!tg?.openInvoice;
+export const shopApi = {
+  catalog: () => request('GET', '/api/shop/catalog'),
+  invoice: (item, amount) => request('POST', '/api/shop/invoice', { item, amount }),
+  pending: () => request('GET', '/api/shop/pending'),
+  ack: (ids) => request('POST', '/api/shop/ack', { ids }),
+};
+// открыть окно оплаты Telegram; status: paid | cancelled | failed | pending
+export const openInvoice = (link) => new Promise((resolve) => tg.openInvoice(link, resolve));
