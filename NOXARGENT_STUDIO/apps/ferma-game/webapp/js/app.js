@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -62,7 +62,7 @@ function view() {
     full[id] = stock[id] > 0 && (st.acc[id] || 0) >= E.storageCap(st, id) * 0.98; // склад полон — пузырь мигает
   }
   return {
-    month: st.month, house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
+    month: st.month, loc: st.loc || 'home', house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
     clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
@@ -100,6 +100,7 @@ function hud() {
   const q = $('#quick'), needQuick = !(st.phase === 'clean' || !profile.game);
   if (needQuick && !q.children.length) q.innerHTML = QUICK_HTML;
   if (!needQuick && q.children.length) q.innerHTML = '';
+  locNav(needQuick);
   // уровень фермы ⭐
   const lp = E.levelProgress(st), pill = q.querySelector('.lvl-pill');
   if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; pill.querySelector('i').style.width = Math.round(100 * lp.have / lp.need) + '%'; }
@@ -214,6 +215,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'bld') return collect(id);
   if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
   if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
+  if (tap === 'fish') { haptic(); sfx.click(); return openFishing(); }
 });
 
 function hitTrash(id) {
@@ -323,6 +325,10 @@ tg?.onEvent?.('activated', () => sfx.resume());
 function afterGain() {
   if (!st || !layer.hidden || coach.isOpen()) return;
   if (st.achNew?.length) return showAchievement(st.achNew.shift());
+  // новая локация открылась — праздник и письмо деда
+  if (!st.locSeen) st.locSeen = ['home'];
+  const newLoc = openLocations().find(l => !st.locSeen.includes(l.id));
+  if (newLoc) { st.locSeen.push(newLoc.id); persist(true); return showLocOpen(newLoc); }
   // новый уровень фермы
   const lvl = E.farmLevel(st);
   if (lvl > (st.lvlSeen || 1)) { st.lvlSeen = lvl; showLevelUp(lvl); return; }
@@ -499,6 +505,9 @@ const ACTIONS = {
   buildNow: () => openBuild(),
   house: () => openHouse(),
   letter: (id) => showLetter(+id),
+  goLoc: (id) => { closeLayer(); goLoc(id); },
+  locLetter: (id) => showLocOpen(LOC_BY_ID[id], true),
+  map: () => openMap(),
   repair: (id, el) => {
     if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
     const err = E.repairHouse(st);
@@ -634,6 +643,7 @@ function card(id) {
       : `${L ? `Улучшить до ур. ${L + 1}` : 'Построить'} · ${short(price)}`;
   return `<div class="card ${L >= max ? 'done' : ''} ${lock && L < max ? 'lock' : ''}" id="card-${id}">
     <h3>${b.name}</h3><div class="price">${L >= max ? '' : short(price)}</div>
+    ${b.loc && b.loc !== 'home' ? `<div class="loc-tag">📍 ${LOC_BY_ID[b.loc].name}</div>` : ''}
     <p>${b.desc}</p>${lvl}<div class="tags">${stats}</div>
     ${L >= max ? `<div class="tag ok">${label}</div>` : `<button class="btn primary go" data-act="buy" data-id="${id}" ${lock ? `data-lock="${cap1(lock)}"` : ''}>${label}</button>`}
   </div>`;
@@ -672,6 +682,7 @@ function doBuy(id, sure = false) {
   const err = E.buy(st, id);
   if (err) return toast(err);
   notify('success'); sfx.build();
+  if (firstTime && locOf(id) !== (st.loc || 'home')) goLoc(locOf(id), false); // новая постройка — показываем её локацию
   render(); persist(true);
   const p = SLOT_POS[id] || READY_POSITIONS[id];
   if (p) { const [x, y] = Array.isArray(p) ? p : [p.x, p.y]; puff(svg, x, y + 10); floatText(svg, x, y - 10, firstTime ? BUILDINGS[id].name + '!' : `ур. ${st.lv[id]}!`, '#2f8a2f'); }
@@ -692,6 +703,11 @@ function doBuy(id, sure = false) {
     shop: 'Магазин «Ферма деда» открыт в городе!',
     brand: 'Наша марка на полках страны!',
     factory: 'Завод запущен. Дед бы не поверил!',
+    cowshed: 'Коровник на лугу! Молоко — и на сыр, и в заказы.',
+    mill: 'Мельница крутится — своя мука!',
+    cafe: 'Кафе открыто — пироги из нашей муки и молока!',
+    market: 'Место на рынке — заказы теперь дороже!',
+    elevator: 'Элеватор построен — зерно храним сами.',
   }[id] || 'Готово!', 'happy', 6000);
 }
 
@@ -884,10 +900,107 @@ $('#farmInfo').addEventListener('click', (e) => {
   if (k === 'top') return $('#farmScroll').scrollTo({ top: 0, behavior: 'smooth' });
 });
 
+/* ================= Локации: карта, переходы, праздник открытия ================= */
+const LOC_BY_ID = Object.fromEntries(LOCATIONS.map(l => [l.id, l]));
+const openLocations = () => LOCATIONS.filter(l => l.tier <= st.tier);
+// в локации есть что собрать (чтобы подсветить её на карте и на стрелках)
+const locReady = (loc) => E.PRODUCERS.some(id => locOf(id) === loc && E.level(st, id) > 0 && E.unitsReady(st, id) >= 1);
+const locCount = (loc) => Object.keys(BUILDINGS).filter(id => locOf(id) === loc && E.level(st, id) > 0).length;
+
+function goLoc(id, anim = true, dir = 0) {
+  if (!LOC_BY_ID[id] || LOC_BY_ID[id].tier > st.tier || (st.loc || 'home') === id) return;
+  st.loc = id;
+  render();
+  if (anim) {
+    svg.classList.remove('slide-l', 'slide-r'); void svg.getBoundingClientRect();
+    svg.classList.add(dir < 0 ? 'slide-r' : 'slide-l');
+    sfx.whoosh?.();
+  }
+  $('#farmScroll').scrollTo({ top: 0 });
+  persist();
+}
+function stepLoc(d) {
+  const open = openLocations();
+  if (open.length < 2) return;
+  const i = open.findIndex(l => l.id === (st.loc || 'home'));
+  const next = open[(i + d + open.length) % open.length];
+  haptic(); goLoc(next.id, true, d);
+}
+// Полоска «◀ Река и луг ▶» под быстрыми кнопками — есть, только когда открыто больше одной локации
+function locNav(show) {
+  let el = $('#locnav');
+  const open = show ? openLocations() : [];
+  if (open.length < 2) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'locnav'; el.className = 'locnav';
+    $('#quick').after(el);
+    fastTap(el, (e) => {
+      const b = e.target.closest('[data-ln]'); if (!b || !st) return;
+      sfx.click();
+      if (b.dataset.ln === 'map') { haptic(); return openMap(); }
+      stepLoc(+b.dataset.ln);
+    });
+  }
+  const cur = LOC_BY_ID[st.loc || 'home'];
+  const others = open.filter(l => l.id !== cur.id && locReady(l.id)).length;
+  const html = `<button class="ln-arrow" data-ln="-1" aria-label="Предыдущая локация">◀</button>
+    <button class="ln-name" data-ln="map"><span>${cur.emoji}</span>${cur.name}${others ? '<i class="ln-dot"></i>' : ''}</button>
+    <button class="ln-arrow" data-ln="1" aria-label="Следующая локация">▶</button>`;
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+}
+function mapArt(id) {
+  const c = { home: ['#8fd068', '#c4553e'], river: ['#6fb6ec', '#f4e5c4'], town: ['#e8dcc8', '#3fa34d'], agro: ['#e9c24a', '#d9dde1'] }[id];
+  return `<svg viewBox="0 0 120 70" class="map-art" aria-hidden="true"><rect width="120" height="70" rx="10" fill="#bfe3fb"/>
+    <path d="M0 40 Q30 28 60 38 T120 34 V70 H0z" fill="${c[0]}" stroke="#3b2a1f" stroke-width="1.5"/>
+    ${id === 'home' ? '<path d="M40 44 L58 30 L76 44z" fill="#c4553e" stroke="#3b2a1f" stroke-width="1.5"/><rect x="44" y="44" width="28" height="16" fill="#f1dfb2" stroke="#3b2a1f" stroke-width="1.5"/>' : ''}
+    ${id === 'river' ? '<path d="M0 52 Q60 42 120 54 V62 Q60 50 0 60z" fill="#4d9be0"/><rect x="88" y="22" width="10" height="20" fill="#f4e5c4" stroke="#3b2a1f" stroke-width="1.2"/><path d="M93 22 l-10 -10 M93 22 l10 -10 M93 22 l-10 10 M93 22 l10 10" stroke="#8b5a36" stroke-width="2.5"/>' : ''}
+    ${id === 'town' ? '<g stroke="#3b2a1f" stroke-width="1.2"><rect x="16" y="24" width="24" height="30" fill="#c4553e"/><rect x="46" y="16" width="26" height="38" fill="#cfe5c6"/><rect x="78" y="28" width="26" height="26" fill="#3fa34d"/></g>' : ''}
+    ${id === 'agro' ? '<path d="M0 46 L120 40 M0 54 L120 50 M0 62 L120 60" stroke="#c99a2e" stroke-width="3"/><g stroke="#3b2a1f" stroke-width="1.2"><rect x="80" y="14" width="10" height="28" fill="#d9dde1"/><rect x="92" y="14" width="10" height="28" fill="#d9dde1"/></g>' : ''}
+  </svg>`;
+}
+function openMap() {
+  const cur = st.loc || 'home';
+  const cards = LOCATIONS.map(l => {
+    const open = l.tier <= st.tier;
+    const g = l.tier > 0 ? goalLabel(l.tier - 1) : '';
+    const goalNow = l.tier === st.tier + 1;
+    return `<div class="mcard ${open ? '' : 'locked'} ${l.id === cur ? 'here' : ''}">
+      <div class="mart">${mapArt(l.id)}${open ? '' : '<div class="mlock">🔒</div>'}</div>
+      <div class="mtext"><b>${l.emoji} ${l.name}</b><small>${l.about}</small>
+        ${open ? `<span class="mstat">${locCount(l.id)} построек${locReady(l.id) ? ' · <em>урожай готов!</em>' : ''}</span>`
+          : `<span class="mgoal">Откроется: капитал ${g}${goalNow ? ` · сейчас ${Math.round(E.progress(st) * 100)}%` : ''}</span>`}
+        ${open ? (l.id === cur ? '<span class="mhere">ты здесь</span>' : `<button class="btn primary" data-act="goLoc" data-id="${l.id}">Поехать</button>`) : ''}
+        ${open && l.letter ? `<button class="mletter" data-act="locLetter" data-id="${l.id}">✉️ письмо деда</button>` : ''}
+      </div></div>`;
+  }).join('');
+  sheet('🗺 Карта', `<p class="note">Переходить между локациями — кнопками ◀ ▶ сверху или <b>свайпом</b> по ферме влево-вправо.</p>${cards}`, 'map');
+}
+function showLocOpen(l, reread = false) {
+  if (!reread) { notify('success'); sfx.fanfare(); }
+  openLayer(`<div class="ending">${reread ? '' : `<div class="confetti">${Array.from({ length: 30 }, (_, k) => `<i style="--x:${(k * 37) % 100}%;--d:${(k % 7) * 0.13}s;--c:${['#e8a21a', '#d8392d', '#3fa34d', '#4a90d9', '#f2c84b'][k % 5]}"></i>`).join('')}</div>`}
+    <div class="kicker">${reread ? 'ПИСЬМО ДЕДА' : 'НОВАЯ ЛОКАЦИЯ!'}</div>
+    <div class="loc-big">${mapArt(l.id)}<b>${l.emoji} ${l.name}</b></div>
+    <div class="letter"><p>${l.letter}</p><p class="sign">Твой дед</p></div>
+    ${reread ? '<button class="btn primary big" data-act="map">К карте</button>' : `<button class="btn primary big" data-act="goLoc" data-id="${l.id}">Поехать туда!</button>`}</div>`, 'screen dim', !reread);
+  layer.dataset.kind = 'locopen';
+}
+// свайп по ферме влево-вправо — соседняя локация
+(() => {
+  const f = $('#farmScroll'); let sx = 0, sy = 0, t0 = 0, on = false;
+  f.addEventListener('touchstart', (e) => { const p = e.touches[0]; sx = p.clientX; sy = p.clientY; t0 = Date.now(); on = true; }, { passive: true });
+  f.addEventListener('touchend', (e) => {
+    if (!on || !st || !layer.hidden || coach.isOpen()) return; on = false;
+    const p = e.changedTouches[0], dx = p.clientX - sx, dy = p.clientY - sy;
+    if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.8 && Date.now() - t0 < 700) stepLoc(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+// Рыбалка — мини-игра появится в следующем обновлении
+function openFishing() { toast('🎣 Рыбалка скоро! Удочку дед уже починил.'); }
+
 /* ================= Быстрые кнопки, настройки, правила ================= */
 const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
       <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
-      <button class="qbtn" data-q="cards" aria-label="Открытки"><span>🃏</span><small>Открытки</small></button>
+      <button class="qbtn" data-q="map" aria-label="Карта"><span>🗺</span><small>Карта</small></button>
       <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
       <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>`;
 fastTap($('#quick'), (e) => {
@@ -897,6 +1010,7 @@ fastTap($('#quick'), (e) => {
   const q = b.dataset.q;
   if (q === 'rating') return ACTIONS.rating();
   if (q === 'cards') return openBook('cards');
+  if (q === 'map') return openMap();
   if (q === 'settings') return openSettings();
   if (q === 'menu') return ACTIONS.menu();
   if (q === 'level') { const lp = E.levelProgress(st); const next = E.unlockedAt(lp.level + 1).map(id => BUILDINGS[id].name); return toast(`Уровень фермы ${lp.level}: ${lp.have}/${lp.need} ⭐${next.length ? ' · дальше: ' + next.join(', ') : ''}`); }

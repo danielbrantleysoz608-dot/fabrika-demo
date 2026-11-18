@@ -249,7 +249,7 @@ export function makeOrder(st, now, big = false) {
   const ps = Object.keys(can);
   if (!ps.length) return null;
   const r = rng((st.seed ^ Math.floor(now / 1000)) >>> 0);
-  const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 2.4 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
+  const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
@@ -392,6 +392,10 @@ export function buyValue(st, id) {
   if (id === 'stove') return baseIncome('greenhouse', level(st, 'greenhouse')) * 1.5 * k * (isWinter(st.month + 1) ? 1 : 0.25);
   if (id === 'omshanik') return baseIncome('apiary', level(st, 'apiary')) * k * (st.month % 12 >= 6 && st.month % 12 <= 9 ? 0.5 : 0.05);
   if (id === 'fence') return PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)), 0) * 0.02;
+  if (b.kind === 'orders') { // рынок: заказы дороже — грубо: заказы дают ~15% дохода
+    const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0);
+    return base * k * 0.15 * b.orderBoost / (1 + b.orderBoost * L);
+  }
   return 0;
 }
 // средний сезонный множитель на ближайшие 3 месяца (так рассуждает живой игрок)

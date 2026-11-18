@@ -10,6 +10,59 @@ const lv = (st, id) => st.lv[id] || 0;
 const canUp = (st, id) => lv(st, id) < maxLevel(id, st.tier);
 
 export const EVENTS = [
+  /* ---- события новых локаций ---- */
+  {
+    id: 'flood', months: [0, 1], weight: 4, cond: (st) => lv(st, 'cowshed') || lv(st, 'mill'),
+    kicker: 'Река и луг', title: 'Половодье <em>на реке!</em>',
+    text: 'Река вышла из берегов, вода подбирается к коровнику и мельнице.',
+    options: [
+      { icon: 'tools', label: 'Мешки с песком', desc: (st, h) => `${h.fmt(h.amt(0.06))} — укрепим берег`, can: (st, h) => need(st, h.amt(0.06)),
+        effect: (st, h) => { h.pay(h.amt(0.06), 'Мешки с песком'); return 'Берег выстоял — луг сухой.'; } },
+      { icon: 'dice', label: 'Авось пронесёт', desc: 'коровник, мельница и сыроварня −50% весь месяц',
+        effect: (st, h) => { h.mod('cowshed', 0.5); h.mod('mill', 0.5); h.mod('cheese', 0.5); return 'Луг подтопило — месяц работали вполсилы.'; } },
+    ],
+  },
+  {
+    id: 'bakery', months: [5, 6, 7], weight: 3, cond: (st) => lv(st, 'mill'),
+    kicker: 'Река и луг', title: 'Пекарня просит <em>нашу муку</em>',
+    text: 'Пекарня из соседнего села распробовала муку с дедовой мельницы и просит возить ещё.',
+    options: [
+      { icon: 'truck', label: 'Возить', desc: (st, h) => `мельница +60% весь месяц, бензин ${h.fmt(h.amt(0.03))}`, can: (st, h) => need(st, h.amt(0.03)),
+        effect: (st, h) => { h.pay(h.amt(0.03), 'Бензин до пекарни'); h.mod('mill', 1.6); return 'Мука уходит пекарне мешками!'; } },
+      { icon: 'no', label: 'Не до того', desc: 'своих дел хватает', effect: () => 'Пекарня нашла другую мельницу.' },
+    ],
+  },
+  {
+    id: 'inspect', months: [2, 3, 4, 5, 6, 7, 8], weight: 3, cond: (st) => lv(st, 'shop') || lv(st, 'cafe'),
+    kicker: 'Райцентр', title: 'Проверка <em>в магазине</em>',
+    text: 'В магазин «Ферма деда» пришла проверка: ценники не те, холодильник старый.',
+    options: [
+      { icon: 'tools', label: 'Всё исправить', desc: (st, h) => `${h.fmt(h.amt(0.05))} на новый холодильник`, can: (st, h) => need(st, h.amt(0.05)),
+        effect: (st, h) => { h.pay(h.amt(0.05), 'Холодильник в магазин'); return 'Проверка ушла довольная.'; } },
+      { icon: 'dice', label: 'Спорить', desc: 'магазин и кафе −50% весь месяц',
+        effect: (st, h) => { h.mod('shop', 0.5); h.mod('cafe', 0.5); return 'Магазин месяц работал с перебоями.'; } },
+    ],
+  },
+  {
+    id: 'cityday', months: [5, 6], weight: 3, cond: (st) => lv(st, 'cafe') || lv(st, 'market'),
+    kicker: 'Райцентр', title: 'День города!',
+    text: 'В райцентре праздник: концерт, ярмарка и полная площадь народу.',
+    options: [
+      { icon: 'stall', label: 'Палатка на площади', desc: (st, h) => `${h.fmt(h.amt(0.04))}, магазин и кафе +50% весь месяц`, can: (st, h) => need(st, h.amt(0.04)),
+        effect: (st, h) => { h.pay(h.amt(0.04), 'Палатка на Дне города'); h.mod('shop', 1.5); h.mod('cafe', 1.5); return 'Пироги разлетелись за час!'; } },
+      { icon: 'no', label: 'Обычный день', desc: 'работаем как всегда', effect: () => 'Праздник прошёл мимо.' },
+    ],
+  },
+  {
+    id: 'combines', months: [5, 6], weight: 4, cond: (st) => lv(st, 'tractor') || lv(st, 'elevator'),
+    kicker: 'Агрохолдинг', title: 'Рекордный <em>урожай</em>',
+    text: 'Зерна столько, что своя техника не успевает. Можно нанять комбайны.',
+    options: [
+      { icon: 'truck', label: 'Нанять комбайны', desc: (st, h) => `${h.fmt(h.amt(0.08))}, поля и элеватор +50% весь месяц`, can: (st, h) => need(st, h.amt(0.08)),
+        effect: (st, h) => { h.pay(h.amt(0.08), 'Аренда комбайнов'); h.mod('tractor', 1.5); h.mod('elevator', 1.5); return 'Убрали всё до зёрнышка!'; } },
+      { icon: 'dice', label: 'Своими силами', desc: 'часть урожая уйдёт под снег', effect: (st, h) => { h.mod('tractor', 0.8); return 'Не всё успели убрать.'; } },
+    ],
+  },
   {
     id: 'beekeeper', months: [1, 2], weight: 3, cond: (st) => canUp(st, 'apiary'),
     kicker: 'Предложение', title: 'Пасечник <em>продаёт ульи</em>',

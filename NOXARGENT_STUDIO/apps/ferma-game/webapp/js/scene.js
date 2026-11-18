@@ -28,7 +28,7 @@ function cloud(x, y, s, fill) {
     <path d="M-40 12 h80" stroke="#d9e6ee" stroke-width="3" opacity=".7"/></g></g>`;
 }
 
-function background(m) {
+function background(m, loc = 'home') {
   const p = PAL[m.season];
   const winter = m.season === 'winter';
   const r = rng(7);
@@ -51,12 +51,12 @@ function background(m) {
   let woods = '';
   for (let x = -20; x < W + 20; x += 13) {
     const rr = 7 + r() * 6;
-    if (x > 330 && x < 440) continue; // здесь домик соседа
+    if (loc === 'home' && x > 330 && x < 440) continue; // здесь домик соседа
     woods += `<circle cx="${x}" cy="${287 - r() * 6}" r="${rr}"/>`;
   }
   s += `<g fill="${p.woods}">${woods}</g>`;
-  // домик соседа на горизонте
-  s += `<g transform="translate(372 262)">
+  // домик соседа на горизонте (виден только с фермы деда)
+  if (loc === 'home') s += `<g transform="translate(372 262)">
     <rect x="0" y="12" width="28" height="20" fill="#ffffff" ${OLt}/>
     <path d="M-4 13 L14 -1 L32 13z" fill="#d8453a" ${OLt}/>
     <rect x="10" y="20" width="7" height="12" fill="#c58a5a"/>
@@ -538,7 +538,7 @@ const SLOTS = {
 
 function slot(id, label, price, small = false) {
   const s = SLOTS[id];
-  const area = s.area ? `<path d="${s.area}" class="slot-area"/>` : '';
+  const area = s.area ? `<path d="${s.area}" class="slot-area"${s.areaT ? ` transform="${s.areaT}"` : ''}/>` : '';
   const r = small ? 11 : 14;
   return `<g class="slot" data-tap="slot" data-id="${id}">${area}
     <circle cx="${s.x}" cy="${s.y}" r="${r + 10}" fill="transparent"/>
@@ -596,52 +596,57 @@ function readyBadge(id, amount, fresh, full) {
 // ready (значки сбора — каждую секунду), fx (эффекты). Так анимации не перезапускаются на каждом тике.
 export function renderScene(svg, st, catalog, layers = 'all') {
   const m = monthOf(st.month);
+  const loc = st.loc || 'home';
   if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="far"></g><g id="near"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
-  const bgKey = `${st.month}|${st.house || 0}`; // фон перерисовываем при смене месяца и при ремонте дома
+  const bgKey = `${loc}|${st.month}|${st.house || 0}`; // фон: при смене локации, месяца и при ремонте дома
   if (svg.dataset.month !== bgKey) {
     svg.dataset.month = bgKey;
-    const bg = background(m);
+    const bg = background(m, loc);
     let s = bg.near;
-    s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
-    s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
-    s += house(m, st.house || 0) + barn(m);
-    svg.querySelector('#bg').innerHTML = bg.far;
+    if (loc === 'home') {
+      s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
+      s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
+      s += house(m, st.house || 0) + barn(m);
+    } else s += LOC_NEAR[loc](m);
+    svg.querySelector('#bg').innerHTML = bg.far + (LOC_FAR[loc] ? LOC_FAR[loc](m) : '');
     svg.querySelector('#near').innerHTML = s;
     layers = 'all';
   }
   const b = st.built;
   const clean = st.clean >= 1;
   if (layers === 'all') {
-    let s = field(m, st);
-    if (b.cow) s += cow();
-    if (b.greenhouse) s += greenhouse(m, st);
-    if (b.omshanik) s += omshanik(m);
-    if (b.coop) s += coop(m, st) + hens(st);
-    if (b.fence) s += fence();
-    if (b.apiary) s += apiary(m, st);
-    if (b.stall) s += stall(m);
-    if (b.cheese) s += cheese(m);
-    if (b.honeyfield) s += honeyfield(m);
-    if (b.tractor) s += tractorVehicle();
-    svg.querySelector('#far').innerHTML = farItems(m, st);
-    if (st.fox) s += fox();
-    if (clean && st.canBuild) s += orderBoard(st);
+    let s = '';
+    if (loc === 'home') {
+      s += field(m, st);
+      if (b.cow) s += cow();
+      if (b.greenhouse) s += greenhouse(m, st);
+      if (b.omshanik) s += omshanik(m);
+      if (b.coop) s += coop(m, st) + hens(st);
+      if (b.fence) s += fence();
+      if (b.apiary) s += apiary(m, st);
+      if (b.stall) s += stall(m);
+      if (st.fox) s += fox();
+      if (clean && st.canBuild) s += orderBoard(st);
+    } else s += LOC_OBJ[loc](m, st);
+    svg.querySelector('#far').innerHTML = '';
     if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
     if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
-    if (!clean) s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
+    if (!clean && loc === 'home') s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
     if (clean && st.canBuild) {
       for (const id of Object.keys(SLOTS)) {
         const c = catalog[id];
+        if ((c.loc || 'home') !== loc) continue;
         if (b[id] || (c.requires && !b[c.requires]) || (c.tier || 0) > (st.tier || 0)) continue;
         if (id === 'garden' && st.flags?.fieldSold) continue;
-        s += slot(id, c.name.split(' ')[0], c.price, id === 'stove');
+        s += slot(id, SHORT[id] || c.name.split(' ')[0].replace('«', ''), c.price, id === 'stove');
       }
     }
-    if (st.lv) for (const [id, L] of Object.entries(st.lv)) if (L > 0 && LEVEL_POS[id] && catalog[id].kind !== 'once') s += levelTag(LEVEL_POS[id], L, id);
+    if (st.lv) for (const [id, L] of Object.entries(st.lv)) if (L > 0 && LEVEL_POS[id] && catalog[id].kind !== 'once' && (catalog[id].loc || 'home') === loc) s += levelTag(LEVEL_POS[id], L, id);
     svg.querySelector('#obj').innerHTML = s;
   }
   let r = '';
   if (clean) for (const id of Object.keys(READY_POS)) {
+    if ((catalog[id]?.loc || 'home') !== loc) continue;
     const amt = Math.floor(st.stock[id] || 0);
     if (b[id] && amt > 0) r += readyBadge(id, amt, st.fresh?.[id], st.full?.[id]);
   }
@@ -683,3 +688,228 @@ export function puff(svg, x, y) {
 
 export const SLOT_POS = SLOTS;
 export const READY_POSITIONS = READY_POS;
+
+
+/* =====================================================================
+   ЛОКАЦИИ: Река и луг · Райцентр · Агрохолдинг
+   ===================================================================== */
+const water = (m) => (m.season === 'winter' ? '#dce9f2' : '#6fb6ec');
+const waterL = (m) => (m.season === 'winter' ? '#f4f9fc' : '#a9d8f6');
+
+/* ---------- Река и луг ---------- */
+function riverNear(m) {
+  const w = water(m), wl = waterL(m);
+  let s = '';
+  // холм под мельницей
+  s += `<path d="M300 400 Q385 300 470 390 L470 420 L300 420z" fill="${PAL[m.season].hillA}" opacity=".9"/>`;
+  s += tree(30, 330, m.trees, .8) + tree(250, 335, m.trees, .7);
+  // река
+  s += `<path d="M-30 440 C 110 410, 250 470, 490 438 L490 512 C 260 540, 110 478, -30 506z" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>`;
+  s += `<g stroke="${wl}" stroke-width="3" stroke-linecap="round" fill="none" class="ripples">${[[40, 466], [150, 470], [230, 488], [330, 482], [410, 470]].map(([x, y]) => `<path d="M${x} ${y} q10 -5 20 0 q10 5 20 0"/>`).join('')}</g>`;
+  // мостик
+  s += `<g ${OLt}><path d="M300 446 L360 446 L362 506 L298 506z" fill="#b9844f"/></g>
+    <path d="M300 456 H360 M300 466 H360 M300 476 H360 M300 486 H360 M300 496 H360" stroke="#8b5a36" stroke-width="2"/>
+    <path d="M296 440 V512 M364 440 V512" stroke="#7b5236" stroke-width="5" stroke-linecap="round"/>`;
+  // пруд с мостками — место для рыбалки
+  s += `<g id="pond" data-tap="fish">
+    <ellipse cx="122" cy="616" rx="98" ry="42" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>
+    <ellipse cx="104" cy="610" rx="40" ry="10" fill="${wl}" opacity=".7"/>
+    ${m.season !== 'winter' ? '<g fill="#5aa24a" stroke="#3b2a1f" stroke-width="1"><ellipse cx="70" cy="628" rx="12" ry="5"/><ellipse cx="150" cy="634" rx="10" ry="4"/></g><circle cx="74" cy="626" r="3" fill="#f39ac1"/>' : ''}
+    <g stroke="#3b2a1f" stroke-width="1.4"><rect x="168" y="596" width="50" height="9" fill="#b9844f"/><rect x="172" y="605" width="5" height="18" fill="#7b5236"/><rect x="208" y="605" width="5" height="18" fill="#7b5236"/></g>
+    <path d="M30 600 l-4 -22 M36 604 l2 -24 M42 606 l6 -20 M200 640 l-3 -20 M206 642 l4 -22" stroke="#6b8f3a" stroke-width="3" stroke-linecap="round"/>
+    <rect x="20" y="570" width="210" height="90" fill="transparent"/>
+    <g transform="translate(118 560)"><rect x="-34" y="-12" width="68" height="20" rx="10" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="2"/>
+      <text x="0" y="3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10" fill="#2f6fb5">🎣 РЫБАЛКА</text></g>
+  </g>`;
+  return s;
+}
+function cowshed(m) {
+  const winter = m.season === 'winter';
+  return `<g id="cowshed" data-tap="bld" data-id="cowshed">
+    <ellipse cx="115" cy="414" rx="80" ry="6" fill="#000" opacity=".12"/>
+    <rect x="48" y="334" width="134" height="78" fill="#c4553e" ${OL}/>
+    <path d="M58 340 V406 M172 340 V406" stroke="#fff" stroke-width="4"/>
+    <path d="M36 338 L115 292 L194 338 L186 342 L115 300 L44 342z" fill="#8f3426" ${OL}/>
+    <path d="M56 336 L115 302 L174 336z" fill="#a8412f" ${OLt}/>
+    ${winter ? '<path d="M38 336 L115 293 L192 336 L182 336 L115 300 L48 336z" fill="#fff"/>' : ''}
+    <circle cx="115" cy="320" r="8" fill="#f1dfb2" stroke="#fff" stroke-width="3"/>
+    <rect x="94" y="360" width="42" height="52" fill="#7d3a28" ${OLt}/>
+    <path d="M94 360 L136 412 M136 360 L94 412" stroke="#fff" stroke-width="3"/>
+    <rect x="94" y="360" width="42" height="52" fill="none" stroke="#fff" stroke-width="3"/>
+    <g transform="translate(36 404) scale(.55)">${cow().replace(/<g id="cow"[^>]*>/, '<g>')}</g>
+    <g transform="translate(150 410) scale(.5)">${cow().replace(/<g id="cow"[^>]*>/, '<g>')}</g>
+  </g>`;
+}
+function mill(m) {
+  return `<g id="mill" data-tap="bld" data-id="mill"><g transform="translate(-24 0)">
+    <ellipse cx="386" cy="384" rx="40" ry="5" fill="#000" opacity=".15"/>
+    <path d="M364 384 L372 300 L400 300 L408 384z" fill="#f4e5c4" ${OL}/>
+    <path d="M366 302 L386 278 L406 302z" fill="#8a603f" ${OL}/>
+    <rect x="379" y="350" width="14" height="34" fill="#a8693c" ${OLt}/>
+    <rect x="380" y="318" width="12" height="12" fill="#4d8fd3" stroke="#fff" stroke-width="2"/>
+    <g class="mill-blades">${[0, 90, 180, 270].map(a => `<g transform="rotate(${a} 386 296)"><rect x="383" y="244" width="6" height="52" fill="#b9844f" ${OLt}/><rect x="389" y="248" width="14" height="40" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="1.4"/></g>`).join('')}
+      <circle cx="386" cy="296" r="5" fill="#5b3a26"/></g>
+  </g></g>`;
+}
+function riverObj(m, st) {
+  const b = st.built; let s = '';
+  if (b.cowshed) s += cowshed(m);
+  if (b.mill) s += mill(m);
+  if (b.cheese) s += `<g transform="translate(92 -370)">${cheese(m)}</g>`;
+  if (b.honeyfield) s += `<g transform="translate(-6 -150)">${honeyfield(m)}</g>`;
+  return s;
+}
+
+/* ---------- Райцентр ---------- */
+function townFar(m) {
+  const cols = ['#d7c3e6', '#c6dcef', '#f2d6b8', '#cfe5c6', '#f0c9c4', '#dcd2bf'];
+  return `<g opacity=".95">${cols.map((c, i) => { const x = -10 + i * 80, h = 40 + (i % 3) * 18; return `<rect x="${x}" y="${292 - h}" width="70" height="${h}" fill="${c}" stroke="#3b2a1f" stroke-width="1.4"/>${[0, 1, 2].map(k => `<rect x="${x + 10 + k * 20}" y="${300 - h}" width="10" height="10" fill="#fffaf0" stroke="#3b2a1f" stroke-width="1"/>`).join('')}`; }).join('')}</g>`;
+}
+function townNear(m) {
+  const snow = m.season === 'winter';
+  let s = `<rect x="-200" y="292" width="${W + 400}" height="180" fill="${snow ? '#eef3f7' : '#e8dcc8'}"/>`;
+  let tiles = ''; for (let x = -10; x < W; x += 30) tiles += `M${x} 292 V472 `; for (let y = 312; y < 472; y += 26) tiles += `M-10 ${y} H${W + 10} `;
+  s += `<path d="${tiles}" stroke="${snow ? '#dfe7ee' : '#d6c7ae'}" stroke-width="1.5"/>`;
+  s += `<rect x="-200" y="472" width="${W + 400}" height="74" fill="#8a8f96"/><rect x="-200" y="472" width="${W + 400}" height="5" fill="#6f747a"/>
+    <path d="M-10 509 H470" stroke="#fff" stroke-width="4" stroke-dasharray="22 18"/>
+    <rect x="-200" y="546" width="${W + 400}" height="8" fill="#c9bba3"/>`;
+  // фонари
+  s += [222, 440].map(x => `<g ${OLt}><rect x="${x - 3}" y="390" width="6" height="82" fill="#3e4a56"/><rect x="${x - 10}" y="380" width="20" height="12" rx="3" fill="#ffd96b"/></g>`).join('');
+  s += tree(30, 640, m.trees, .7) + tree(445, 650, m.trees, .7);
+  return s;
+}
+function townShop(m) {
+  return `<g id="shop" data-tap="bld" data-id="shop">
+    <rect x="22" y="262" width="186" height="210" fill="#c4553e" ${OL}/>
+    <path d="${Array.from({ length: 9 }, (_, i) => `M22 ${282 + i * 22} H208`).join(' ')}" stroke="#a8412f" stroke-width="1.5"/>
+    <rect x="36" y="248" width="158" height="30" rx="5" fill="#f8efd9" stroke="#8a5a3c" stroke-width="3"/>
+    <text x="115" y="269" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="16" fill="#c8362b">ФЕРМА ДЕДА</text>
+    <rect x="36" y="300" width="158" height="16" fill="#fff"/>${Array.from({ length: 8 }, (_, i) => `<rect x="${36 + i * 20}" y="300" width="10" height="16" fill="#d8392d"/>`).join('')}
+    <path d="M36 316 ${Array.from({ length: 8 }, (_, i) => `q5 8 10 0 q5 8 10 0`).join(' ')}" fill="#d8392d" stroke="#3b2a1f" stroke-width="1"/>
+    <rect x="40" y="340" width="70" height="78" fill="#cfe9f6" stroke="#fff" stroke-width="4"/><rect x="38" y="338" width="74" height="82" fill="none" ${OLt}/>
+    <g>${[['🥚', 52, 372], ['🍯', 82, 372], ['🧀', 52, 404], ['🥛', 84, 404]].map(([e, x, y]) => `<text x="${x}" y="${y}" font-size="18">${e}</text>`).join('')}</g>
+    <rect x="128" y="348" width="56" height="124" fill="#7d4a2a" ${OLt}/><circle cx="174" cy="414" r="3" fill="#ffd23f"/>
+  </g>`;
+}
+function townCafe(m) {
+  return `<g id="cafe" data-tap="bld" data-id="cafe">
+    <rect x="246" y="282" width="188" height="190" fill="#f6e7c8" ${OL}/>
+    <rect x="276" y="266" width="128" height="26" rx="5" fill="#3fa34d" stroke="#1f5e2a" stroke-width="2.5"/>
+    <text x="340" y="285" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="15" fill="#fff">КАФЕ</text>
+    <rect x="256" y="310" width="168" height="14" fill="#fff"/>${Array.from({ length: 8 }, (_, i) => `<rect x="${256 + i * 21}" y="310" width="10" height="14" fill="#3fa34d"/>`).join('')}
+    <path d="M256 324 ${Array.from({ length: 8 }, () => 'q5 7 10.5 0 q5 7 10.5 0').join(' ')}" fill="#3fa34d" stroke="#1f5e2a" stroke-width="1"/>
+    <rect x="262" y="340" width="70" height="66" fill="#cfe9f6" stroke="#fff" stroke-width="4"/><rect x="348" y="340" width="70" height="66" fill="#cfe9f6" stroke="#fff" stroke-width="4"/>
+    <text x="284" y="380" font-size="22">🥧</text><text x="370" y="380" font-size="22">☕</text>
+    ${[280, 392].map(x => `<g ${OLt}><rect x="${x - 2}" y="436" width="4" height="34" fill="#5b6168"/><path d="M${x - 24} 438 L${x} 420 L${x + 24} 438z" fill="#d8392d"/><ellipse cx="${x}" cy="452" rx="16" ry="4" fill="#fff"/></g>`).join('')}
+  </g>`;
+}
+function townMarket(m) {
+  const cols = [['#d8392d', '#fff'], ['#3f78c9', '#fff'], ['#e8a21a', '#fff'], ['#3fa34d', '#fff']];
+  return `<g id="market" data-tap="bld" data-id="market">${cols.map(([a, b], i) => { const x = 30 + i * 100; return `<g>
+      <rect x="${x + 4}" y="588" width="5" height="52" fill="#7b5236" ${OLt}/><rect x="${x + 79}" y="588" width="5" height="52" fill="#7b5236" ${OLt}/>
+      <rect x="${x}" y="576" width="88" height="18" fill="${b}"/>${[0, 1, 2, 3].map(k => `<rect x="${x + k * 22}" y="576" width="11" height="18" fill="${a}"/>`).join('')}
+      <rect x="${x}" y="576" width="88" height="18" fill="none" ${OLt}/>
+      <rect x="${x + 2}" y="616" width="84" height="12" fill="#b9844f" ${OLt}/>
+      <text x="${x + 12}" y="614" font-size="15">${['🍎', '🥕', '🧀', '🍯'][i]}${['🍐', '🥒', '🥖', '🥚'][i]}</text></g>`; }).join('')}
+    <rect x="22" y="566" width="420" height="78" fill="transparent"/></g>`;
+}
+function townObj(m, st) {
+  const b = st.built; let s = '';
+  if (b.shop) s += `<g transform="translate(${TF.shop[1]} ${TF.shop[2]}) scale(${TF.shop[0]})">${townShop(m)}</g>`;
+  if (b.cafe) s += `<g transform="translate(${TF.cafe[1]} ${TF.cafe[2]}) scale(${TF.cafe[0]})">${townCafe(m)}</g>`;
+  if (b.market) s += townMarket(m);
+  return s;
+}
+
+/* ---------- Агрохолдинг ---------- */
+function fieldColors(m) {
+  return m.season === 'winter' ? ['#f4f8fb', '#e3ebf1'] : m.season === 'summer' ? ['#e9c24a', '#d9a93a'] : m.season === 'autumn' || m.season === 'late' ? ['#b88a52', '#a3773f'] : ['#8fd068', '#6fb94e'];
+}
+function agroNear(m) {
+  const [a, b] = fieldColors(m);
+  let s = '';
+  const fields = [['M-20 300 L210 300 L190 450 L-20 470z', 0], ['M232 300 L480 300 L480 470 L214 450z', 1], ['M-20 492 L200 474 L230 640 L-20 640z', 2]];
+  for (const [d, i] of fields) {
+    s += `<path d="${d}" fill="${i === 1 ? b : a}" stroke="#5a3a24" stroke-width="2"/>`;
+    let rows = ''; for (let k = 0; k < 9; k++) rows += i === 2 ? `M${-20 + k * 28} 640 L${10 + k * 20} 490 ` : `M${(i ? 232 : -20) + k * 30} 300 L${(i ? 214 : -20) + k * 30 + (i ? -2 : 0)} 460 `;
+    s += `<path d="${rows}" stroke="${i === 1 ? a : b}" stroke-width="5" opacity=".8"/>`;
+  }
+  s += `<path d="M210 300 L232 300 L214 450 L200 474 L230 640 L250 640 L222 468 L240 300z" fill="${PAL[m.season].roadL}"/>`;
+  return s;
+}
+function agroTractor(m) {
+  return `<g id="tractor" data-tap="bld" data-id="tractor"><g transform="translate(70 520) scale(1.9)">
+    <rect x="0" y="0" width="34" height="16" rx="3" fill="#d6463a" ${OL}/>
+    <rect x="18" y="-14" width="16" height="16" fill="#d6463a" ${OL}/><rect x="21" y="-11" width="10" height="9" fill="#cfe9f6"/>
+    <rect x="4" y="-8" width="4" height="8" fill="#555"/>
+    <circle cx="27" cy="18" r="9" fill="#2f2f33" ${OL}/><circle cx="27" cy="18" r="3" fill="#f2c84b"/>
+    <circle cx="6" cy="20" r="6" fill="#2f2f33" ${OL}/><circle cx="6" cy="20" r="2" fill="#f2c84b"/></g>
+    <rect x="40" y="480" width="150" height="110" fill="transparent"/></g>`;
+}
+function agroElevator(m) {
+  const snow = m.season === 'winter';
+  return `<g id="elevator" data-tap="bld" data-id="elevator">
+    <ellipse cx="360" cy="434" rx="78" ry="6" fill="#000" opacity=".12"/>
+    ${[300, 334, 368].map(x => `<rect x="${x}" y="300" width="30" height="132" fill="#d9dde1" ${OL}/><path d="M${x} 300 Q${x + 15} 286 ${x + 30} 300" fill="${snow ? '#fff' : '#c3c9cf'}" ${OLt}/><path d="M${x} 340 H${x + 30} M${x} 380 H${x + 30}" stroke="#b6bcc2" stroke-width="2"/>`).join('')}
+    <rect x="402" y="250" width="30" height="182" fill="#f2d6b8" ${OL}/><path d="M402 250 L417 236 L432 250z" fill="#c4553e" ${OLt}/>
+    <rect x="300" y="404" width="132" height="18" rx="3" fill="#f8efd9" stroke="#8a5a3c" stroke-width="2"/>
+    <text x="366" y="417" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10" fill="#5b3a26">ЭЛЕВАТОР</text>
+  </g>`;
+}
+function agroBrand(m) {
+  return `<g id="brand" data-tap="bld" data-id="brand">
+    <rect x="70" y="250" width="6" height="58" fill="#7b5236" ${OLt}/><rect x="166" y="250" width="6" height="58" fill="#7b5236" ${OLt}/>
+    <rect x="40" y="200" width="162" height="64" rx="6" fill="#f8efd9" stroke="#8a5a3c" stroke-width="3"/>
+    <text x="121" y="228" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="18" fill="#c8362b">ФЕРМА ДЕДА</text>
+    <text x="121" y="250" text-anchor="middle" font-family="'Marck Script', cursive" font-size="14" fill="#5b3a26">с 1956 года</text></g>`;
+}
+function agroFactory(m) {
+  return `<g id="factory" data-tap="bld" data-id="factory">
+    <rect x="300" y="500" width="14" height="80" fill="#a8412f" ${OLt}/><rect x="326" y="512" width="14" height="68" fill="#a8412f" ${OLt}/>
+    <path d="M262 640 V580 L292 560 V580 L322 560 V580 L352 560 V580 L382 560 V640z" fill="#8f9aa5" ${OL}/>
+    ${[0, 1, 2, 3].map(i => `<rect x="${272 + i * 28}" y="596" width="14" height="12" fill="#ffd96b" stroke="#3b2a1f" stroke-width="1"/>`).join('')}
+    <g class="smoke"><circle cx="306" cy="490" r="7"/><circle cx="312" cy="474" r="9"/><circle cx="333" cy="502" r="6"/></g></g>`;
+}
+function agroObj(m, st) {
+  const b = st.built; let s = '';
+  if (b.brand) s += agroBrand(m);
+  if (b.elevator) s += `<g transform="translate(-16 0)">${agroElevator(m)}</g>`;
+  if (b.tractor) s += agroTractor(m);
+  if (b.factory) s += agroFactory(m);
+  return s;
+}
+
+// сдвиг/масштаб, чтобы фасады целиком влезали в экран телефона: [scale, tx, ty]
+const TF = { shop: [.887, 20.5, 53.3], cafe: [.93, 16.2, 33], elevator: [1, -16, 0] };
+const SHORT = { brand: 'Своя марка', tractor: 'Большие поля', honeyfield: 'Пасека-поле' };
+const LOC_NEAR = { river: riverNear, town: townNear, agro: agroNear };
+const LOC_FAR = { town: townFar };
+const LOC_OBJ = { river: riverObj, town: townObj, agro: agroObj };
+
+// Места построек в локациях (слот «＋», значок урожая, значок уровня)
+const LOC_POS = {
+  cowshed:    { slot: { x: 115, y: 362, area: 'M36 338 L115 292 L194 338 V412 H36z' }, ready: [172, 300], level: [56, 344] },
+  mill:       { slot: { x: 362, y: 330, area: 'M332 250 H392 V386 H332z' }, ready: [390, 256], level: [338, 372] },
+  cheese:     { slot: { x: 272, y: 368, area: 'M220 360 L272 328 L324 360 V406 H220z' }, ready: [306, 334], level: [234, 356] },
+  honeyfield: { slot: { x: 334, y: 600, area: 'M238 558 H430 L434 642 H234z' }, ready: [394, 566], level: [252, 566] },
+  shop:       { slot: { x: 115, y: 360, area: 'M22 248 H208 V472 H22z' }, ready: [180, 330], level: [46, 292] },
+  cafe:       { slot: { x: 340, y: 370, area: 'M246 266 H434 V472 H246z' }, ready: [410, 336], level: [258, 296] },
+  market:     { slot: { x: 230, y: 610, area: 'M22 566 H442 V644 H22z' }, ready: null, level: [52, 572] },
+  tractor:    { slot: { x: 110, y: 560, area: 'M-20 492 L200 474 L230 640 L-20 640z' }, ready: [180, 500], level: [54, 506] },
+  elevator:   { slot: { x: 366, y: 360, area: 'M296 236 H436 V436 H296z' }, ready: [330, 280], level: [312, 316] },
+  brand:      { slot: { x: 121, y: 232, area: 'M40 200 H202 V300 H40z' }, ready: null, level: [56, 284] },
+  factory:    { slot: { x: 322, y: 600, area: 'M262 556 H384 V642 H262z' }, ready: [360, 540], level: [272, 572] },
+};
+const tfPt = ([k, tx, ty], [x, y]) => [x * k + tx, y * k + ty];
+for (const [id, t] of Object.entries(TF)) {
+  const p = LOC_POS[id];
+  p.ready = tfPt(t, p.ready); p.level = tfPt(t, p.level);
+  const [x, y] = tfPt(t, [p.slot.x, p.slot.y]);
+  p.slot = { x, y, area: p.slot.area, areaT: `translate(${t[1]} ${t[2]}) scale(${t[0]})` };
+}
+for (const [id, p] of Object.entries(LOC_POS)) {
+  SLOTS[id] = p.slot;
+  if (p.ready) READY_POS[id] = p.ready; else delete READY_POS[id];
+  LEVEL_POS[id] = p.level;
+}
+READY_EMOJI.cowshed = '🥛'; READY_EMOJI.mill = '🥖'; READY_EMOJI.cafe = '🥧'; READY_EMOJI.elevator = '🌾'; READY_EMOJI.tractor = '🌾'; READY_EMOJI.shop = '📦';
