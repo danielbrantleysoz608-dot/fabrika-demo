@@ -2,7 +2,7 @@
 // Время — реальное: продукция копится по минутам, 1 игровой месяц = MONTH_MS.
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
-  LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
+  LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -47,6 +47,7 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     daily: null, login: null, tzOff: 0,
     xp: 0, lvlSeen: 1,                       // опыт фермы (⭐) и последний показанный уровень
     orders: [], big: null,                   // доска заказов: 3 обычных + большой заказ дня
+    house: 0,                                // сколько этапов ремонта дома деда сделано (0…5)
   };
 }
 
@@ -83,6 +84,7 @@ export function paybackMin(st, id) {
 export function globalMult(st, withMods = true) {
   let k = 1;
   for (const id of ['stall', 'brand']) k *= 1 + (BUILDINGS[id].boost || 0) * level(st, id);
+  k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
   if (withMods) {
     k *= st.mods.sales ?? 1;
     if (st.flags.contract) k *= 1.3;
@@ -191,6 +193,33 @@ export function claimLogin(st) {
   addHistory(st, { m: st.month, t: `Бонус за вход, день ${st.login.streak}: +${fmt(p)}.` });
   checkGoals(st);
   return p;
+}
+
+/* ---------- Ремонт дома деда ---------- */
+export const nextRepair = (st) => HOUSE_STAGES[st.house || 0] || null;
+export function canRepair(st) {
+  const n = nextRepair(st);
+  if (!n) return 'дом полностью отремонтирован';
+  if (st.phase === 'clean') return 'сначала уборка';
+  if (st.money < n.cost) return 'не хватает ' + fmt(n.cost - st.money);
+  return null;
+}
+export function repairHouse(st) {
+  const why = canRepair(st);
+  if (why) return why;
+  const n = nextRepair(st);
+  st.money -= n.cost;
+  st.house = (st.house || 0) + 1;
+  addXp(st, XP.repair);
+  addHistory(st, { m: st.month, t: `Дом деда: ${n.name.toLowerCase()} — готово (${fmt(n.cost)}). +3% ко всему доходу.` });
+  checkGoals(st);
+  return null;
+}
+// выгода ремонта для «самого выгодного» (₽/мин на рубль) — для симуляции
+export function repairValue(st) {
+  const n = nextRepair(st); if (!n) return 0;
+  const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0) * globalMult(st, false);
+  return base * HOUSE_BONUS / (1 + HOUSE_BONUS * (st.house || 0)) / n.cost;
 }
 
 /* ---------- Уровень фермы (⭐ опыт) ---------- */
@@ -310,9 +339,10 @@ export function priceOf(st, id) {
   if (disc) p *= 1 - disc;
   return Math.round(p);
 }
-// сколько стоят постройки сейчас (всё, что вложено в уровни)
+// сколько стоят постройки сейчас (всё, что вложено в уровни и ремонт дома)
 export function buildingsValue(st) {
   let v = 0;
+  for (let i = 0; i < (st.house || 0); i++) v += HOUSE_STAGES[i].cost;
   for (const id of Object.keys(st.lv)) {
     const b = BUILDINGS[id], L = level(st, id);
     if (b.kind === 'once') { v += b.cost * L; continue; }

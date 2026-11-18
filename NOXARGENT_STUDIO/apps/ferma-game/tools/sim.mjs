@@ -28,6 +28,9 @@ function shop(st, now, trace, log) {
       if (v > bestV) { bestV = v; best = id; }
       if (!why && v > bestAffV) { bestAffV = v; bestAff = id; }
     }
+    // ремонт дома деда — тоже кандидат (+3% ко всему доходу)
+    const rv = E.repairValue(st);
+    if (rv > bestV && !E.canRepair(st)) { E.repairHouse(st); if (trace) log.push(`${fmtT(now).padStart(12)}  Дом деда → этап ${st.house}`); continue; }
     if (!best) break;
     let pick = best;
     if (E.canBuy(st, best)) {

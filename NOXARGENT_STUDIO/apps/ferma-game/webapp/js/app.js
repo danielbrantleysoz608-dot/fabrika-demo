@@ -1,7 +1,7 @@
 // «Ферма деда» — контроллер интерфейса: экраны, тапы, Telegram, сохранение.
 import * as E from './engine.js';
 import {
-  PRODUCTS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
+  PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
   monthOf, yearOf, goalLabel, maxLevel, MONTH_MS,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
@@ -62,7 +62,7 @@ function view() {
     full[id] = stock[id] > 0 && (st.acc[id] || 0) >= E.storageCap(st, id) * 0.98; // склад полон — пузырь мигает
   }
   return {
-    month: st.month, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
+    month: st.month, house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
     clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
@@ -190,6 +190,7 @@ function hint() {
   if (L('apiary') && !L('omshanik') && m >= 6 && m <= 9) return say('Нужен <b>омшаник</b>, иначе в декабре пчёлы замёрзнут!', 'worried');
   if (L('greenhouse') && !L('stove') && m >= 7) return say('Зимой теплица встанет. <b>Печка</b> — и огурцы в мороз втридорога!');
   if (E.monthReady(st)) return say('Месяц прошёл! Жми <b>«Следующий месяц»</b>.', 'happy');
+  if (!E.canRepair(st)) return say(`Хватает на ремонт дома деда (${E.nextRepair(st).name.toLowerCase()})! <b>Тапни по дому</b> — там и письма деда.`, 'happy');
   if (st.debt) return say(`Долг банку ${short(st.debt)}. Проценты капают — верни в Тетради → Расходы.`);
   say(`До цели — <b>${short(Math.max(0, E.goal(st) - E.ratingCapital(st)))}</b>. Улучшай постройки — тапни по любой!`, 'happy');
 }
@@ -212,6 +213,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'slot') { haptic(); sfx.click(); return openBuilding(id); }
   if (tap === 'bld') return collect(id);
   if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
+  if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
 });
 
 function hitTrash(id) {
@@ -331,6 +333,57 @@ function afterGain() {
   }
 }
 
+/* ================= Дом деда: интерьер, ремонт, письма ================= */
+// Комната деда: чем дальше ремонт, тем уютнее (стены, свет, ковёр, цветы, огонь в печи)
+function interiorSVG(stage) {
+  const wall = ['#cfc3ad', '#d9c8a6', '#e8d3a8', '#f1dcae', '#f6e1b0', '#fbe7b8'][stage];
+  const glow = stage >= 5 ? '<circle cx="290" cy="40" r="60" fill="#ffe9a8" opacity=".5"/>' : '';
+  return `<svg viewBox="0 0 340 170" class="interior" aria-hidden="true">
+    <rect width="340" height="170" fill="${wall}"/>${glow}
+    ${stage < 1 ? '<path d="M0 0 L60 0 L30 26z M250 0 h60 l-20 20z" fill="#9d9381" opacity=".6"/>' : ''}
+    <rect y="128" width="340" height="42" fill="${stage >= 5 ? '#c98a55' : '#a58460'}"/>
+    ${stage >= 5 ? '<ellipse cx="170" cy="150" rx="90" ry="12" fill="#d8392d" opacity=".75"/>' : ''}
+    <!-- окно -->
+    <rect x="230" y="26" width="70" height="58" fill="${stage >= 2 ? '#bfe6fa' : '#7f97a8'}" stroke="#fff" stroke-width="5"/>
+    <path d="M265 26 V84 M230 55 H300" stroke="#fff" stroke-width="4"/><rect x="227" y="23" width="76" height="64" fill="none" stroke="#3b2a1f" stroke-width="2"/>
+    ${stage < 2 ? '<g stroke="#3b2a1f" stroke-width="1.6"><rect x="222" y="38" width="86" height="9" fill="#b9845a" transform="rotate(-8 265 42)"/><rect x="222" y="62" width="86" height="9" fill="#c2905e" transform="rotate(6 265 66)"/></g>' : '<path d="M233 28 q10 28 0 54 M297 28 q-10 28 0 54" stroke="#e2403a" stroke-width="7" fill="none"/>'}
+    <!-- печь -->
+    <g stroke="#3b2a1f" stroke-width="2"><rect x="14" y="60" width="62" height="70" fill="${stage >= 4 ? '#f4efe4' : '#cfc7b8'}"/><rect x="26" y="96" width="36" height="24" fill="#3b2a1f"/><rect x="28" y="40" width="22" height="22" fill="${stage >= 4 ? '#f4efe4' : '#cfc7b8'}"/></g>
+    ${stage >= 4 ? '<path d="M32 118 l6 -14 l5 7 l5 -11 l6 18z" fill="#f28c28"/>' : ''}
+    <!-- фото деда на стене -->
+    <g transform="translate(110 22)"><rect width="56" height="66" rx="3" fill="#8b5a36" stroke="#3b2a1f" stroke-width="2"/><rect x="6" y="6" width="44" height="54" fill="#f3e6c8"/>
+      <ellipse cx="28" cy="34" rx="12" ry="14" fill="#f3c8a2" stroke="#3b2a1f" stroke-width="1.4"/>
+      <path d="M16 26 q12 -12 24 0 q-6 -4 -12 -4 q-6 0 -12 4z" fill="#7b6a5a"/><path d="M14 27 h28 v-5 q-14 -8 -28 0z" fill="#5d6b7a" stroke="#3b2a1f" stroke-width="1"/>
+      <path d="M20 42 q8 6 16 0 q-8 3 -16 0z" fill="#eee"/><circle cx="23" cy="34" r="1.4" fill="#2a1d16"/><circle cx="33" cy="34" r="1.4" fill="#2a1d16"/>
+      <rect x="10" y="50" width="36" height="10" fill="#4d6b8a"/></g>
+    <!-- стол с письмами -->
+    <g stroke="#3b2a1f" stroke-width="2"><rect x="120" y="100" width="100" height="10" fill="#9a6838"/><rect x="128" y="110" width="6" height="22" fill="#8b5a36"/><rect x="206" y="110" width="6" height="22" fill="#8b5a36"/></g>
+    ${Array.from({ length: Math.min(6, stage + 1) }, (_, i) => `<rect x="${136 + i * 12}" y="${92 - (i % 2) * 2}" width="16" height="10" fill="#fffaf0" stroke="#8a5a3c" stroke-width="1.2" transform="rotate(${(i % 3) * 5 - 5} ${144 + i * 12} 97)"/>`).join('')}
+    ${stage >= 5 ? '<g stroke="#3b2a1f" stroke-width="1.4"><rect x="244" y="96" width="14" height="12" fill="#a8693c"/><circle cx="248" cy="92" r="5" fill="#e2403a"/><circle cx="256" cy="90" r="5" fill="#ffd23f"/></g>' : ''}
+  </svg>`;
+}
+function openHouse() {
+  const h = st.house || 0, next = E.nextRepair(st), why = E.canRepair(st);
+  const steps = HOUSE_STAGES.map((x, i) => `<div class="hs ${i < h ? 'ok' : i === h ? 'now' : ''}"><span>${i < h ? '✓' : x.emoji}</span><small>${x.name}</small></div>`).join('');
+  const letters = LETTERS.map((l, i) => i <= h
+    ? `<button class="letter-row" data-act="letter" data-id="${i}">✉️ <b>${l.title}</b><span>читать</span></button>`
+    : `<div class="letter-row locked">🔒 <b>${l.title}</b><span>после ремонта: ${HOUSE_STAGES[i - 1].name.toLowerCase()}</span></div>`).join('');
+  sheet('🏠 Дом деда', `${interiorSVG(h)}
+    <div class="house-steps">${steps}</div>
+    ${next ? `<div class="card"><h3>${next.emoji} ${next.name}</h3><div class="price">${short(next.cost)}</div><p>${next.desc}</p>
+      <div class="tags"><span class="tag inc">+3% ко всему доходу</span><span class="tag">+ новое письмо деда</span></div>
+      <button class="btn primary go" data-act="repair" ${why ? `data-lock="${cap1(why)}"` : ''}>${why && !why.startsWith('не хватает') ? cap1(why) : `Отремонтировать · ${short(next.cost)}`}</button></div>`
+      : '<div class="card"><h3>Дом полностью отремонтирован!</h3><p>+15% ко всему доходу. Дед бы гордился.</p></div>'}
+    <div class="sub">Письма деда</div><div class="letters">${letters}</div>`, 'house');
+}
+function showLetter(i, isNew = false) {
+  const l = LETTERS[i];
+  openLayer(`<div class="intro">${isNew ? '<div class="kicker-light">НОВОЕ ПИСЬМО ДЕДА</div>' : ''}
+    <div class="letter"><p><b>${l.title}</b></p><p>${l.text}</p><p class="sign">Твой дед</p></div>
+    <button class="btn primary big" data-act="house">К дому деда</button></div>`, 'screen dim keep-ui', true);
+  layer.dataset.kind = 'letter';
+}
+
 /* ================= Доска заказов и уровень фермы ================= */
 function orderCard({ o, i }) {
   const done = E.orderDone(o);
@@ -444,6 +497,17 @@ const ACTIONS = {
   },
   decline: (id) => { const back = E.declineOrder(st, id === 'big' ? 'big' : +id); toast(`Отказались. ${back ? 'Отложенное продали за ' + short(back) + '. ' : ''}Новый заказ — через 10 минут`); render(); persist(true); openBoard(); },
   buildNow: () => openBuild(),
+  house: () => openHouse(),
+  letter: (id) => showLetter(+id),
+  repair: (id, el) => {
+    if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
+    const err = E.repairHouse(st);
+    if (err) return toast(err);
+    notify('success'); sfx.build(); setTimeout(() => sfx.fanfare(), 450);
+    delete svg.dataset.month; render(); persist(true);
+    puff(svg, 98, 330); floatText(svg, 98, 300, `${HOUSE_STAGES[st.house - 1].name}: готово! +3%`, '#2f8a2f');
+    showLetter(st.house, true);
+  },
   claimLogin: () => { const p = E.claimLogin(st); if (p) { sfx.fresh(); notify('success'); toast(`Бонус за вход: +${short(p)}`); } closeLayer(); render(); persist(true); },
   claimDaily: (id) => { const p = E.claimDaily(st, +id); if (p) { sfx.coin(); notify('success'); toast(`Задание выполнено: +${short(p)}`); } render(); persist(true); updateDots(); openBook('tasks'); },
   sound: () => { const m = sfx.toggle(); toast(m ? 'Звук выключен' : 'Звук включён'); openBook('tasks'); },
@@ -580,8 +644,11 @@ function openBuild(focus) {
   const soon = BUILD_ORDER.filter(id => BUILDINGS[id].tier === st.tier + 1);
   open.sort((a, b) => (!E.canBuy(st, b)) - (!E.canBuy(st, a))); // сначала то, что можно купить сейчас
   if (focus) open.sort((a, b) => (b === focus) - (a === focus));
+  const nr = E.nextRepair(st);
+  const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
+      <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
   sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
-    ${open.map(card).join('')}
+    ${houseCard}${open.map(card).join('')}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
 function openBuilding(id) {

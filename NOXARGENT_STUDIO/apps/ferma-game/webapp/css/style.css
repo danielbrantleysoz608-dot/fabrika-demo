@@ -480,3 +480,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn.ghost-dark { background: transparent; box-shadow: none; border-color: #c9b48e; color: #8a7460; font-size: 13px; flex: .7; }
 .lvl-big { font-size: 64px; font-weight: 900; color: #e8a21a; text-shadow: 0 3px 0 rgba(59,42,31,.25); }
 .board-badge { animation: pulse 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+
+/* ===== Дом деда ===== */
+.interior { width: 100%; display: block; border: 3px solid var(--line); border-radius: 14px; margin-bottom: 10px; }
+.house-steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 10px; }
+.hs { background: #fff; border: 2px solid #d8c6a4; border-radius: 10px; padding: 5px 2px; display: flex; flex-direction: column; align-items: center; font-weight: 900; color: var(--brown); }
+.hs span { font-size: 18px; } .hs small { font-size: 10px; font-weight: 800; color: var(--label); }
+.hs.ok { background: #dff2d8; border-color: var(--btn); color: var(--green); }
+.hs.now { border-color: var(--gold); background: #fff5d6; }
+.letters { display: grid; gap: 6px; }
+.letter-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: #fffaf0; border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; font: inherit; color: var(--brown); font-size: 14px; min-height: 46px; }
+.letter-row span { margin-left: auto; font-size: 12px; font-weight: 800; color: var(--label); }
+.letter-row.locked { opacity: .55; border-style: dashed; }
+.kicker-light { color: #fff; font-weight: 900; letter-spacing: .1em; font-size: 12px; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.house-card { border-color: #e8a21a; background: #fff8e1; }

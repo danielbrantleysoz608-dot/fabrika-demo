@@ -137,32 +137,55 @@ function tree(x, y, mode, scale = 1) {
 
 /* ---------- Постройки ---------- */
 
-function house(m) {
+// Дом деда меняется по этапам ремонта (0 — заброшен … 5 — живой дом)
+function house(m, stage = 0) {
   const winter = m.season === 'winter';
-  return `<g id="house">
-    <ellipse cx="98" cy="414" rx="84" ry="6" fill="#000" opacity=".12"/>
-    <rect x="128" y="282" width="15" height="34" fill="#c5523c" ${OL}/>
-    <rect x="125" y="278" width="21" height="7" fill="#a8412f" ${OL}/>
-    <path d="M14 338 L98 270 L182 338z" fill="#8a603f" ${OL}/>
-    <path d="M34 331 L98 280 L162 331z" fill="#4e3423"/>
-    <g stroke="#a67a52" stroke-width="4">
-      <path d="M98 281 L50 331 M98 281 L74 331 M98 281 L98 331 M98 281 L122 331 M98 281 L146 331"/>
-      <path d="M60 314 H136" stroke-width="3"/></g>
-    <path d="M14 338 L98 270 L182 338" fill="none" stroke="#a67a52" stroke-width="7" stroke-linejoin="round"/>
-    <path d="M14 338 L98 270 L182 338" fill="none" ${OL}/>
-    ${winter ? '<path d="M18 334 L98 272 L178 334 L168 333 L98 282 L28 333z" fill="#fff" stroke="#c6d6e1" stroke-width="1.2"/>' : ''}
-    <rect x="26" y="336" width="144" height="76" fill="#f4e5c4" ${OL}/>
-    <path d="M27 352 H169 M27 368 H169 M27 384 H169 M27 400 H169" stroke="#e2cfa6" stroke-width="1.5"/>
-    <rect x="38" y="350" width="34" height="30" fill="#4d8fd3" stroke="#fff" stroke-width="4"/>
-    <rect x="38" y="350" width="34" height="30" fill="none" ${OLt}/>
-    <g ${OLt}><rect x="31" y="355" width="48" height="8" fill="#c2905e" transform="rotate(-14 55 359)"/>
-      <rect x="32" y="368" width="46" height="8" fill="#b9845a" transform="rotate(10 55 372)"/></g>
-    <rect x="116" y="350" width="38" height="32" fill="#4d8fd3" stroke="#fff" stroke-width="4"/>
+  const roofOk = stage >= 1, winOk = stage >= 2, porch = stage >= 3, stoveOk = stage >= 4, rooms = stage >= 5;
+  // крыша: дыры со стропилами → целая черепица
+  const roof = roofOk
+    ? `<path d="M14 338 L98 270 L182 338z" fill="#c4553e" ${OL}/>
+       <g stroke="#a8412f" stroke-width="2.4" fill="none">${[290, 302, 314, 326].map((y, i) => `<path d="M${98 - (y - 270) * 1.235} ${y} H${98 + (y - 270) * 1.235}"/>`).join('')}</g>
+       <path d="M14 338 L98 270 L182 338" fill="none" stroke="#8f3426" stroke-width="7" stroke-linejoin="round"/>
+       <path d="M14 338 L98 270 L182 338" fill="none" ${OL}/>`
+    : `<path d="M14 338 L98 270 L182 338z" fill="#8a603f" ${OL}/>
+       <path d="M34 331 L98 280 L162 331z" fill="#4e3423"/>
+       <g stroke="#a67a52" stroke-width="4"><path d="M98 281 L50 331 M98 281 L74 331 M98 281 L98 331 M98 281 L122 331 M98 281 L146 331"/><path d="M60 314 H136" stroke-width="3"/></g>
+       <path d="M14 338 L98 270 L182 338" fill="none" stroke="#a67a52" stroke-width="7" stroke-linejoin="round"/>
+       <path d="M14 338 L98 270 L182 338" fill="none" ${OL}/>`;
+  const glass = rooms ? '#ffd96b' : '#4d8fd3';
+  // окна: доски → чистые стёкла с занавесками (а после комнат — тёплый свет и цветы)
+  const leftWin = winOk
+    ? `<rect x="38" y="350" width="34" height="30" fill="${glass}" stroke="#fff" stroke-width="4"/><path d="M55 350 V380 M38 365 H72" stroke="#fff" stroke-width="3"/>
+       <path d="M40 352 q6 10 0 26 M70 352 q-6 10 0 26" stroke="#e2403a" stroke-width="5" fill="none" opacity=".85"/>
+       <rect x="36" y="348" width="38" height="34" fill="none" ${OLt}/>`
+    : `<rect x="38" y="350" width="34" height="30" fill="#4d8fd3" stroke="#fff" stroke-width="4"/><rect x="38" y="350" width="34" height="30" fill="none" ${OLt}/>
+       <g ${OLt}><rect x="31" y="355" width="48" height="8" fill="#c2905e" transform="rotate(-14 55 359)"/><rect x="32" y="368" width="46" height="8" fill="#b9845a" transform="rotate(10 55 372)"/></g>`;
+  const rightWin = `<rect x="116" y="350" width="38" height="32" fill="${winOk ? glass : '#4d8fd3'}" stroke="#fff" stroke-width="4"/>
     <path d="M135 350 V382 M116 366 H154" stroke="#fff" stroke-width="3"/>
-    <rect x="114" y="348" width="42" height="36" fill="none" ${OLt}/>
-    <rect x="84" y="360" width="26" height="52" fill="#a8693c" ${OL}/>
+    ${winOk ? '<path d="M118 352 q6 10 0 28 M152 352 q-6 10 0 28" stroke="#e2403a" stroke-width="5" fill="none" opacity=".85"/>' : ''}
+    <rect x="114" y="348" width="42" height="36" fill="none" ${OLt}/>`;
+  const flowers = rooms ? `<g ${OLt}><rect x="34" y="381" width="42" height="7" fill="#a8693c"/><rect x="112" y="383" width="46" height="7" fill="#a8693c"/></g>
+    ${[40, 50, 60, 70, 118, 128, 138, 148].map((x, i) => `<circle cx="${x}" cy="${i < 4 ? 379 : 381}" r="3.5" fill="${['#e2403a', '#ffd23f', '#f39ac1', '#ffffff'][i % 4]}" stroke="#3b2a1f" stroke-width=".8"/>`).join('')}` : '';
+  // крыльцо: навес, ступени, перила
+  const porchSvg = porch ? `<g ${OLt}><path d="M76 352 L118 352 L124 362 L70 362z" fill="#c4553e"/>
+      <rect x="74" y="362" width="4" height="50" fill="#8b5a36"/><rect x="116" y="362" width="4" height="50" fill="#8b5a36"/>
+      <rect x="70" y="404" width="54" height="8" fill="#b9844f"/><rect x="74" y="412" width="46" height="6" fill="#a8743f"/><rect x="78" y="418" width="38" height="5" fill="#9a6838"/></g>
+      <path d="M78 392 H116" stroke="#8b5a36" stroke-width="2.4"/>` : '';
+  const smoke = stoveOk || winter ? '<g class="smoke"><circle cx="136" cy="262" r="8"/><circle cx="142" cy="244" r="11"/><circle cx="134" cy="222" r="14"/></g>' : '';
+  return `<g id="house" data-tap="house">
+    <rect x="10" y="262" width="176" height="160" fill="transparent"/>
+    <ellipse cx="98" cy="414" rx="84" ry="6" fill="#000" opacity=".12"/>
+    <rect x="128" y="282" width="15" height="34" fill="${stoveOk ? '#b8432f' : '#c5523c'}" ${OL}/>
+    <rect x="125" y="278" width="21" height="7" fill="#a8412f" ${OL}/>
+    ${stoveOk ? '<path d="M128 292 h15 M128 302 h15" stroke="#8f3426" stroke-width="1.6"/>' : ''}
+    ${roof}
+    ${winter ? '<path d="M18 334 L98 272 L178 334 L168 333 L98 282 L28 333z" fill="#fff" stroke="#c6d6e1" stroke-width="1.2"/>' : ''}
+    <rect x="26" y="336" width="144" height="76" fill="${rooms ? '#f8ecd2' : '#f4e5c4'}" ${OL}/>
+    <path d="M27 352 H169 M27 368 H169 M27 384 H169 M27 400 H169" stroke="#e2cfa6" stroke-width="1.5"/>
+    ${leftWin}${rightWin}${flowers}
+    <rect x="84" y="360" width="26" height="52" fill="${porch ? '#7d4a2a' : '#a8693c'}" ${OL}/>
     <circle cx="104" cy="388" r="2.4" fill="#f2c94c"/>
-    ${winter ? '<g class="smoke"><circle cx="136" cy="262" r="8"/><circle cx="142" cy="244" r="11"/><circle cx="134" cy="222" r="14"/></g>' : ''}
+    ${porchSvg}${smoke}
   </g>`;
 }
 
@@ -574,13 +597,14 @@ function readyBadge(id, amount, fresh, full) {
 export function renderScene(svg, st, catalog, layers = 'all') {
   const m = monthOf(st.month);
   if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="far"></g><g id="near"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
-  if (svg.dataset.month !== String(st.month)) {
-    svg.dataset.month = st.month;
+  const bgKey = `${st.month}|${st.house || 0}`; // фон перерисовываем при смене месяца и при ремонте дома
+  if (svg.dataset.month !== bgKey) {
+    svg.dataset.month = bgKey;
     const bg = background(m);
     let s = bg.near;
     s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
     s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
-    s += house(m) + barn(m);
+    s += house(m, st.house || 0) + barn(m);
     svg.querySelector('#bg').innerHTML = bg.far;
     svg.querySelector('#near').innerHTML = s;
     layers = 'all';
