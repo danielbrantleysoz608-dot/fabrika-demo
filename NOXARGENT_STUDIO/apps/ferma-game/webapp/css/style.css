@@ -581,3 +581,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .wcard.lock .w-portrait { filter: grayscale(.8); opacity: .7; }
 .ledger td small { display: block; font-size: 10px; color: #9a8670; font-weight: 600; }
 .worker-fig { cursor: pointer; }
+
+/* ===== Рыбалка v2 ===== */
+.fish-badge.ready rect { fill: #2f6fb5; }
+.fish-badge.ready text { fill: #fff; }
+.fish-badge.ready { animation: pop 1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.fish-wait { font-size: 18px; font-weight: 800; color: var(--brown); margin: 6px 0; }
+.fish-wait b { font-size: 26px; color: #2f6fb5; font-variant-numeric: tabular-nums; }
+.fish-uk { display: block; margin: 8px 0; }
+.fish-table { list-style: none; padding: 0; margin: 10px 0; text-align: left; }
+.fish-table li { display: flex; align-items: center; gap: 10px; padding: 4px 6px; border-bottom: 2px dashed #e3d3b4; font-weight: 800; color: var(--brown); }
+.fish-table li span { flex: 1; } .fish-table em { font-style: normal; font-size: 11px; color: #c8362b; }
+.fish-table li b { color: var(--gold); white-space: nowrap; }
+.rod-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; font-weight: 700; color: var(--brown); font-size: 14px; margin: 6px 0; }
+.rod-line .btn { min-height: 34px; padding: 0 12px; font-size: 13px; flex-direction: row; }
+.fish-pic { display: flex; justify-content: center; margin-bottom: 4px; }
+.fish-res h3 { text-align: center; } .fish-res em.rare { font-style: normal; font-size: 14px; color: #c8362b; vertical-align: middle; }
+.rod-line { flex-direction: column; gap: 6px; }

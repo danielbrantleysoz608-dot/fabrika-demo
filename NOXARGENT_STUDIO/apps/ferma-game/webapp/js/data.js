@@ -100,6 +100,8 @@ export const BUILDINGS = {
                 season: always, seasonText: 'круглый год', desc: 'Хранит зерно и продаёт его круглый год.' },
   brand:      { loc: 'agro', kind: 'boost', name: 'Своя марка «Ферма деда»', cost: 400000000, boost: 0.25, costMult: 2.5, tier: 3, max: 10,
                 desc: 'Наша марка на полках страны. +25% ко всему доходу за уровень.' },
+  rod:        { kind: 'gear', lvl: 1, name: 'Удочка', cost: 2500, costMult: 10, tier: 0, max: 3,
+                desc: 'Дедова бамбуковая удочка. Каждый уровень: окно поклёвки шире на 25% и чаще клюёт щука, сом — и сундук.' },
   factory:    { loc: 'agro', product: 'goods', kind: 'prod', name: 'Завод', cost: 2000000000, inc: 4000000, unit: 'т продукции', price: 50000, tier: 5, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Свой перерабатывающий завод. Ферма деда — бренд страны!' },
 };
@@ -157,8 +159,21 @@ export const WORKERS = {
 export const WORKER_ORDER = Object.keys(WORKERS);
 
 // Рыбалка и щенок
-export const FISH_PER_DAY = 3;                 // не чаще 3 раз в день
-export const FISH_GAME_MS = 20000;             // 20 секунд на заход
+// Рыбалка: мостки у речки на ферме деда (с самого начала) и пруд в «Реке и луге» (после 1 млн).
+// Закинуть удочку можно раз в cd минут; поклёвка одна — тапни, пока поплавок нырнул (окно ~0,6 с).
+export const FISH_SPOTS = {
+  home:  { name: 'Мостки у речки', cd: 20, k: 1,   tier: 0 },
+  river: { name: 'Пруд у луга',    cd: 15, k: 1.6, tier: 1 },
+};
+// улов: вес (шанс), цена — в минутах дохода фермы
+export const FISH = [
+  { id: 'crucian', name: 'Карась', w: 55, min: 5,  size: 0.8 },
+  { id: 'perch',   name: 'Окунь',  w: 28, min: 8,  size: 0.9 },
+  { id: 'pike',    name: 'Щука',   w: 13, min: 12, size: 1.25, rare: true },
+  { id: 'catfish', name: 'Сом',    w: 3.2, min: 15, size: 1.5, rare: true },
+  { id: 'chest',   name: 'Старый сундук деда', w: 0.8, min: 20, rare: true, chest: true },
+];
+export const FISH_BITE_MS = 600;               // окно поклёвки на простой удочке
 export const DOG_PET_MS = 4 * 3600000;         // погладить — раз в 4 часа
 export const DOG_BOOST_MS = 30 * 60000;        // бонус держится 30 минут
 export const DOG_BONUS = 0.1;                  // +10% к доходу
@@ -202,6 +217,7 @@ export const ACHIEVEMENTS = {
   goal2:       { title: '100 миллионов', sub: 'Открыт Агрохолдинг — поля до горизонта!', color: '#d8392d', art: 'millionaire' },
   goal3:       { title: 'Миллиард', sub: 'Ферму деда знает вся страна!', color: '#7a4ec9', art: 'millionaire' },
   goal4:       { title: '10 миллиардов', sub: 'Свой завод. Дед бы не поверил!', color: '#2f6fb5', art: 'millionaire' },
+  chest:       { title: 'Сундук деда', sub: 'Выловили из речки дедов сундук: старые фотографии, медаль и письмо «Внуку — на удачу».', color: '#8a5a3c', art: 'chest' },
 };
 export const ACHIEVEMENT_ORDER = Object.keys(ACHIEVEMENTS);
 export const goalAchievement = (tier) => (tier === 0 ? 'millionaire' : `goal${tier}`);

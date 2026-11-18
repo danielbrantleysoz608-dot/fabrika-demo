@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_PER_DAY, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -172,13 +172,14 @@ export function dailyTasks(st) {
     { id: 'collect', title: 'Собери урожай 10 раз', have: Math.min(d.collects, 10), need: 10 },
     { id: 'build', title: 'Построй или улучши 1 постройку', have: Math.min(d.builds, 1), need: 1 },
     { id: 'sell', title: `Продай урожай на ${fmt(d.sellTarget)}`, have: Math.min(d.sold, d.sellTarget), need: d.sellTarget },
+    { id: 'fish', title: 'Поймай 2 рыбы', have: Math.min(d.fish || 0, 2), need: 2 },
   ].map((t, i) => ({ ...t, done: t.have >= t.need, claimed: d.claimed[i], reward: d.reward }));
 }
 function newDay(st, now) {
   const day = dayKey(st, now);
   if (st.daily?.day === day) return;
   const S = monthScale(st);
-  st.daily = { day, collects: 0, builds: 0, sold: 0, sellTarget: nice(S * 0.6), reward: nice(S * DAILY_REWARD), claimed: [false, false, false] };
+  st.daily = { day, collects: 0, builds: 0, sold: 0, sellTarget: nice(S * 0.6), reward: nice(S * DAILY_REWARD), fish: 0, claimed: [false, false, false, false] };
   // бонус за вход: растёт 7 дней подряд, пропустил день — заново с 1-го
   // в первый день новой игры бонуса нет — подарок первого дня это стартовые деньги
   if (!st.login) { st.login = { day, streak: 1, pending: 0 }; return; }
@@ -246,7 +247,7 @@ export const unlockedAt = (n) => Object.keys(BUILDINGS).filter(id => BUILDINGS[i
 /* ---------- Доска заказов ---------- */
 export const productPrice = (p) => PRODUCTS[p]?.price || 1;
 // рыба своя, не с постройки: одна рыбина стоит ~минуту дохода фермы (но не дешевле базовой цены)
-export const itemPrice = (st, p) => (p === 'fish' ? Math.max(PRODUCTS.fish.price, Math.round(totalRate(st))) : productPrice(p));
+export const itemPrice = (st, p) => (p === 'fish' ? Math.max(PRODUCTS.fish.price, Math.round(perMin(st) * 8)) : productPrice(p));
 
 /* ---------- Работники ---------- */
 export const hired = (st, w) => !!st.workers?.[w];
@@ -312,22 +313,55 @@ function workersTick(st, now) {
 }
 
 /* ---------- Рыбалка, щенок, сосед ---------- */
-export const fishLeft = (st, now = Date.now()) => (st.fishing?.day === dayKey(st, now) ? Math.max(0, FISH_PER_DAY - st.fishing.n) : FISH_PER_DAY);
-export function startFishing(st, now = Date.now()) {
-  if ((st.tier || 0) < 1) return 'пруд — в локации «Река и луг»';
-  if (!fishLeft(st, now)) return 'рыбалка — не больше 3 раз в день. Приходи завтра!';
-  const day = dayKey(st, now);
-  st.fishing = { day, n: st.fishing?.day === day ? st.fishing.n + 1 : 1 };
+// --- Рыбалка ---
+export const spotOpen = (st, spot) => (st.tier || 0) >= FISH_SPOTS[spot].tier && st.phase !== 'clean';
+// сколько ждать до следующего заброса (мс), 0 — можно рыбачить
+export const fishWait = (st, spot, now = Date.now()) => Math.max(0, (st.fishAt?.[spot] || 0) + FISH_SPOTS[spot].cd * 60000 - now);
+export const biteWindow = (st) => Math.round(FISH_BITE_MS * (1 + 0.25 * level(st, 'rod')));
+export const fishValue = (st, f, spot) => nice(perMin(st) * f.min * FISH_SPOTS[spot].k);
+// закинуть удочку: попытка тратится сразу (сорвалась — ждать снова)
+export function castRod(st, spot, now = Date.now()) {
+  if (!spotOpen(st, spot)) return spot === 'river' ? 'пруд — в локации «Река и луг» (после 1 млн)' : 'сначала уборка';
+  const w = fishWait(st, spot, now);
+  if (w > 0) return `клюёт через ${Math.ceil(w / 60000)} мин`;
+  if (!st.fishAt) st.fishAt = {};
+  st.fishAt[spot] = now;
   return null;
 }
-export function catchFish(st, n) {
-  if (n <= 0) return { units: 0, value: 0, sold: 0 };
-  const r = addProduct(st, 'fish', n);
-  addXp(st, n);
-  addHistory(st, { m: st.month, t: `🎣 Рыбалка: поймано ${n} 🐟.` });
-  checkGoals(st);
-  return { ...r, sold: (n - r.units) * itemPrice(st, 'fish') };
+// что клюнуло: удочка повышает шанс редкого улова (щука, сом, сундук)
+export function rollFish(st, rand = Math.random) {
+  const k = 1 + 0.5 * level(st, 'rod');
+  const pool = FISH.filter(f => !(f.chest && st.ach?.chest && rand() < 0.5)); // сундук после первого — реже
+  const total = pool.reduce((a, f) => a + f.w * (f.rare ? k : 1), 0);
+  let x = rand() * total;
+  for (const f of pool) { x -= f.w * (f.rare ? k : 1); if (x <= 0) return f; }
+  return pool[0];
 }
+// улов: продать сразу или отдать в заказ «Уха»
+export const ukhaOrder = (st) => activeOrders(st).find(x => x.o.ukha && x.o.items.some(it => it.p === 'fish' && it.have < it.need));
+export function landFish(st, f, spot, toOrder = false) {
+  const value = fishValue(st, f, spot);
+  if (st.daily) st.daily.fish = (st.daily.fish || 0) + (f.chest ? 0 : 1);
+  if (f.chest) {
+    gain(st, value);
+    grantAch(st, 'chest');
+    addXp(st, 30);
+    addHistory(st, { m: st.month, t: `🎣 Выловили старый сундук деда! +${fmt(value)}.` });
+    checkGoals(st);
+    return { sold: value, order: false };
+  }
+  addXp(st, 2 + Math.round(f.min / 4));
+  if (toOrder && ukhaOrder(st)) {
+    reserveForOrders(st, 'fish', 1);
+    addHistory(st, { m: st.month, t: `🎣 ${f.name} — в заказ «Уха».` });
+    return { sold: 0, order: true };
+  }
+  gain(st, value);
+  addHistory(st, { m: st.month, t: `🎣 Поймали: ${f.name.toLowerCase()} (+${fmt(value)}).` });
+  checkGoals(st);
+  return { sold: value, order: false };
+}
+export function missFish(st) { addHistory(st, { m: st.month, t: '🎣 Сорвалась!' }); }
 export const hasDog = (st) => !!st.dog?.name;
 export const needDogName = (st) => (st.house || 0) >= 3 && !st.dog?.name;
 export function nameDog(st, name) { st.dog = { name: String(name).trim().slice(0, 16) || 'Шарик', petAt: 0, boostUntil: 0 }; }
@@ -395,8 +429,12 @@ export function makeOrder(st, now, big = false) {
   const ps = Object.keys(can);
   if (!ps.length) return null;
   const r = rng((st.seed ^ Math.floor(now / 1000)) >>> 0);
-  // рыба с пруда — в обычные заказы, пока сегодня ещё можно порыбачить
-  if (!big && (st.tier || 0) >= 1 && fishLeft(st, now) > 0 && r() < 0.35) { can.fish = 0.5; ps.push('fish'); }
+  // заказ «Уха» от кафе: 1–2 рыбы (одна такая на доске), платит дороже, чем продать рыбу сразу
+  if (!big && st.phase !== 'clean' && !activeOrders(st).some(x => x.o.ukha) && r() < 0.25) {
+    const need = 1 + (r() < 0.4 ? 1 : 0);
+    return { client: 'cafe', ukha: true, name: 'Кафе «У трассы» — уха', emoji: '🍲', big: false, items: [{ p: 'fish', need, have: 0 }],
+      reward: nice(itemPrice(st, 'fish') * need * 1.4 * (1 + 0.2 * level(st, 'market'))), xp: 12 + need * 6, at: now };
+  }
   const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
@@ -404,7 +442,7 @@ export function makeOrder(st, now, big = false) {
   // объём — сколько ферма произведёт за W минут (копить 3–10 мин; большой — 20–30 мин)
   const W = big ? rndRange(r, 20, 30) : rndRange(r, 3, 10);
   const items = chosen.map(p => {
-    const need = p === 'fish' ? 3 + Math.floor(r() * 4) : Math.max(3, Math.round(can[p] * W));
+    const need = Math.max(3, Math.round(can[p] * W));
     return { p, need, have: 0 };
   });
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);

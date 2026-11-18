@@ -39,5 +39,8 @@ export const POSTCARD_ART = {
   frozen: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#a9c3d8"/><path d="M0 84 q100 -14 200 0 v36 h-200z" fill="#eef3f7"/>
     <g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round"><rect x="72" y="56" width="56" height="34" fill="#d9d3c4"/><path d="M64 58 l36 -26 l36 26z" fill="#8a603f"/><path d="M68 56 l32 -22 l32 22 l-8 0 l-24 -16 l-24 16z" fill="#fff"/><rect x="94" y="68" width="12" height="22" fill="#6b5a4a"/></g>
     <path d="M150 20 v24 M139 26 l22 12 M139 38 l22 -12" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>`,
+  chest: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#7fc4f2"/><path d="M0 70 q100 -12 200 0 v50 h-200z" fill="#4d9be0"/><path d="M20 84 q15 -6 30 0 M140 92 q15 -6 30 0" stroke="#a9d8f6" stroke-width="3" fill="none"/>
+    <g stroke="#3b2a1f" stroke-width="2.4" stroke-linejoin="round"><rect x="66" y="56" width="68" height="40" rx="4" fill="#a8693c"/><path d="M66 60 q34 -26 68 0z" fill="#8b5a36"/><rect x="94" y="62" width="12" height="14" fill="#f2c84b"/></g>
+    <path d="M70 70 h60 M70 86 h60" stroke="#6b4426" stroke-width="2"/><circle cx="150" cy="40" r="5" fill="#ffe24a"/><circle cx="52" cy="44" r="3" fill="#ffe24a"/></svg>`,
   locked: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#e9dcc2"/><text x="100" y="78" text-anchor="middle" font-family="Rubik" font-weight="900" font-size="50" fill="#c8b48e">?</text></svg>`,
 };

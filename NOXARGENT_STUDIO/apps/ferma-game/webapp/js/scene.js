@@ -629,7 +629,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       if (st.fox) s += fox();
       if (st.dog) s += puppy(st.dog);
       for (const w of st.workers || []) if (WORKER_SPOT[w]) s += workerFigure(w, ...WORKER_SPOT[w]);
-      if (clean && st.canBuild) s += orderBoard(st);
+      if (clean && st.canBuild) s += orderBoard(st) + creek(m);
     } else s += LOC_OBJ[loc](m, st);
     svg.querySelector('#far').innerHTML = '';
     if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
@@ -714,15 +714,14 @@ function riverNear(m) {
     <path d="M300 456 H360 M300 466 H360 M300 476 H360 M300 486 H360 M300 496 H360" stroke="#8b5a36" stroke-width="2"/>
     <path d="M296 440 V512 M364 440 V512" stroke="#7b5236" stroke-width="5" stroke-linecap="round"/>`;
   // пруд с мостками — место для рыбалки
-  s += `<g id="pond" data-tap="fish">
+  s += `<g id="pond" data-tap="fish" data-spot="river">
     <ellipse cx="122" cy="616" rx="98" ry="42" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>
     <ellipse cx="104" cy="610" rx="40" ry="10" fill="${wl}" opacity=".7"/>
     ${m.season !== 'winter' ? '<g fill="#5aa24a" stroke="#3b2a1f" stroke-width="1"><ellipse cx="70" cy="628" rx="12" ry="5"/><ellipse cx="150" cy="634" rx="10" ry="4"/></g><circle cx="74" cy="626" r="3" fill="#f39ac1"/>' : ''}
     <g stroke="#3b2a1f" stroke-width="1.4"><rect x="168" y="596" width="50" height="9" fill="#b9844f"/><rect x="172" y="605" width="5" height="18" fill="#7b5236"/><rect x="208" y="605" width="5" height="18" fill="#7b5236"/></g>
     <path d="M30 600 l-4 -22 M36 604 l2 -24 M42 606 l6 -20 M200 640 l-3 -20 M206 642 l4 -22" stroke="#6b8f3a" stroke-width="3" stroke-linecap="round"/>
     <rect x="20" y="570" width="210" height="90" fill="transparent"/>
-    <g transform="translate(118 560)"><rect x="-34" y="-12" width="68" height="20" rx="10" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="2"/>
-      <text x="0" y="3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10" fill="#2f6fb5">🎣 РЫБАЛКА</text></g>
+    ${fishBadge('river', 118, 560)}
   </g>`;
   return s;
 }
@@ -943,3 +942,24 @@ function puppy(d) {
   </g></g>`;
 }
 const esc = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+
+/* ---------- Речка с мостками на ферме деда (рыбалка с самого начала) ---------- */
+// бейдж «🎣 клюёт!» / «⏳ 12:40» — текст обновляет app.js каждую секунду (без перерисовки сцены)
+function fishBadge(spot, x, y) {
+  return `<g transform="translate(${x} ${y})"><g class="fish-badge" id="fishBadge-${spot}"><rect x="-38" y="-12" width="76" height="21" rx="10.5" fill="#fbf3e3" stroke="#2f6fb5" stroke-width="2"/>
+    <text x="0" y="3.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10.5" fill="#2f6fb5">🎣 РЫБАЛКА</text></g></g>`;
+}
+function creek(m) {
+  const w = m.season === 'winter' ? '#dce9f2' : '#6fb6ec', wl = m.season === 'winter' ? '#f4f9fc' : '#a9d8f6';
+  return `<g id="creek" data-tap="fish" data-spot="home"><g transform="translate(0 -24)">
+    <path d="M118 806 C 112 770, 150 748, 214 746 C 270 744, 304 760, 300 806 Z" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>
+    <path d="M150 778 q12 -5 24 0 q12 5 24 0 M222 790 q10 -4 20 0 q10 4 20 0" stroke="${wl}" stroke-width="3" fill="none" stroke-linecap="round" class="ripples"/>
+    <g stroke="#3b2a1f" stroke-width="1.5"><rect x="226" y="752" width="46" height="9" fill="#b9844f"/><rect x="230" y="761" width="5" height="16" fill="#7b5236"/><rect x="263" y="761" width="5" height="16" fill="#7b5236"/></g>
+    <path d="M250 752 l-6 -24" stroke="#8b5a36" stroke-width="2.5" stroke-linecap="round"/><path d="M244 728 Q214 740 206 772" stroke="#3b2a1f" stroke-width="1" fill="none" opacity=".6"/>
+    <g transform="translate(206 774)"><ellipse rx="3.5" ry="5" fill="#fff" stroke="#3b2a1f" stroke-width="1.2"/><path d="M-3.5 -1 A3.5 5 0 0 1 3.5 -1z" fill="#e2403a"/></g>
+    <path d="M124 790 l-3 -20 M130 794 l2 -22 M292 790 l4 -20 M298 796 l-2 -18" stroke="#6b8f3a" stroke-width="3" stroke-linecap="round"/>
+    ${fishBadge('home', 186, 734)}
+    <rect x="112" y="720" width="196" height="88" fill="transparent"/>
+  </g></g>`;
+}

@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_PER_DAY, FISH_GAME_MS, WORKERS, WORKER_ORDER,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -219,7 +219,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'bld') return collect(id);
   if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
   if (tap === 'house') { haptic(); sfx.click(); return openHouse(); }
-  if (tap === 'fish') { haptic(); sfx.click(); return openFishing(); }
+  if (tap === 'fish') { haptic(); sfx.click(); return openFishing(el.dataset.spot || 'home'); }
   if (tap === 'dog') return petDog();
   if (tap === 'workers') { haptic(); sfx.click(); return openWorkers(); }
 });
@@ -297,6 +297,7 @@ setInterval(() => {
   const r = E.tick(st);
   if (r.changed) render('ready');
   autoNotes(r.auto);
+  fishBadges();
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
@@ -473,6 +474,7 @@ tg?.BackButton.onClick(() => {
   if (coach.isOpen()) return coach.close();
   const k = layer.dataset.kind;
   if (k === 'event' || k === 'report' || k === 'evres' || k === 'fishing') return;
+  if (k === 'fish-res' && fishGame?.fish && !fishGame.taken) return takeCatch(false); // улов не теряем — продаём
   if (k === 'intro' || k === 'album-start' || k === 'rating-start') return showSplash();
   closeLayer();
 });
@@ -533,7 +535,10 @@ const ACTIONS = {
     <div class="row"><button class="btn wide" data-act="workers">Оставить</button><button class="btn wide danger" data-act="fireYes" data-id="${id}">Уволить</button></div></div>`, 'screen dim keep-ui', true); layer.dataset.kind = 'fire'; },
   fireYes: (id) => { E.fire(st, id); render(); persist(true); openWorkers(); toast(`${WORKERS[id].name} больше не работает`); },
   dogName: () => { const v = layer.querySelector('#dogName')?.value || ''; E.nameDog(st, v); closeLayer(); render(); persist(true); sfx.woof(); say(`<b>${escH(st.dog.name)}</b> теперь живёт у крыльца! Гладь его раз в 4 часа — <b>+10% к доходу</b> на 30 минут.`, 'happy', 7000); },
-  fishGo: () => startFishGame(),
+  fishGo: (spot) => startFishGame(spot),
+  fishSell: () => takeCatch(false),
+  fishOrder: () => takeCatch(true),
+  rod: () => openBuild('rod'),
   repair: (id, el) => {
     if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
     const err = E.repairHouse(st);
@@ -660,6 +665,8 @@ function card(id) {
       ? `<span class="tag wait">🌱 ${seasonLine(w, L > 0)}</span>`
       : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.baseIncome(id, 1) * k)}/мин`}</span>`;
     stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.baseIncome(id, 1) * k)}/мин в сезон</span>` : ''}${L < max ? `<span class="tag inc">${L ? `+${short(next)}/мин за уровень` : ''}</span>`.replace('<span class="tag inc"></span>', '') : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
+  } else if (b.kind === 'gear') {
+    stats = `<span class="tag inc">окно поклёвки ${(E.biteWindow(st) / 1000).toFixed(2).replace('.', ',')} с${L < max ? ` → ${(0.6 * (1 + 0.25 * (L + 1))).toFixed(2).replace('.', ',')} с` : ''}</span><span class="tag">редкая рыба ×${1 + 0.5 * L}${L < max ? ` → ×${1 + 0.5 * (L + 1)}` : ''}</span>`;
   } else if (b.kind === 'boost') {
     stats = `<span class="tag inc">сейчас +${Math.round(b.boost * L * 100)}% ко всему</span><span class="tag">+${Math.round(b.boost * 100)}% за уровень</span>`;
   }
@@ -1169,31 +1176,62 @@ function petDog() {
 const hm = (ms) => { const m = Math.ceil(ms / 60000); return m < 60 ? `${m} мин` : `${Math.floor(m / 60)} ч ${m % 60} мин`; };
 
 /* ================= Рыбалка ================= */
-function openFishing() {
-  const left = E.fishLeft(st);
-  const price = E.itemPrice(st, 'fish');
-  const inOrders = E.activeOrders(st).some(x => x.o.items.some(it => it.p === 'fish' && it.have < it.need));
-  sheet('🎣 Рыбалка', `<div class="fish-intro"><div class="fi-art">🎣</div>
-    <p><b>20 секунд у пруда.</b> Смотри на поплавок: когда он <b>нырнёт</b> и появится «!» — тапай! Поторопишься — рыба уйдёт.</p>
-    <div class="tags"><span class="tag inc">1 🐟 ≈ ${short(price)}</span><span class="tag">${inOrders ? 'рыбу ждут в заказе!' : 'рыба идёт в заказы и на прилавок'}</span></div>
-    <p class="note">Сегодня осталось заходов: <b>${left} из ${FISH_PER_DAY}</b></p>
-    <button class="btn primary big" data-act="fishGo" ${left ? '' : 'data-lock="Не больше 3 раз в день — приходи завтра!"'}>${left ? 'Закинуть удочку' : 'Приходи завтра'}</button></div>`, 'fishing-intro');
+// рисунок рыбы для результата и таблицы улова
+function fishArt(f, w = 120) {
+  if (f.chest) return `<svg viewBox="0 0 120 70" width="${w}" aria-hidden="true"><g stroke="#3b2a1f" stroke-width="2.4" stroke-linejoin="round"><rect x="26" y="26" width="68" height="38" rx="4" fill="#a8693c"/><path d="M26 30 q34 -26 68 0z" fill="#8b5a36"/><rect x="54" y="32" width="12" height="14" fill="#f2c84b"/></g><path d="M30 42 h60 M30 56 h60" stroke="#6b4426" stroke-width="2"/><path d="M98 18 l4 -8 M104 24 l8 -4 M18 18 l-4 -8" stroke="#f2c84b" stroke-width="3" stroke-linecap="round"/></svg>`;
+  const c = { crucian: ['#e8b24a', '#f6d77d'], perch: ['#8fae3c', '#cfe08a'], pike: ['#6f8f5a', '#c9d7a6'], catfish: ['#6b6f78', '#b9bec6'] }[f.id];
+  const stripes = f.id === 'perch' ? '<path d="M48 22 v26 M60 20 v30 M72 22 v26" stroke="#3b5a1f" stroke-width="4" opacity=".55"/>' : '';
+  const spots = f.id === 'pike' ? '<g fill="#e9f0d0"><circle cx="50" cy="30" r="2.5"/><circle cx="64" cy="38" r="2.5"/><circle cx="76" cy="28" r="2.5"/></g>' : '';
+  const whisk = f.id === 'catfish' ? '<path d="M98 40 q10 6 14 16 M98 42 q12 0 18 6" stroke="#3b2a1f" stroke-width="2" fill="none" stroke-linecap="round"/>' : '';
+  const ry = f.id === 'pike' ? 12 : f.id === 'catfish' ? 15 : 16;
+  return `<svg viewBox="0 0 120 70" width="${w}" aria-hidden="true"><g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round">
+    <path d="M22 35 L4 18 L8 35 L4 52z" fill="${c[0]}"/><ellipse cx="62" cy="35" rx="${f.id === 'pike' ? 44 : 40}" ry="${ry}" fill="${c[0]}"/>
+    <path d="M40 ${35 + ry * .4} q22 ${ry * .7} 50 0" fill="${c[1]}" stroke="none"/><path d="M52 ${35 - ry} q10 -10 22 0z" fill="${c[0]}"/></g>
+    ${stripes}${spots}<circle cx="90" cy="31" r="4" fill="#fff" stroke="#3b2a1f" stroke-width="1.6"/><circle cx="91" cy="31" r="2" fill="#2a1d16"/>${whisk}</svg>`;
 }
-function startFishGame() {
-  const err = E.startFishing(st);
-  if (err) { sfx.error(); return toast(err); }
+const waitTxt = (ms) => mmss(ms);
+// бейджи над мостками и прудом: «🎣 клюёт!» или таймер
+function fishBadges() {
+  for (const spot of Object.keys(FISH_SPOTS)) {
+    const g = svg.querySelector('#fishBadge-' + spot);
+    if (!g) continue;
+    const w = E.fishWait(st, spot), t = w > 0 ? `⏳ ${waitTxt(w)}` : '🎣 клюёт!';
+    const tx = g.querySelector('text');
+    if (tx.textContent !== t) { tx.textContent = t; g.classList.toggle('ready', w <= 0); }
+  }
+  const tm = layer.querySelector('#fishTimer');
+  if (tm) { const w = E.fishWait(st, tm.dataset.spot); if (w > 0) tm.textContent = waitTxt(w); else if (layer.dataset.kind === 'fishing-intro') openFishing(tm.dataset.spot); }
+}
+function openFishing(spot = 'home') {
+  if (!E.spotOpen(st, spot)) return toast(spot === 'river' ? 'Пруд откроется в «Реке и луге»' : 'Сначала уборка!');
+  const S = FISH_SPOTS[spot], w = E.fishWait(st, spot), rod = E.level(st, 'rod');
+  const uk = E.ukhaOrder(st);
+  const rows = FISH.map(f => `<li>${fishArt(f, 46)}<span>${f.name}${f.rare ? ' <em>редкая</em>' : ''}</span><b>≈ ${short(E.fishValue(st, f, spot))}</b></li>`).join('');
+  sheet(`🎣 ${S.name}`, `<div class="fish-intro">
+    ${w > 0 ? `<div class="fish-wait">Клюёт через <b id="fishTimer" data-spot="${spot}">${waitTxt(w)}</b></div><p class="note">Рыбачить можно раз в ${S.cd} минут.</p>`
+      : `<p><b>Смотри на поплавок.</b> Когда он <b>нырнёт</b> и появится «!» — сразу тапай! Поторопишься или опоздаешь — рыба сорвётся, а следующий заброс — через ${S.cd} мин.</p>
+         <button class="btn primary big" data-act="fishGo" data-id="${spot}">Закинуть удочку</button>`}
+    ${uk ? `<div class="tag inc fish-uk">🍲 Кафе ждёт рыбу на уху: ${uk.o.items[0].have}/${uk.o.items[0].need} — награда ${short(uk.o.reward)}</div>` : ''}
+    <ul class="fish-table">${rows}</ul>
+    <div class="rod-line">Удочка: <b>${rod ? 'ур. ' + rod : 'дедова, простая'}</b> · окно поклёвки ${(E.biteWindow(st) / 1000).toFixed(2).replace('.', ',')} с
+      ${rod < 3 ? '<button class="btn" data-act="rod">Улучшить</button>' : ''}</div>
+    ${spot === 'home' && st.tier >= 1 ? '<p class="note">В «Реке и луге» есть пруд: клюёт раз в 15 минут, рыба дороже.</p>' : ''}</div>`, 'fishing-intro');
+}
+let fishGame = null;
+function startFishGame(spot = 'home') {
+  const err = E.castRod(st, spot);
+  if (err) { sfx.error(); return toast(cap1(err)); }
   persist(true);
   openLayer(`<div class="fish-game" id="fishGame">
-    <div class="fg-top"><span>🐟 <b id="fgN">0</b></span><span class="fg-time"><i id="fgT"></i></span><span id="fgS">20</span></div>
-    <svg viewBox="0 0 360 420" class="fg-pond">
-      <rect width="360" height="420" fill="#6fb6ec"/>
+    <div class="fg-top"><span>🎣 ${FISH_SPOTS[spot].name}</span></div>
+    <svg viewBox="0 0 360 380" class="fg-pond">
+      <rect width="360" height="380" fill="#6fb6ec"/>
       <g stroke="#a9d8f6" stroke-width="3" fill="none" stroke-linecap="round" class="ripples">
-        <path d="M30 80 q15 -6 30 0 q15 6 30 0"/><path d="M220 60 q15 -6 30 0 q15 6 30 0"/><path d="M60 330 q15 -6 30 0 q15 6 30 0"/><path d="M240 360 q15 -6 30 0 q15 6 30 0"/></g>
-      <g fill="#5aa24a" stroke="#3b2a1f" stroke-width="1.4"><ellipse cx="60" cy="200" rx="26" ry="10"/><ellipse cx="300" cy="250" rx="22" ry="9"/></g><circle cx="66" cy="196" r="5" fill="#f39ac1"/>
-      <path d="M10 420 l-6 -60 M22 420 l4 -70 M34 420 l10 -56 M330 420 l-8 -64 M346 420 l4 -54" stroke="#6b8f3a" stroke-width="5" stroke-linecap="round"/>
-      <path d="M360 0 Q 250 120 180 210" stroke="#3b2a1f" stroke-width="1.2" fill="none" opacity=".7"/>
-      <g id="fgRings"></g>
-      <g id="fgBob" transform="translate(180 210)"><g class="bob">
+        <path d="M30 70 q15 -6 30 0 q15 6 30 0"/><path d="M220 50 q15 -6 30 0 q15 6 30 0"/><path d="M60 300 q15 -6 30 0 q15 6 30 0"/><path d="M240 330 q15 -6 30 0 q15 6 30 0"/></g>
+      <g fill="#5aa24a" stroke="#3b2a1f" stroke-width="1.4"><ellipse cx="60" cy="180" rx="26" ry="10"/><ellipse cx="300" cy="230" rx="22" ry="9"/></g><circle cx="66" cy="176" r="5" fill="#f39ac1"/>
+      <path d="M10 380 l-6 -60 M22 380 l4 -70 M34 380 l10 -56 M330 380 l-8 -64 M346 380 l4 -54" stroke="#6b8f3a" stroke-width="5" stroke-linecap="round"/>
+      <path d="M360 0 Q 250 110 180 190" stroke="#3b2a1f" stroke-width="1.2" fill="none" opacity=".7"/>
+      <g id="fgBob" transform="translate(180 190)"><g class="bob">
         <ellipse cx="0" cy="14" rx="16" ry="5" fill="#000" opacity=".12"/>
         <path d="M0 -26 V-10" stroke="#3b2a1f" stroke-width="2.5"/>
         <ellipse cx="0" cy="0" rx="9" ry="13" fill="#fff" stroke="#3b2a1f" stroke-width="2"/>
@@ -1201,72 +1239,72 @@ function startFishGame() {
         <g class="bang" opacity="0"><circle cx="24" cy="-34" r="14" fill="#ffd23f" stroke="#3b2a1f" stroke-width="2"/><text x="24" y="-28" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="18" fill="#c8362b">!</text></g></g>
       <g id="fx"></g>
     </svg>
-    <p class="fg-hint" id="fgHint">Жди поклёвку…</p></div>`, 'screen dim keep-ui fishing', false);
+    <p class="fg-hint" id="fgHint">Ждём поклёвку…</p></div>`, 'screen dim keep-ui fishing', false);
   layer.dataset.kind = 'fishing';
-  const box = $('#fishGame'), fsvg = box.querySelector('svg'), bob = box.querySelector('#fgBob');
-  const g = { n: 0, t0: Date.now(), state: 'wait', next: 0, until: 0, timers: [] };
+  const box = $('#fishGame'), bob = box.querySelector('#fgBob');
+  const g = fishGame = { spot, state: 'wait', timers: [], over: false };
   const later = (fn, ms) => g.timers.push(setTimeout(fn, ms));
   const setHint = (t) => { const h = box.querySelector('#fgHint'); if (h) h.textContent = t; };
-  const moveBob = () => { const x = 70 + Math.random() * 220, y = 130 + Math.random() * 200; bob.setAttribute('transform', `translate(${x} ${y})`); g.x = x; g.y = y; };
-  g.x = 180; g.y = 210;
-  const nibble = () => { if (g.state !== 'wait') return; bob.classList.remove('nib'); void bob.getBoundingClientRect(); bob.classList.add('nib'); sfx.plop(); };
-  const schedule = (delay) => {
-    g.state = 'wait';
-    const d = delay ?? 1200 + Math.random() * 2200;
-    if (Math.random() < 0.6) later(nibble, d * 0.45); // ложная поклёвка — дёрнулся, но не нырнул
-    later(bite, d);
-  };
-  const bite = () => {
-    if (g.state !== 'wait' || g.over) return;
-    g.state = 'bite'; g.until = Date.now() + 850;
-    bob.classList.add('bite'); haptic('rigid'); sfx.plop();
-    setHint('Клюёт! Тапай!');
-    later(() => { if (g.state === 'bite') { g.state = 'gone'; bob.classList.remove('bite'); setHint('Сорвалась… жди следующую'); schedule(); } }, 850);
-  };
+  const win = E.biteWindow(st);
+  const biteAt = 1500 + Math.random() * 4500;           // поклёвка через 1,5–6 с (вся игра — до ~8 с)
+  const nibbles = Math.floor(Math.random() * 3);         // 0–2 ложных подёргивания
+  for (let i = 0; i < nibbles; i++) later(() => { if (g.state !== 'wait') return; bob.classList.remove('nib'); void bob.getBoundingClientRect(); bob.classList.add('nib'); sfx.plop(); }, biteAt * (0.3 + 0.3 * i));
+  later(() => {
+    if (g.state !== 'wait') return;
+    g.state = 'bite'; bob.classList.add('bite'); haptic('rigid'); sfx.plop(); setHint('Клюёт! Тапай!');
+    later(() => { if (g.state === 'bite') fishFail(g, 'late'); }, win);
+  }, biteAt);
   box.addEventListener('pointerdown', (e) => {
     e.preventDefault();
     if (g.over) return;
-    if (g.state === 'bite') {
-      const big = Math.random() < 0.2, k = big ? 2 : 1;
-      g.n += k; g.state = 'caught'; bob.classList.remove('bite');
-      box.querySelector('#fgN').textContent = g.n;
-      sfx.splash(); setTimeout(() => sfx.coin(), 120); haptic('medium');
-      floatText(fsvg, g.x, g.y - 30, big ? 'Крупная! +2 🐟' : '+1 🐟', '#1f5e9a');
-      setHint(big ? 'Вот это лещ!' : 'Есть!');
-      later(() => { moveBob(); schedule(); }, 450);
-    } else if (g.state === 'wait') {
-      sfx.error(); haptic(); setHint('Рано! Рыба испугалась…');
-      floatText(fsvg, g.x, g.y - 30, 'рано!', '#c8362b');
-      g.timers.forEach(clearTimeout); g.timers = [];
-      schedule(1600 + Math.random() * 1600); // спугнул — поклёвка позже
-    }
+    if (g.state === 'bite') fishCatch(g);
+    else if (g.state === 'wait') fishFail(g, 'early');
   });
-  const tickT = () => {
-    if (g.over || layer.dataset.kind !== 'fishing') return;
-    const left = Math.max(0, FISH_GAME_MS - (Date.now() - g.t0));
-    box.querySelector('#fgS').textContent = Math.ceil(left / 1000);
-    box.querySelector('#fgT').style.width = (100 * left / FISH_GAME_MS) + '%';
-    if (left <= 0) return endFish(g);
-    requestAnimationFrame(tickT);
-  };
-  schedule(1500);
-  requestAnimationFrame(tickT);
 }
-function endFish(g) {
-  g.over = true; g.timers.forEach(clearTimeout);
-  const r = E.catchFish(st, g.n);
+function fishFail(g, why) {
+  g.over = true; g.state = 'gone'; g.timers.forEach(clearTimeout);
+  E.missFish(st); persist(true);
+  sfx.splash(); haptic();
+  const bob = $('#fgBob'); bob?.classList.remove('bite');
+  const S = FISH_SPOTS[g.spot];
+  setTimeout(() => {
+    openLayer(`<div class="dialog fish-res"><div class="dog-pic">💦</div><h3>Сорвалась!</h3>
+      <p>${why === 'early' ? 'Поторопился — поплавок только дёрнулся, а рыба испугалась.' : 'Не успел подсечь — рыба ушла с наживкой.'}</p>
+      <p class="note">Следующий заброс — через ${S.cd} минут.</p>
+      <div class="row"><button class="btn primary wide" data-act="close">Эх…</button></div></div>`, 'screen dim keep-ui', true);
+    layer.dataset.kind = 'fish-res';
+  }, 450);
+}
+function fishCatch(g) {
+  g.over = true; g.state = 'caught'; g.timers.forEach(clearTimeout);
+  const f = E.rollFish(st);
+  g.fish = f;
+  sfx.splash(); setTimeout(() => sfx.coin(), 120); haptic('medium'); notify('success');
+  const v = E.fishValue(st, f, g.spot), uk = E.ukhaOrder(st);
+  setTimeout(() => {
+    if (f.chest) {
+      const r = E.landFish(st, f, g.spot); render(); persist(true);
+      openLayer(`<div class="dialog fish-res"><div class="fish-pic">${fishArt(f, 160)}</div><h3>Старый сундук деда!</h3>
+        <p>Внутри — старые фотографии, медаль и конверт с деньгами: <b>+${short(r.sold)}</b>, +30 ⭐</p>
+        <div class="row"><button class="btn primary wide" data-act="close">Открыть открытку</button></div></div>`, 'screen dim keep-ui', true);
+      layer.dataset.kind = 'fish-res'; sfx.fanfare();
+      return;
+    }
+    openLayer(`<div class="dialog fish-res"><div class="fish-pic">${fishArt(f, 160)}</div><h3>${f.name}!${f.rare ? ' <em class="rare">редкая</em>' : ''}</h3>
+      <p>Продать сразу — <b>${short(v)}</b>${uk ? `, или отдать в заказ <b>«Уха»</b> (${uk.o.items[0].have}/${uk.o.items[0].need}, награда ${short(uk.o.reward)})` : ''}.</p>
+      <div class="row"><button class="btn primary wide" data-act="fishSell">Продать · ${short(v)}</button>${uk ? '<button class="btn wide" data-act="fishOrder">🍲 В заказ</button>' : ''}</div></div>`, 'screen dim keep-ui', false);
+    layer.dataset.kind = 'fish-res';
+  }, 450);
+}
+function takeCatch(toOrder) {
+  const g = fishGame; if (!g?.fish || g.taken) return closeLayer();
+  g.taken = true;
+  const r = E.landFish(st, g.fish, g.spot, toOrder);
   render(); persist(true);
-  if (g.n) { notify('success'); sfx.fanfare(); }
-  const left = E.fishLeft(st);
-  openLayer(`<div class="dialog fish-res"><div class="dog-pic">${g.n ? '🐟' : '🪣'}</div>
-    <h3>${g.n ? `Улов: ${g.n} 🐟` : 'Сегодня не клюёт…'}</h3>
-    ${g.n ? `<p>${r.units ? `В заказ отложено: <b>${r.units} 🐟</b>. ` : ''}${r.sold ? `Продано на <b>${short(r.sold)}</b>. ` : ''}+${g.n} ⭐</p>` : '<p>Ничего, дед тоже не всегда ловил. Попробуй ещё!</p>'}
-    <p class="note">Заходов на сегодня: ${left} из ${FISH_PER_DAY}</p>
-    <div class="row">${left ? '<button class="btn wide" data-act="fishGo">Ещё раз</button>' : ''}<button class="btn primary wide" data-act="close">Отлично</button></div></div>`, 'screen dim keep-ui', true);
-  layer.dataset.kind = 'fish-res';
-  afterGainSoon();
+  closeLayer();
+  if (r.order) { toast(`🍲 ${g.fish.name} — в заказ «Уха»`); if (E.activeOrders(st).some(x => x.o.ukha && E.orderDone(x.o))) setTimeout(() => toast('📋 Уха готова — сдай заказ на доске!'), 2300); }
+  else { flyToMoney(g.spot === 'home' ? 'creek' : 'pond', `+${short(r.sold)}`); toast(`${g.fish.name}: +${short(r.sold)}`); }
 }
-const afterGainSoon = () => setTimeout(() => { if (layer.hidden) afterGain(); }, 400);
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
 const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
@@ -1314,8 +1352,10 @@ function openRules() {
     <p><b>6. Рейтинг.</b> Место — по капиталу фермы: деньги + постройки − долг. Покупки за Telegram Stars в рейтинг не идут.</p>
     <p><b>7. Заказы.</b> Доска у дороги: кафе, дачники и магазин платят дороже прилавка и дают ⭐ опыт. Опыт поднимает уровень фермы — открываются постройки.</p>
     <p><b>8. Дом деда.</b> Тап по дому: ремонт по этапам (+3% к доходу за каждый) и письма деда. После крыльца прибежит щенок — гладь его раз в 4 часа: +10% к доходу на 30 минут.</p>
-    <p><b>9. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» с рыбалкой (до 3 раз в день), дальше — Райцентр и Агрохолдинг.</p>
-    <p><b>10. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
+    <p><b>9. Рыбалка.</b> Мостки у речки внизу фермы: раз в 20 минут. Тапни, когда поплавок нырнёт! Рыбу можно продать или отдать в заказ «Уха». Удочку улучшают в «Стройке».</p>
+    <p><b>10. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» (пруд — раз в 15 минут, рыба дороже), дальше — Райцентр и Агрохолдинг.</p>
+    <p><b>11. Работники.</b> «👷 Работники» в «Стройке» и в разделе «Моя ферма»: помощник сам собирает урожай, водитель сдаёт заказы. Зарплата — раз в месяц.</p>
+    <p><b>12. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }
