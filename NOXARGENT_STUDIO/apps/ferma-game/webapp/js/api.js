@@ -3,7 +3,10 @@
 
 const tg = window.Telegram?.WebApp;
 const initData = tg?.initData || '';
-const LS_KEY = 'ferma-deda-save-v1';
+// Копия сохранения в памяти устройства — СВОЯ для каждого Telegram-аккаунта (память WebView общая для всех
+// аккаунтов на телефоне). Вне Telegram (браузер на ПК) — общий ключ, как раньше.
+const TG_UID = tg?.initDataUnsafe?.user?.id;
+const LS_KEY = TG_UID ? `ferma-deda-save-v1:tg${TG_UID}` : 'ferma-deda-save-v1';
 const API = (window.FERMA_CONFIG && window.FERMA_CONFIG.apiBase) || '';
 export const online = !!initData;
 
@@ -41,19 +44,25 @@ function writeLocal(data) {
 }
 
 // { game, album, updatedAt } — берём более свежую копию из сервера и браузера
+// В Telegram прогресс принадлежит аккаунту: берём сохранение с сервера (по Telegram id из подписанного initData).
+// Локальная копия этого же аккаунта нужна, только если она свежее (игра закрылась до отправки на сервер)
+// или сервер недоступен. Новый аккаунт — новая ферма, даже на том же телефоне.
 export async function loadSave() {
   const local = readLocal();
   if (!online) return local;
   try {
     const remote = await request('GET', '/api/save');
-    if (remote && (!local || (remote.updatedAt || 0) >= (local.updatedAt || 0))) return remote;
+    if (!remote) return local && local.owner === TG_UID ? local : null;
+    if (local && local.owner === TG_UID && (local.updatedAt || 0) > (remote.updatedAt || 0)) return local;
+    return remote;
   } catch (e) { console.warn('load failed', e); }
-  return local;
+  return local && local.owner === TG_UID ? local : null;
 }
 
 let timer = null, pending = null;
 export function save(data, { now = false } = {}) {
   data.updatedAt = Date.now();
+  if (TG_UID) data.owner = TG_UID; // чья это ферма — чужую копию не подхватим
   writeLocal(data);
   if (!online) return;
   pending = data;
