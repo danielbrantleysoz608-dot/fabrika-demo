@@ -13,7 +13,7 @@ say() { printf '\n\033[1;32m== %s\033[0m\n' "$*"; }
 say "1/7 Пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
-apt-get install -y -q python3 python3-venv python3-pip git nginx certbot python3-certbot-nginx curl sqlite3
+apt-get install -y -q python3 python3-venv python3-pip git nginx certbot python3-certbot-nginx curl sqlite3 gzip
 
 say "2/7 Пользователь ferma"
 id ferma >/dev/null 2>&1 || useradd --system --create-home --home-dir "$ROOT" --shell /bin/bash ferma
@@ -93,6 +93,29 @@ UNIT
 systemctl daemon-reload
 systemctl enable -q --now ferma-bot
 systemctl restart ferma-bot
+
+say "Ежедневная копия базы (04:00 по Москве)"
+cat > /etc/systemd/system/ferma-backup.service <<UNIT
+[Unit]
+Description=Ферма деда: копия базы
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $APP/deploy/backup.sh
+UNIT
+cat > /etc/systemd/system/ferma-backup.timer <<UNIT
+[Unit]
+Description=Ферма деда: копия базы каждый день
+
+[Timer]
+OnCalendar=*-*-* 01:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable -q --now ferma-backup.timer
 
 say "7/7 nginx + HTTPS для $DOMAIN"
 cat > /etc/nginx/sites-available/ferma <<NGX

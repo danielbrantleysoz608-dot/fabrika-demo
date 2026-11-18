@@ -4,8 +4,7 @@ set -euo pipefail
 ROOT=/opt/ferma
 APP="$ROOT/repo/NOXARGENT_STUDIO/apps/ferma-game"
 BRANCH="${BRANCH:-claude/ferma-game-telegram-app-57b7fw}"
-cp "$APP/bot/data/ferma.sqlite3" "$ROOT/backup-$(date +%Y%m%d-%H%M).sqlite3" 2>/dev/null || true   # копия базы на всякий случай
-ls -1t "$ROOT"/backup-*.sqlite3 2>/dev/null | tail -n +11 | xargs -r rm -f                         # храним 10 последних
+bash "$APP/deploy/backup.sh" || true   # копия базы перед обновлением
 sudo -u ferma git -C "$ROOT/repo" fetch -q --depth 1 origin "$BRANCH"
 sudo -u ferma git -C "$ROOT/repo" reset -q --hard FETCH_HEAD
 sudo -u ferma "$APP/bot/.venv/bin/pip" install -q -r "$APP/bot/requirements.txt"
