@@ -606,3 +606,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #app.info-view .locnav { display: none; }
 .fish-badge.ready { animation: fishPulse .9s ease-in-out infinite alternate; }
 @keyframes fishPulse { from { transform: scale(1); } to { transform: scale(1.1); } }
+/* 5 быстрых кнопок + уровень помещаются в 375 px */
+.quick { gap: 5px; }
+.qbtn { width: 52px; }
+.qbtn small { font-size: 8.5px; letter-spacing: -.01em; }
+.lvl-pill { min-width: 60px; padding: 4px 6px; }
+@media (max-width: 370px) { .qbtn { width: 49px; } .qbtn small { font-size: 8px; } .lvl-pill { min-width: 54px; } .quick { gap: 4px; } }

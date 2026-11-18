@@ -1361,6 +1361,7 @@ function goalStatus(name) {
 const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
       <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
       <button class="qbtn" data-q="map" aria-label="Карта"><span>🗺</span><small>Карта</small></button>
+      <button class="qbtn" data-q="workers" aria-label="Работники"><span>👷</span><small>Работники</small></button>
       <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
       <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>`;
 fastTap($('#quick'), (e) => {
@@ -1371,6 +1372,7 @@ fastTap($('#quick'), (e) => {
   if (q === 'rating') return ACTIONS.rating();
   if (q === 'cards') return openBook('cards');
   if (q === 'map') return openMap();
+  if (q === 'workers') return openWorkers();
   if (q === 'settings') return openSettings();
   if (q === 'menu') return ACTIONS.menu();
   if (q === 'level') { const lp = E.levelProgress(st); const next = E.unlockedAt(lp.level + 1).map(id => BUILDINGS[id].name); return toast(`Уровень фермы ${lp.level}: ${lp.have}/${lp.need} ⭐${next.length ? ' · дальше: ' + next.join(', ') : ''}`); }
