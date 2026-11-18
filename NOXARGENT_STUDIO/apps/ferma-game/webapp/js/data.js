@@ -2,7 +2,7 @@
 
 export const SCHEMA_VERSION = 2;
 export const START_MONEY = 10_000;
-export const SCRAP_BONUS = 5_000;           // награда за уборку: дедов металлолом
+export const SCRAP_BONUS = 6_000;           // награда за уборку: дедов металлолом (10 000 + 6 000 = хватает на крышу дома деда 15 000 и курятник 420)
 export const MONTH_MS = 15 * 60 * 1000;     // 1 игровой месяц = 15 минут реального времени
 export const OFFLINE_CAP_MS = 2 * 60 * 60 * 1000; // офлайн копим максимум 2 часа
 export const STORAGE_MIN = 120;             // склад постройки вмещает 2 часа производства
