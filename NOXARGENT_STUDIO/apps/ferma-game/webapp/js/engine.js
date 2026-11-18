@@ -492,7 +492,8 @@ export function makeOrder(st, now, big = false) {
   if (!big && st.phase !== 'clean' && !activeOrders(st).some(x => x.o.ukha) && r() < 0.25) {
     const need = 1 + (r() < 0.4 ? 1 : 0);
     return { client: 'cafe', ukha: true, name: 'Кафе «У трассы» — уха', emoji: '🍲', big: false, items: [{ p: 'fish', need, have: 0 }],
-      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), // ≈9 мин дохода за рыбу xp: 12 + need * 6, at: now };
+      // награда ≈9 мин дохода за рыбу
+      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), xp: 12 + need * 6, at: now };
   }
   const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
   const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
