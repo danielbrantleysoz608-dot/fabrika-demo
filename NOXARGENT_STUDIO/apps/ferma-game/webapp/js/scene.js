@@ -454,6 +454,26 @@ function farItems(m, st) {
   return s;
 }
 
+/* ---------- Доска заказов (на лугу у прилавка) ---------- */
+function orderBoard(st) {
+  const done = st.ordersDone || 0, total = st.ordersActive || 0;
+  const notes = [0, 1, 2].map(i => {
+    const x = 332 + i * 24, filled = i < total;
+    return filled ? `<g transform="rotate(${[-4, 3, -2][i]} ${x + 10} 724)"><rect x="${x}" y="712" width="20" height="24" fill="${i < done ? '#dff2d8' : '#fffaf0'}" stroke="#8a5a3c" stroke-width="1.2"/>
+      <path d="M${x + 4} ${720} h12 M${x + 4} ${725} h9 M${x + 4} ${730} h11" stroke="#b9a07c" stroke-width="1.4"/><circle cx="${x + 10}" cy="714" r="2" fill="#d8392d"/></g>` : '';
+  }).join('');
+  const badge = done ? `<g class="board-badge"><circle cx="400" cy="700" r="11" fill="#d8392d" stroke="#fff" stroke-width="2.5"/><text x="400" y="704.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="12" fill="#fff">${done}</text></g>` : '';
+  return `<g id="board" data-tap="board">
+    <rect x="312" y="690" width="100" height="78" fill="transparent"/>
+    <ellipse cx="363" cy="766" rx="44" ry="5" fill="#000" opacity=".12"/>
+    <rect x="332" y="728" width="6" height="38" fill="#7b5236" ${OLt}/><rect x="388" y="728" width="6" height="38" fill="#7b5236" ${OLt}/>
+    <rect x="322" y="700" width="82" height="44" rx="4" fill="#b9844f" ${OL}/>
+    <rect x="326" y="704" width="74" height="36" rx="3" fill="#a8743f"/>
+    <rect x="334" y="692" width="58" height="13" rx="3" fill="#f8efd9" stroke="#8a5a3c" stroke-width="1.6"/>
+    <text x="363" y="702" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="8.5" fill="#5b3a26">ЗАКАЗЫ</text>
+    ${notes}${badge}</g>`;
+}
+
 /* ---------- Мусор (уборка) ---------- */
 
 function trashItem(t) {
@@ -581,6 +601,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
     if (b.tractor) s += tractorVehicle();
     svg.querySelector('#far').innerHTML = farItems(m, st);
     if (st.fox) s += fox();
+    if (clean && st.canBuild) s += orderBoard(st);
     if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
     if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
     if (!clean) s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');

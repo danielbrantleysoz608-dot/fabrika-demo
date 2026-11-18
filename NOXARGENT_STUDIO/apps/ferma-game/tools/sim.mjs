@@ -46,6 +46,11 @@ function visit(st, now, r, trace, log) {
   E.collectAll(st);
   E.dailyTasks(st).forEach((t, i) => t.done && !t.claimed && E.claimDaily(st, i));
   if (st.debt && st.money >= st.debt * 1.2) E.repay(st); // кредит возвращаем, как только хватает
+  // доска заказов: сдаём готовые, «зависшие» дольше 40 минут — отклоняем
+  for (const { o, i } of E.activeOrders(st)) {
+    if (E.orderDone(o)) E.deliverOrder(st, i, now);
+    else if (now - o.at > 40 * MIN) E.declineOrder(st, i, now);
+  }
   shop(st, now, trace, log);
   if (E.monthReady(st)) {
     const e = E.endMonth(st);

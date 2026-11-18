@@ -58,40 +58,66 @@ export const SEASON_ICON = { early: 'sprout', spring: 'sprout', summer: 'sun', a
 const always = () => 1;
 const months = (from, to, k = 1) => (m) => (m >= from && m <= to ? k : 0);
 export const BUILDINGS = {
-  coop:       { kind: 'prod', name: 'Курятник', cost: 420, inc: 42, unit: 'яиц', price: 12, tier: 0, max: 10,
+  coop:       { product: 'egg', lvl: 1, kind: 'prod', name: 'Курятник', cost: 420, inc: 42, unit: 'яиц', price: 12, tier: 0, max: 10,
                 season: (m) => (m >= 9 ? 0.5 : 1), seasonText: 'круглый год, зимой вдвое меньше',
                 desc: 'Куры несут яйца. Каждый уровень — +10 кур и быстрее.' },
-  stall:      { kind: 'boost', name: 'Прилавок у дороги', cost: 6000, boost: 0.05, costMult: 2, tier: 0, max: 10,
+  stall:      { lvl: 2, kind: 'boost', name: 'Прилавок у дороги', cost: 6000, boost: 0.05, costMult: 2, tier: 0, max: 10,
                 desc: '«ЯЙЦА деревенские». Каждый уровень — +5% ко всему доходу.' },
-  garden:     { kind: 'prod', name: 'Огород', cost: 1900, inc: 136, unit: 'кг', price: 25, tier: 0, max: 10,
+  garden:     { product: 'veg', lvl: 2, kind: 'prod', name: 'Огород', cost: 1900, inc: 136, unit: 'кг', price: 25, tier: 0, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Грядки на дедовом поле.' },
-  fence:      { kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
-  greenhouse: { kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 83, unit: 'кг', price: 60, tier: 0, max: 10,
+  fence:      { lvl: 2, kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
+  greenhouse: { product: 'cuke', lvl: 1, kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 83, unit: 'кг', price: 60, tier: 0, max: 10,
                 season: (m, st) => (m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь, зимой — с печкой',
                 desc: 'Дед хранил старые рамы. Собираем из них теплицу!' },
-  stove:      { kind: 'once', name: 'Печка в теплицу', cost: 30000, tier: 0, requires: 'greenhouse',
+  stove:      { lvl: 4, kind: 'once', name: 'Печка в теплицу', cost: 30000, tier: 0, requires: 'greenhouse',
                 desc: 'Буржуйка: зимой теплица работает и даёт ×1.5 (огурцы втридорога).' },
-  apiary:     { kind: 'prod', name: 'Пасека', cost: 3400, inc: 227, unit: 'кг мёда', price: 600, tier: 0, max: 10,
+  apiary:     { product: 'honey', lvl: 3, kind: 'prod', name: 'Пасека', cost: 3400, inc: 227, unit: 'кг мёда', price: 600, tier: 0, max: 10,
                 season: months(3, 5), seasonText: 'мёд июнь – август', desc: 'Ульи. Мёд только летом, зато дорогой.' },
-  omshanik:   { kind: 'once', name: 'Омшаник', cost: 20000, tier: 0, requires: 'apiary',
+  omshanik:   { lvl: 3, kind: 'once', name: 'Омшаник', cost: 20000, tier: 0, requires: 'apiary',
                 desc: 'Зимний домик для пчёл. Без него в декабре пасека откатится на 1-й уровень.' },
-  cow:        { kind: 'prod', name: 'Корова', cost: 2100, inc: 140, unit: 'л молока', price: 60, tier: 0, max: 10,
+  cow:        { product: 'milk', lvl: 4, kind: 'prod', name: 'Корова', cost: 2100, inc: 140, unit: 'л молока', price: 60, tier: 0, max: 10,
                 season: (m) => (m >= 9 ? 0.8 : 1), seasonText: 'круглый год', desc: 'Молоко каждый день. Каждый уровень — ещё корова.' },
   // --- открываются после целей ---
-  cheese:     { kind: 'prod', name: 'Сыроварня', cost: 1500000, inc: 188, unit: 'кг сыра', price: 900, tier: 1, max: 10,
+  cheese:     { product: 'cheese', kind: 'prod', name: 'Сыроварня', cost: 1500000, inc: 188, unit: 'кг сыра', price: 900, tier: 1, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Из своего молока — свой сыр. Дорого и вкусно.' },
-  honeyfield: { kind: 'prod', name: 'Пасека-поле', cost: 3000000, inc: 429, unit: 'кг мёда', price: 600, tier: 1, max: 10,
+  honeyfield: { product: 'honey', kind: 'prod', name: 'Пасека-поле', cost: 3000000, inc: 429, unit: 'кг мёда', price: 600, tier: 1, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Целое поле медоносов и сотня ульев.' },
-  tractor:    { kind: 'prod', name: 'Трактор и поля', cost: 15000000, inc: 1250, unit: 'т зерна', price: 15000, tier: 2, max: 10,
+  tractor:    { product: 'grain', kind: 'prod', name: 'Трактор и поля', cost: 15000000, inc: 1250, unit: 'т зерна', price: 15000, tier: 2, max: 10,
                 season: months(2, 7), seasonText: 'май – октябрь', desc: 'Свой трактор и гектары полей за холмом.' },
-  shop:       { kind: 'prod', name: 'Магазин в городе', cost: 150000000, inc: 12500, unit: 'чеков', price: 1500, tier: 3, max: 10,
+  shop:       { product: 'goods', kind: 'prod', name: 'Магазин в городе', cost: 150000000, inc: 12500, unit: 'чеков', price: 1500, tier: 3, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Фирменная лавка «Ферма деда» в райцентре.' },
   brand:      { kind: 'boost', name: 'Марка «Ферма деда»', cost: 4000000000, boost: 0.5, costMult: 2.5, tier: 4, max: 10,
                 desc: 'Своя марка на полках магазинов. +50% ко всему доходу за уровень.' },
-  factory:    { kind: 'prod', name: 'Завод', cost: 2000000000, inc: 142857, unit: 'т продукции', price: 50000, tier: 5, max: 10,
+  factory:    { product: 'goods', kind: 'prod', name: 'Завод', cost: 2000000000, inc: 142857, unit: 'т продукции', price: 50000, tier: 5, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Свой перерабатывающий завод. Ферма деда — бренд страны!' },
 };
 export const BUILD_ORDER = Object.keys(BUILDINGS);
+
+// Продукция: иконка, название, цена на прилавке за единицу (заказы платят больше)
+export const PRODUCTS = {
+  egg:    { name: 'яйца',    emoji: '🥚', price: 12,    unit: 'шт' },
+  veg:    { name: 'овощи',   emoji: '🍅', price: 25,    unit: 'кг' },
+  cuke:   { name: 'огурцы',  emoji: '🥒', price: 60,    unit: 'кг' },
+  honey:  { name: 'мёд',     emoji: '🍯', price: 600,   unit: 'кг' },
+  milk:   { name: 'молоко',  emoji: '🥛', price: 60,    unit: 'л' },
+  cheese: { name: 'сыр',     emoji: '🧀', price: 900,   unit: 'кг' },
+  fish:   { name: 'рыба',    emoji: '🐟', price: 400,   unit: 'шт' },
+  flour:  { name: 'мука',    emoji: '🥖', price: 300,   unit: 'мешок' },
+  grain:  { name: 'зерно',   emoji: '🌾', price: 15000, unit: 'т' },
+  goods:  { name: 'товары',  emoji: '📦', price: 1500,  unit: 'шт' },
+};
+// Заказчики на доске заказов
+export const CLIENTS = [
+  { id: 'cafe',  name: 'Кафе «У трассы»', emoji: '☕', mult: 1.7 },
+  { id: 'dacha', name: 'Дачники',          emoji: '🏡', mult: 1.6 },
+  { id: 'store', name: 'Магазин в селе',   emoji: '🏪', mult: 1.8 },
+];
+export const ORDER_SLOTS = 3;
+export const ORDER_REFILL_MIN = [2, 5];     // новый заказ после выполнения — через 2–5 мин
+export const ORDER_DECLINE_MIN = 10;        // после отказа — через 10 мин
+// Уровень фермы: опыт (⭐) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n
+export const xpForLevel = (n) => (n <= 1 ? 0 : Math.round(30 * (n - 1) ** 1.7));
+export const XP = { build: 8, repair: 60, order: [12, 30], big: 80 };
 export const PRODUCERS = BUILD_ORDER.filter(id => BUILDINGS[id].kind === 'prod');
 // Сверх 5-й цели максимальный уровень растёт: +5 за каждую следующую цель
 // Открытые уровни: до 1 млн — 1–5, дальше +1 уровень за каждые две цели (10-й — после 1 трлн), потом +5 за цель

@@ -1,7 +1,7 @@
 // «Ферма деда» — контроллер интерфейса: экраны, тапы, Telegram, сохранение.
 import * as E from './engine.js';
 import {
-  BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
+  PRODUCTS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
   monthOf, yearOf, goalLabel, maxLevel, MONTH_MS,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
@@ -66,6 +66,8 @@ function view() {
     clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
+    ordersActive: E.activeOrders(st).filter(x => x.i !== 'big').length,
+    ordersDone: E.activeOrders(st).filter(x => E.orderDone(x.o)).length,
     canBuild: st.phase !== 'clean',
   };
 }
@@ -98,6 +100,9 @@ function hud() {
   const q = $('#quick'), needQuick = !(st.phase === 'clean' || !profile.game);
   if (needQuick && !q.children.length) q.innerHTML = QUICK_HTML;
   if (!needQuick && q.children.length) q.innerHTML = '';
+  // уровень фермы ⭐
+  const lp = E.levelProgress(st), pill = q.querySelector('.lvl-pill');
+  if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; pill.querySelector('i').style.width = Math.round(100 * lp.have / lp.need) + '%'; }
   const sky = SKY[m.season];
   music.setSeason(m.season); // плавная смена мелодии вместе с сезоном (если музыка уже играет)
   if (hud.sky !== sky) {
@@ -206,6 +211,7 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'trash') return hitTrash(id);
   if (tap === 'slot') { haptic(); sfx.click(); return openBuilding(id); }
   if (tap === 'bld') return collect(id);
+  if (tap === 'board') { haptic(); sfx.click(); return openBoard(); }
 });
 
 function hitTrash(id) {
@@ -238,13 +244,20 @@ function collect(id) {
   const pos = READY_POSITIONS[id];
   const amt = E.collect(st, id);
   if (!pos || amt <= 0) { haptic(); return openBuilding(id); } // нечего собирать — открываем карточку улучшения
-  const fresh = E.lastFresh;
-  flyToMoney(id, `+${short(amt)}`);
+  const fresh = E.lastFresh, res = E.lastReserved;
+  const doneBefore = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
+  const sold = amt - res.value;
+  if (sold > 0) flyToMoney(id, `+${short(sold)}`);
   haptic('medium');
   if (fresh > 0 && fresh >= amt * 0.15) sfx.fresh(); else sfx.coin();
   render('ready');
-  floatText(svg, pos[0], pos[1], `+${short(amt)}`);
-  if (fresh > 0 && fresh >= amt * 0.15) setTimeout(() => floatText(svg, pos[0], pos[1] - 18, 'свежее +20%!', '#2f8a2f'), 180);
+  if (sold > 0) floatText(svg, pos[0], pos[1], `+${short(sold)}`);
+  if (res.units > 0) setTimeout(() => floatText(svg, pos[0], pos[1] - (sold > 0 ? 18 : 0), `в заказ: ${PRODUCTS[BUILDINGS[id].product].emoji} ${res.units}`, '#8a5a3c'), 120);
+  if (fresh > 0 && fresh >= amt * 0.15) setTimeout(() => floatText(svg, pos[0], pos[1] - 36, 'свежее +20%!', '#2f8a2f'), 240);
+  // заказ собран полностью — подсветим доску и подскажем
+  const doneNow = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
+  if (doneNow > doneBefore) { render(); sfx.bell(); toast('📋 Заказ собран — сдай его на доске заказов!'); }
+  else if (res.units > 0) render();
   updateDots();
   afterGain();
   persist();
@@ -306,8 +319,47 @@ tg?.onEvent?.('activated', () => sfx.resume());
 
 // Новые цели и открытки — поздравляем, когда ничего не открыто
 function afterGain() {
-  if (!st?.achNew?.length || !layer.hidden) return;
-  showAchievement(st.achNew.shift());
+  if (!st || !layer.hidden || coach.isOpen()) return;
+  if (st.achNew?.length) return showAchievement(st.achNew.shift());
+  // новый уровень фермы
+  const lvl = E.farmLevel(st);
+  if (lvl > (st.lvlSeen || 1)) { st.lvlSeen = lvl; showLevelUp(lvl); return; }
+  // первая доска заказов — расскажем по центру
+  if (!st.flags.boardHint && E.activeOrders(st).length && st.phase === 'play') {
+    st.flags.boardHint = true;
+    important('Появилась <b>доска заказов</b> — внизу, у дороги! Кафе, дачники и магазин платят <b>дороже прилавка</b> и дают ⭐ опыт. Урожай для заказа откладывается сам, когда собираешь.', 'happy');
+  }
+}
+
+/* ================= Доска заказов и уровень фермы ================= */
+function orderCard({ o, i }) {
+  const done = E.orderDone(o);
+  const items = o.items.map(it => `<div class="oi"><span class="oe">${PRODUCTS[it.p].emoji}</span><span class="on">${n(Math.min(it.have, it.need))}/${n(it.need)}</span>
+    <div class="ob"><i style="width:${Math.round(100 * Math.min(1, it.have / it.need))}%"></i></div></div>`).join('');
+  return `<div class="ocard ${o.big ? 'big' : ''} ${done ? 'done' : ''}">
+    <div class="oh"><span class="oc">${o.emoji}</span><b>${o.name}</b>${o.big ? '<em>до конца дня</em>' : ''}</div>
+    <div class="ois">${items}</div>
+    <div class="or"><span>Награда:</span><b>${short(o.reward)}</b><span class="ox">+${o.xp} ⭐</span></div>
+    <div class="row"><button class="btn primary wide" data-act="deliver" data-id="${i}" ${done ? '' : 'data-lock="Ещё не всё собрано — тапай по постройкам"'}>${done ? 'Сдать заказ' : 'Собираем…'}</button>
+      <button class="btn wide ghost-dark" data-act="decline" data-id="${i}">Отказаться</button></div></div>`;
+}
+function openBoard() {
+  const list = [];
+  (st.orders || []).forEach((o, i) => {
+    if (o && !o.wait) list.push(orderCard({ o, i }));
+    else list.push(`<div class="ocard wait"><div class="oh"><span class="oc">⏳</span><b>Новый заказ</b></div><p class="note">появится через ${mmss(Math.max(0, (o?.readyAt || 0) - Date.now()))}</p></div>`);
+  });
+  if (st.big && !st.big.done) list.push(orderCard({ o: st.big, i: 'big' }));
+  sheet('📋 Доска заказов', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Отказался — новый заказ через 10 минут.</p>${list.join('')}`, 'board');
+}
+function showLevelUp(lvl) {
+  const opened = E.unlockedAt(lvl).map(id => BUILDINGS[id].name);
+  notify('success'); sfx.fanfare();
+  openLayer(`<div class="ending"><div class="confetti">${Array.from({ length: 18 }, (_, k) => `<i style="--x:${(k * 41) % 100}%;--d:${(k % 6) * 0.15}s;--c:${['#e8a21a', '#3fa34d', '#4a90d9', '#d8392d'][k % 4]}"></i>`).join('')}</div>
+    <div class="kicker">УРОВЕНЬ ФЕРМЫ</div><div class="lvl-big">⭐ ${lvl}</div>
+    <p class="pc-sub">${opened.length ? 'Открыто: <b>' + opened.join(', ') + '</b>' : 'Ферма растёт! Заказчики стали щедрее.'}</p>
+    <button class="btn primary big" data-act="${opened.length ? 'buildNow' : 'close'}">${opened.length ? 'В «Стройку»' : 'Отлично!'}</button></div>`, 'screen dim', false);
+  layer.dataset.kind = 'levelup';
 }
 
 /* ================= Слои-оверлеи ================= */
@@ -380,6 +432,18 @@ const ACTIONS = {
   splash: () => showSplash(),
   introNext: (id) => showIntro(+id),
   share: (id) => share(id),
+  deliver: (id, el) => {
+    if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
+    const key = id === 'big' ? 'big' : +id;
+    const o = E.deliverOrder(st, key);
+    if (!o) return;
+    notify('success'); sfx.fresh();
+    toast(`${o.emoji} Заказ сдан: +${short(o.reward)}, +${o.xp} ⭐`);
+    render(); persist(true); openBoard();
+    setTimeout(afterGain, 400);
+  },
+  decline: (id) => { const back = E.declineOrder(st, id === 'big' ? 'big' : +id); toast(`Отказались. ${back ? 'Отложенное продали за ' + short(back) + '. ' : ''}Новый заказ — через 10 минут`); render(); persist(true); openBoard(); },
+  buildNow: () => openBuild(),
   claimLogin: () => { const p = E.claimLogin(st); if (p) { sfx.fresh(); notify('success'); toast(`Бонус за вход: +${short(p)}`); } closeLayer(); render(); persist(true); },
   claimDaily: (id) => { const p = E.claimDaily(st, +id); if (p) { sfx.coin(); notify('success'); toast(`Задание выполнено: +${short(p)}`); } render(); persist(true); updateDots(); openBook('tasks'); },
   sound: () => { const m = sfx.toggle(); toast(m ? 'Звук выключен' : 'Звук включён'); openBook('tasks'); },
@@ -724,6 +788,7 @@ function farmInfo() {
       </div>
       ${todo.length ? `<div class="fi-lbl">Ближайшие задания</div><ul class="todo small">${todo.map(([t]) => `<li><span class="box"></span>${t}</li>`).join('')}</ul>` : ''}
       <div class="fi-btns">
+        <button class="btn" data-fi="board">📋<small>Заказы</small></button>
         <button class="btn" data-fi="build">🔨<small>Стройка</small></button>
         <button class="btn" data-fi="rating">🏆<small>Рейтинг</small></button>
         <button class="btn" data-fi="book">📒<small>Тетрадь</small></button>
@@ -744,6 +809,7 @@ $('#farmInfo').addEventListener('click', (e) => {
   haptic(); sfx.click();
   const k = b.dataset.fi;
   if (k === 'build') return openBuild();
+  if (k === 'board') return openBoard();
   if (k === 'rating') return ACTIONS.rating();
   if (k === 'book') return openBook();
   if (k === 'settings') return openSettings();
@@ -752,7 +818,8 @@ $('#farmInfo').addEventListener('click', (e) => {
 });
 
 /* ================= Быстрые кнопки, настройки, правила ================= */
-const QUICK_HTML = `<button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
+const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уровень фермы"><b>⭐ 1</b><span class="lvl-track"><i></i></span></button>
+      <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
       <button class="qbtn" data-q="cards" aria-label="Открытки"><span>🃏</span><small>Открытки</small></button>
       <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
       <button class="qbtn" data-q="menu" aria-label="Меню"><span>🏠</span><small>Меню</small></button>`;
@@ -765,6 +832,7 @@ fastTap($('#quick'), (e) => {
   if (q === 'cards') return openBook('cards');
   if (q === 'settings') return openSettings();
   if (q === 'menu') return ACTIONS.menu();
+  if (q === 'level') { const lp = E.levelProgress(st); const next = E.unlockedAt(lp.level + 1).map(id => BUILDINGS[id].name); return toast(`Уровень фермы ${lp.level}: ${lp.have}/${lp.need} ⭐${next.length ? ' · дальше: ' + next.join(', ') : ''}`); }
 });
 
 function openSettings() {

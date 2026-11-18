@@ -2,7 +2,7 @@
 // Время — реальное: продукция копится по минутам, 1 игровой месяц = MONTH_MS.
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
-  LOAN_RATE, INC_GROWTH, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
+  LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -45,6 +45,8 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
     ledger: [], taps: 0, offline: 0,
     daily: null, login: null, tzOff: 0,
+    xp: 0, lvlSeen: 1,                       // опыт фермы (⭐) и последний показанный уровень
+    orders: [], big: null,                   // доска заказов: 3 обычных + большой заказ дня
   };
 }
 
@@ -104,6 +106,7 @@ export function tick(st, now = Date.now()) {
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
+  refillOrders(st, now);
   let changed = false;
   for (const id of PRODUCERS) {
     if (!level(st, id)) continue;
@@ -124,14 +127,18 @@ function gain(st, sum) { st.money += sum; st.monthIncome += sum; }
 // «Свежий сбор»: то, что созрело за последние 5 минут, идёт с бонусом +20%.
 // Кто собирает часто — получает бонус почти со всего; кто заходит раз в 2 часа — ничего не теряет (склад 2 ч).
 export let lastFresh = 0;
+export let lastReserved = { units: 0, value: 0 };
 export const freshShare = (st, id) => { const a = st.acc[id] || 0; return a > 0 ? Math.min(1, rate(st, id) * FRESH_MIN / a) : 0; };
 export function collect(st, id) {
   const amt = ready(st, id);
-  lastFresh = 0;
+  lastFresh = 0; lastReserved = { units: 0, value: 0 };
   if (amt <= 0 || st.phase === 'clean') return 0;
   const fresh = Math.floor(Math.min(amt, rate(st, id) * FRESH_MIN) * FRESH_BONUS);
   st.acc[id] -= amt;
-  gain(st, amt + fresh);
+  // часть урожая, нужная для заказов на доске, откладывается в амбар — остальное продаётся на прилавке
+  const reserved = reserveForOrders(st, BUILDINGS[id].product, Math.floor((amt + fresh) / productPrice(BUILDINGS[id].product)));
+  lastReserved = reserved;
+  gain(st, amt + fresh - reserved.value);
   lastFresh = fresh;
   st.taps++;
   dailyProgress(st, 'collect', amt + fresh);
@@ -186,6 +193,111 @@ export function claimLogin(st) {
   return p;
 }
 
+/* ---------- Уровень фермы (⭐ опыт) ---------- */
+export function farmLevel(st) { let n = 1; while ((st.xp || 0) >= xpForLevel(n + 1)) n++; return n; }
+export const levelProgress = (st) => { const n = farmLevel(st), a = xpForLevel(n), b = xpForLevel(n + 1); return { level: n, have: (st.xp || 0) - a, need: b - a }; };
+export function addXp(st, n) { st.xp = (st.xp || 0) + n; }
+// постройки, открытые на уровне фермы n
+export const unlockedAt = (n) => Object.keys(BUILDINGS).filter(id => BUILDINGS[id].lvl === n);
+
+/* ---------- Доска заказов ---------- */
+export const productPrice = (p) => PRODUCTS[p]?.price || 1;
+const rndRange = (r, a, b) => a + r() * (b - a);
+// какие продукты ферма может дать прямо сейчас (постройка есть и сезон идёт) и с какой скоростью, шт/мин
+export function producible(st) {
+  const out = {};
+  for (const id of PRODUCERS) {
+    const p = BUILDINGS[id].product;
+    if (!p || !level(st, id)) continue;
+    const r = rate(st, id) / productPrice(p);
+    if (r > 0) out[p] = (out[p] || 0) + r;
+  }
+  return out;
+}
+// заказ: 1–2 продукта на 4–10 минут производства (большой — 25–40 минут), оплата ×1.6–1.8 рынка + опыт
+export function makeOrder(st, now, big = false) {
+  const can = producible(st);
+  const ps = Object.keys(can);
+  if (!ps.length) return null;
+  const r = rng((st.seed ^ Math.floor(now / 1000)) >>> 0);
+  const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 2.4 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
+  const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
+  const chosen = [];
+  while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
+  const items = chosen.map(p => {
+    const mins = big ? rndRange(r, 25, 40) : rndRange(r, 4, 10) / k;
+    const need = Math.max(3, Math.round(can[p] * mins));
+    return { p, need, have: 0 };
+  });
+  const value = items.reduce((a, it) => a + it.need * productPrice(it.p), 0);
+  const mult = client.mult * (1 + 0.2 * level(st, 'market'));
+  return {
+    client: client.id, name: client.name, emoji: client.emoji, big, items,
+    reward: nice(value * mult), xp: big ? XP.big : Math.round(rndRange(r, XP.order[0], XP.order[1])), at: now,
+  };
+}
+function refillOrders(st, now) {
+  if (st.phase === 'clean') return;
+  if (!st.orders) st.orders = [];
+  for (let i = 0; i < ORDER_SLOTS; i++) {
+    const o = st.orders[i];
+    if (o && !o.wait) continue;
+    if (o && o.wait && o.readyAt > now) continue;
+    const n = makeOrder(st, now + i * 7919);
+    if (n) st.orders[i] = n; else st.orders[i] = { wait: true, readyAt: now + 60000 };
+  }
+  // большой заказ — раз в день (появляется, когда на ферме уже есть 2 вида продукции)
+  const day = dayKey(st, now);
+  if ((!st.big || st.big.day !== day) && Object.keys(producible(st)).length >= 2) {
+    const b = makeOrder(st, now + 31337, true);
+    if (b) st.big = { ...b, day };
+  }
+}
+export const activeOrders = (st) => [...(st.orders || []).map((o, i) => ({ o, i })), ...(st.big && !st.big.done ? [{ o: st.big, i: 'big' }] : [])].filter(x => x.o && !x.o.wait);
+const orderAt = (st, i) => (i === 'big' ? st.big : st.orders?.[i]);
+export const orderDone = (o) => o && !o.wait && o.items.every(it => it.have >= it.need);
+// урожай → в заказы (по порядку на доске, большой заказ — последним)
+function reserveForOrders(st, p, units) {
+  let left = units, used = 0;
+  for (const { o } of activeOrders(st)) {
+    for (const it of o.items) {
+      if (it.p !== p || it.have >= it.need || left <= 0) continue;
+      const take = Math.min(left, it.need - it.have);
+      it.have += take; left -= take; used += take;
+    }
+  }
+  return { units: used, value: used * productPrice(p) };
+}
+// рыба и прочее, что приходит не со сбора постройки
+export function addProduct(st, p, units) {
+  const r = reserveForOrders(st, p, units);
+  const sold = (units - r.units) * productPrice(p);
+  st.money += sold; st.monthIncome += sold;
+  return r;
+}
+export function deliverOrder(st, i, now = Date.now()) {
+  const o = orderAt(st, i);
+  if (!orderDone(o)) return null;
+  st.money += o.reward; st.monthIncome += o.reward;
+  addXp(st, o.xp);
+  addHistory(st, { m: st.month, t: `${o.emoji} Заказ «${o.name}» выполнен: +${fmt(o.reward)}, +${o.xp} ⭐.` });
+  if (i === 'big') st.big.done = true;
+  else { const r = rng(now >>> 0); st.orders[i] = { wait: true, readyAt: now + rndRange(r, ORDER_REFILL_MIN[0], ORDER_REFILL_MIN[1]) * 60000 }; }
+  dailyProgress(st, 'order', 1);
+  checkGoals(st);
+  return o;
+}
+export function declineOrder(st, i, now = Date.now()) {
+  const o = orderAt(st, i);
+  if (!o || o.wait) return 0;
+  // отложенное в амбар продаём по обычной цене
+  const back = o.items.reduce((a, it) => a + it.have * productPrice(it.p), 0);
+  st.money += back; st.monthIncome += back;
+  if (i === 'big') st.big.done = true;
+  else st.orders[i] = { wait: true, readyAt: now + ORDER_DECLINE_MIN * 60000 };
+  return back;
+}
+
 /* ---------- Стройка и улучшения ---------- */
 // множитель цены уровня: ×1.6 (у прилавка и марки — свой)
 export const levelMult = (b) => b.costMult || LEVEL_COST_MULT;
@@ -214,6 +326,7 @@ export function canBuy(st, id) {
   const b = BUILDINGS[id];
   if (st.phase === 'clean') return 'сначала уборка';
   if (b.tier > st.tier) return `откроется после цели ${tierName(b.tier - 1)}`;
+  if (b.lvl && farmLevel(st) < b.lvl) return `нужен уровень фермы ${b.lvl}`;
   if (b.requires && !level(st, b.requires)) return 'нужно: ' + BUILDINGS[b.requires].name;
   if (id === 'garden' && st.flags.fieldSold) return 'поле продано соседу';
   if (level(st, id) >= maxLevel(id, st.tier)) return b.kind === 'once' ? 'уже построено' : 'максимальный уровень';
@@ -228,6 +341,7 @@ export function buy(st, id) {
   st.lv[id] = level(st, id) + 1;
   if (st.flags.disc?.[id]) delete st.flags.disc[id];
   dailyProgress(st, 'build', 1);
+  addXp(st, XP.build);
   const L = st.lv[id], b = BUILDINGS[id];
   addHistory(st, { m: st.month, t: L === 1 ? `Построили: ${b.name} (${fmt(p)}).` : `${b.name}: уровень ${L} (${fmt(p)}).` });
   checkGoals(st);
