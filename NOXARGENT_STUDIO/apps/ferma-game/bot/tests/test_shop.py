@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from auth import sign_init_data  # noqa: E402
 from config import load  # noqa: E402
 from db import DB, current_week  # noqa: E402
-from shop import ITEMS, ShopDB, make_router, week_results  # noqa: E402
+from shop import ITEMS, ShopDB, make_router  # noqa: E402
 from web import make_app  # noqa: E402
 
 TOKEN = "123456:TEST-token"
@@ -118,38 +118,83 @@ async def test_patron_badge_and_last_winner_in_rating(env):
     await env.shop.add_badge("tg:42", "patron")
     board = await (await env.c.get("/api/leaderboard", headers=h)).json()
     assert board["top"][0]["badges"] == ["patron"] and board["me"]["badges"] == ["patron"]
+    assert "lastWinners" in board
     assert "key" not in board["top"][0]
 
 
-async def test_week_results_rules(env):
-    db, shop, bot = env.db, env.shop, env.bot
+async def add_player(db, uid, gain, created, start=1000):
+    from db import current_month
     now = time.time()
-    week = current_week(now)
-    old = int(now) - 10 * 86400
-    # три «старых» игрока и один новичок (зарегистрирован сегодня) с самым большим приростом
-    for uid, gain, created in [(1, 5_000, old), (2, 9_000, old), (3, 7_000, old), (4, 99_000, int(now))]:
-        await db.conn.execute("INSERT INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)", (f"tg:{uid}", f"P{uid}", created, created))
-        await db.conn.execute("INSERT INTO weekly(player_key, week, start_capital, capital, updated_at) VALUES(?,?,?,?,?)", (f"tg:{uid}", week, 1000, 1000 + gain, created))
+    await db.conn.execute("INSERT OR IGNORE INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)", (f"tg:{uid}", f"P{uid}", created, created))
+    await db.conn.execute("INSERT OR IGNORE INTO users(user_id, first_name, username, created_at, last_seen) VALUES(?,?,?,?,?)", (uid, f"P{uid}", f"user{uid}", created, created))
+    await db.conn.execute("INSERT OR REPLACE INTO scores(player_key, capital, tier, year, paid_coins, updated_at) VALUES(?,?,0,1,0,?)", (f"tg:{uid}", start + gain, created))
+    await db.conn.execute("INSERT INTO weekly(player_key, week, start_capital, capital, updated_at) VALUES(?,?,?,?,?)", (f"tg:{uid}", current_week(now), start, start + gain, created))
+    await db.conn.execute("INSERT INTO monthly(player_key, month, start_capital, capital, updated_at) VALUES(?,?,?,?,?)", (f"tg:{uid}", current_month(now), start, start + gain, created))
     await db.conn.commit()
-    res = await week_results(db, shop, bot, admin_id=999, now=now)
-    assert [r["player_key"] for r in res] == ["tg:2", "tg:3", "tg:1"]    # новичок без приза
-    assert res[0]["status"] == "manual"                                  # звёзд у бота нет → написали владельцу
+
+
+async def test_week_results_rules(env):
+    from shop import period_results
+    db, shop, bot = env.db, env.shop, env.bot
+    now = time.time(); old = int(now) - 10 * 86400
+    # три «старых» игрока и новичок (ферма создана сегодня) с самым большим приростом
+    for uid, gain, created in [(1, 5_000, old), (2, 9_000, old), (3, 7_000, old), (4, 99_000, int(now))]:
+        await add_player(db, uid, gain, created)
+    res = await period_results(db, shop, bot, 999, "week", now)
+    assert [r["player_key"] for r in res] == ["tg:2", "tg:3", "tg:1"]      # новичок без приза
+    assert res[0]["status"] == "manual"                                    # звёзд у бота нет → владельцу
     assert any(chat == 999 and "вручную" in text for chat, text in bot.sent)
     assert (await shop.badges(["tg:3"]))["tg:3"] == ["silver"] and (await shop.badges(["tg:1"]))["tg:1"] == ["bronze"]
-    assert (await shop.last_winner())["name"] == "P2"
-    # повторный запуск в ту же неделю ничего не делает
-    assert await week_results(db, shop, bot, admin_id=999, now=now) == []
+    assert any(chat == 2 and "Фермер недели" in text for chat, text in bot.sent)  # поздравление победителю
+    async with db.conn.execute("SELECT kind, rank, player_key FROM awards ORDER BY rank") as cur:
+        log_rows = [tuple(r) for r in await cur.fetchall()]
+    assert log_rows[0] == ("week", 1, "tg:2") and len(log_rows) == 3       # история наград
+    assert await period_results(db, shop, bot, 999, "week", now) == []     # повторно в ту же неделю — ничего
 
 
-async def test_gift_sent_when_stars_enough(env):
-    db, shop = env.db, env.shop
+async def _gifts():
+    return SimpleNamespace(gifts=[SimpleNamespace(id="g15", star_count=15), SimpleNamespace(id="g25", star_count=25), SimpleNamespace(id="g50", star_count=50)])
+
+
+async def test_week_gift_25_stars(env):
+    from shop import period_results
     bot = FakeBot(stars=500)
-    now = time.time(); week = current_week(now); old = int(now) - 10 * 86400
-    await db.conn.execute("INSERT INTO players(player_key, name, created_at, last_seen) VALUES('tg:7','P7',?,?)", (old, old))
-    await db.conn.execute("INSERT INTO weekly(player_key, week, start_capital, capital, updated_at) VALUES('tg:7',?,1,100,?)", (week, old))
-    await db.conn.commit()
-    res = await week_results(db, shop, bot, admin_id=999, now=now)
-    assert res[0]["status"] == "ok" and bot.gifts == [(7, "g150")]
+    bot.get_available_gifts = _gifts
+    now = time.time()
+    await add_player(env.db, 7, 100, int(now) - 10 * 86400)
+    res = await period_results(env.db, env.shop, bot, 999, "week", now)
+    assert res[0]["status"] == "ok" and bot.gifts == [(7, "g25")]
+
+
+async def test_month_results_and_dry_run(env):
+    from shop import last_winners, period_results
+    db, shop, bot = env.db, env.shop, env.bot
+    now = time.time(); old = int(now) - 10 * 86400
+    await add_player(db, 11, 50_000, old); await add_player(db, 12, 80_000, old)
+    dry = await period_results(db, shop, bot, 999, "month", now, dry=True)   # /test_results
+    assert dry[0]["player_key"] == "tg:12" and dry[0]["status"] == "dry"
+    assert not any(chat == 12 for chat, _ in bot.sent)                         # в тесте победителю не пишем
+    res = await period_results(db, shop, bot, 999, "month", now)
+    assert res[0]["player_key"] == "tg:12" and len(res) == 1
+    admin_msg = [t for c, t in bot.sent if c == 999 and "Победитель месяца" in t][0]
+    assert "@user12" in admin_msg and "id 12" in admin_msg and "PoolFloat" in admin_msg
+    assert any(c == 12 and "№1 фермы за месяц" in t for c, t in bot.sent)
+    assert (await last_winners(db))["month"]["top"][0]["name"] == "P12"
+
+
+async def test_month_tab_timer_prizes_and_anticheat(env):
+    h = {"X-Telegram-Init-Data": init_data(42)}
+    await env.c.post("/api/score", json={"capital": 50_000}, headers=h)
+    # мгновенный «прыжок» до триллиона — сервер не верит и принимает только правдоподобный рост
+    r = await (await env.c.post("/api/score", json={"capital": 10**12}, headers=h)).json()
+    assert r["rating"] < 200_000
+    async with env.db.conn.execute("SELECT COUNT(*) c FROM anticheat") as cur:
+        assert (await cur.fetchone())["c"] == 1
+    m = await (await env.c.get("/api/leaderboard?period=month", headers=h)).json()
+    assert m["period"] == "month" and m["endsAt"] > time.time() and m["prizes"]["1"]["label"] == "NFT"
+    assert m["nft"]["url"] == "https://t.me/nft/PoolFloat-92287"
+    w = await (await env.c.get("/api/leaderboard?period=week", headers=h)).json()
+    assert w["prizes"]["1"]["label"] == "25 ⭐" and w["endsAt"] > time.time()
 
 
 # ---------- Обязательная подписка на канал ----------

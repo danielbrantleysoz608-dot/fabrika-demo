@@ -98,11 +98,11 @@ def anon(pid, name=None):
 
 
 async def test_leaderboard_anon_ranking(client):
-    for i, cap in enumerate([5_000_000, 120_000, 2_000_000_000]):
+    for i, cap in enumerate([500_000, 120_000, 900_000]):
         r = await client.post("/api/score", json={"capital": cap, "tier": 1, "year": 1}, headers=anon(f"player-{i:04d}", f"Игрок {i}"))
         assert r.status == 200
     board = await (await client.get("/api/leaderboard", headers=anon("player-0001"))).json()
-    assert [t["value"] for t in board["top"]] == [2_000_000_000, 5_000_000, 120_000]
+    assert [t["value"] for t in board["top"]] == [900_000, 500_000, 120_000]
     assert board["me"]["rank"] == 3 and board["me"]["name"] == "Игрок 1"
     assert board["top"][2]["me"] is True and board["total"] == 3
     # в рейтинге — текущий капитал (может и уменьшиться), а отправка без имени не стирает имя
@@ -130,8 +130,8 @@ async def test_week_gain_and_tg_link(client):
     # эта неделя: с 1 млн до 3 млн → прирост 2 млн
     t1 = t0 + 8 * 86400
     await database.submit_score("anon:link-test-1", "Аноним", 1_000_000, 0, 0, 1, now=t1)
-    await database.submit_score("anon:link-test-1", "Аноним", 3_000_000, 0, 0, 1, now=t1 + 60)
-    week = await database.leaderboard("week", "anon:link-test-1", now=t1 + 120)
+    await database.submit_score("anon:link-test-1", "Аноним", 3_000_000, 0, 0, 1, now=t1 + 3600)   # за час — правдоподобно
+    week = await database.leaderboard("week", "anon:link-test-1", now=t1 + 3700)
     assert week["me"]["value"] == 2_000_000 and dbmod.current_week(t1) != dbmod.current_week(t0)
     # игрок открыл игру из Telegram с тем же временным id — запись переезжает на tg id
     h = {"X-Telegram-Init-Data": init_data(77), **anon("link-test-1")}

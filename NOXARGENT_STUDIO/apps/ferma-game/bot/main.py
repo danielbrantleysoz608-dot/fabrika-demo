@@ -63,6 +63,8 @@ async def run(web_only: bool) -> None:
     await db.open()
     shop = ShopDB(db)
     await shop.init()
+    from shop import init_awards
+    await init_awards(db)
     bot = None
     username = ""
     if not web_only:
@@ -74,6 +76,7 @@ async def run(web_only: bool) -> None:
         # кнопка меню рядом с полем ввода — тоже открывает игру
         await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/")))
         await bot.set_my_commands([BotCommand(command="start", description="Играть в «Ферму деда»"),
+                                   BotCommand(command="myid", description="Мой Telegram id"),
                                    BotCommand(command="help", description="Как играть"),
                                    BotCommand(command="paysupport", description="Вопросы по оплате")])
         dp.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))

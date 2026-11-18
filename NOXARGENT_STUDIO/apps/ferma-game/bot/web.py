@@ -91,7 +91,7 @@ async def post_score(request: web.Request) -> web.Response:
 
 
 async def get_leaderboard(request: web.Request) -> web.Response:
-    period = "week" if request.query.get("period") == "week" else "all"
+    period = request.query.get("period") if request.query.get("period") in ("week", "month") else "all"
     try:
         key, _, _ = player_identity(request)
     except web.HTTPUnauthorized:
@@ -109,7 +109,10 @@ async def get_leaderboard(request: web.Request) -> web.Response:
             t["badges"] = b.get(k, [])
         if data.get("me") is not None and key:
             data["me"]["badges"] = b.get(key, [])
-        data["lastWinner"] = await shop.last_winner()
+        from shop import NFT, PRIZES, last_winners
+        data["lastWinners"] = await last_winners(request.app[DBK])
+        data["prizes"] = PRIZES.get(period, {})
+        data["nft"] = NFT
     else:
         for t in data["top"]:
             t.pop("key", None)

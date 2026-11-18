@@ -71,6 +71,23 @@ CREATE TABLE IF NOT EXISTS weekly (
     PRIMARY KEY (player_key, week)
 );
 CREATE INDEX IF NOT EXISTS weekly_gain ON weekly(week, capital);
+-- «За месяц»: прирост капитала с 1-го числа (по Москве)
+CREATE TABLE IF NOT EXISTS monthly (
+    player_key    TEXT NOT NULL REFERENCES players(player_key),
+    month         TEXT NOT NULL,
+    start_capital INTEGER NOT NULL,
+    capital       INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    PRIMARY KEY (player_key, month)
+);
+-- Подозрительные скачки капитала (клиенту не доверяем: принимаем не больше правдоподобного роста)
+CREATE TABLE IF NOT EXISTS anticheat (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_key TEXT NOT NULL,
+    at         INTEGER NOT NULL,
+    claimed    INTEGER NOT NULL,
+    accepted   INTEGER NOT NULL
+);
 """
 
 MAX_SAVE_BYTES = 256 * 1024
@@ -81,6 +98,50 @@ MSK = timezone(timedelta(hours=3))
 def current_week(now: float | None = None) -> str:
     d = datetime.fromtimestamp(now or time.time(), MSK).isocalendar()
     return f"{d.year}-W{d.week:02d}"
+
+
+def current_month(now: float | None = None) -> str:
+    return datetime.fromtimestamp(now or time.time(), MSK).strftime("%Y-%m")
+
+
+# Периоды рейтинга (по Москве): неделя — пн 00:00 … вс 20:00, месяц — 1-е 00:00 … последний день 20:00.
+# С 20:00 последнего дня до полуночи прирост в период не идёт (итоги уже подведены).
+def week_end(now: float | None = None) -> datetime:
+    d = datetime.fromtimestamp(now or time.time(), MSK)
+    end = (d - timedelta(days=d.weekday())).replace(hour=20, minute=0, second=0, microsecond=0) + timedelta(days=6)
+    return end
+
+
+def month_end(now: float | None = None) -> datetime:
+    d = datetime.fromtimestamp(now or time.time(), MSK)
+    first_next = (d.replace(day=1) + timedelta(days=32)).replace(day=1, hour=20, minute=0, second=0, microsecond=0)
+    return first_next - timedelta(days=1)
+
+
+def next_end(kind: str, now: float | None = None) -> datetime:
+    """Ближайшие итоги: если 20:00 последнего дня уже прошло — следующий период."""
+    t = now or time.time()
+    end = week_end(t) if kind == "week" else month_end(t)
+    if end.timestamp() <= t:
+        end = week_end(t + 86400) if kind == "week" else month_end(end.timestamp() + 2 * 86400)
+    return end
+
+
+def period_open(kind: str, now: float | None = None) -> bool:
+    t = datetime.fromtimestamp(now or time.time(), MSK)
+    return t < (week_end(now) if kind == "week" else month_end(now))
+
+
+# Правдоподобный рост капитала: не больше 6% в минуту (с запасом к самому быстрому игроку) + 20 000 ₽/мин,
+# считаем максимум за 3 часа между отправками (ферма копит офлайн только 2 часа). Купленные деньги — сверху.
+GROWTH_PER_MIN, FLAT_PER_MIN, MAX_GAP_MIN, FIRST_MAX = 1.06, 20_000, 180, 1_000_000
+
+
+def allowed_capital(prev: int | None, minutes: float, bought: int = 0) -> int:
+    if prev is None:
+        return FIRST_MAX + bought
+    m = max(0.0, min(minutes, MAX_GAP_MIN))
+    return int(prev * GROWTH_PER_MIN ** m + FLAT_PER_MIN * m + bought)
 ENDINGS = {"millionaire", "alive", "sold", "frozen"}
 
 
@@ -159,7 +220,7 @@ class DB:
         async with self.conn.execute("SELECT 1 FROM scores WHERE player_key=?", (tg_key,)) as cur:
             if await cur.fetchone():
                 return
-        for table in ("scores", "weekly"):
+        for table in ("scores", "weekly", "monthly"):
             await self.conn.execute(f"UPDATE OR IGNORE {table} SET player_key=? WHERE player_key=?", (tg_key, anon_key))
         await self.conn.commit()
 
@@ -168,7 +229,15 @@ class DB:
         """Сохраняет текущий капитал фермы для рейтинга."""
         now = int(now or time.time())
         paid = int(paid or 0)
-        rating = max(0, min(int(capital), MAX_CAPITAL))  # купленные за звёзды деньги идут в рейтинг как обычные
+        claimed = max(0, min(int(capital), MAX_CAPITAL))  # купленные за звёзды деньги идут в рейтинг как обычные
+        # не доверяем клиенту: принимаем не больше правдоподобного роста с прошлой отправки
+        async with self.conn.execute("SELECT capital, updated_at FROM scores WHERE player_key=?", (player_key,)) as cur:
+            prev = await cur.fetchone()
+        bought = await self.bought_money(player_key, prev["updated_at"] if prev else 0)
+        limit = allowed_capital(prev["capital"] if prev else None, (now - prev["updated_at"]) / 60 if prev else 0, bought)
+        rating = min(claimed, limit)
+        if claimed > limit:
+            await self.conn.execute("INSERT INTO anticheat(player_key, at, claimed, accepted) VALUES(?,?,?,?)", (player_key, now, claimed, rating))
         default = "Фермер " + player_key[-4:]
         await self.conn.execute(
             """INSERT INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)
@@ -181,26 +250,49 @@ class DB:
                  capital=excluded.capital, tier=MAX(scores.tier, excluded.tier),
                  year=MAX(scores.year, excluded.year), paid_coins=excluded.paid_coins, updated_at=excluded.updated_at""",
             (player_key, rating, int(tier), int(year), paid, now))
-        week = current_week(now)
-        await self.conn.execute(
-            """INSERT INTO weekly(player_key, week, start_capital, capital, updated_at) VALUES(?,?,?,?,?)
-               ON CONFLICT(player_key, week) DO UPDATE SET capital=excluded.capital, updated_at=excluded.updated_at""",
-            (player_key, week, rating, rating, now))
+        # прирост за неделю и месяц: старт — первый капитал в периоде; после 20:00 последнего дня — не считаем
+        if period_open("week", now):
+            await self.conn.execute(
+                """INSERT INTO weekly(player_key, week, start_capital, capital, updated_at) VALUES(?,?,?,?,?)
+                   ON CONFLICT(player_key, week) DO UPDATE SET capital=excluded.capital, updated_at=excluded.updated_at""",
+                (player_key, current_week(now), rating, rating, now))
+        if period_open("month", now):
+            await self.conn.execute(
+                """INSERT INTO monthly(player_key, month, start_capital, capital, updated_at) VALUES(?,?,?,?,?)
+                   ON CONFLICT(player_key, month) DO UPDATE SET capital=excluded.capital, updated_at=excluded.updated_at""",
+                (player_key, current_month(now), rating, rating, now))
         await self.conn.commit()
         return rating
+
+    async def bought_money(self, player_key: str, since: int) -> int:
+        """Деньги фермы, купленные за звёзды после момента since (их рост — честный)."""
+        if not player_key.startswith("tg:"):
+            return 0
+        try:
+            async with self.conn.execute(
+                    "SELECT COALESCE(SUM(amount),0) s FROM payments WHERE user_id=? AND item IN ('bag','wallet','chest') AND created_at>=? AND refunded_at IS NULL",
+                    (int(player_key[3:]), since)) as cur:
+                return int((await cur.fetchone())["s"])
+        except Exception:  # noqa: BLE001 — таблицы покупок ещё нет
+            return 0
 
     async def clear_rating(self) -> int:
         """Очистить рейтинг перед запуском (тестовые игроки). Сохранения игр не трогает."""
         async with self.conn.execute("SELECT COUNT(*) c FROM players") as cur:
             n = (await cur.fetchone())["c"]
-        for t in ("weekly", "scores", "players"):
+        for t in ("weekly", "monthly", "scores", "players"):
             await self.conn.execute(f"DELETE FROM {t}")
         await self.conn.commit()
         return n
 
     async def leaderboard(self, period: str, player_key: str | None, limit: int = 100, now: float | None = None,
                           my_value: int = 0) -> dict:
-        if period == "week":
+        if period == "month":
+            base = """SELECT m.player_key, p.name, (m.capital - m.start_capital) AS value, s.tier, s.year
+                      FROM monthly m JOIN players p USING(player_key) LEFT JOIN scores s USING(player_key)
+                      WHERE m.month = ? AND m.capital > m.start_capital"""
+            args: tuple = (current_month(now),)
+        elif period == "week":
             week = current_week(now)
             base = """SELECT w.player_key, p.name, (w.capital - w.start_capital) AS value, s.tier, s.year
                       FROM weekly w JOIN players p USING(player_key) LEFT JOIN scores s USING(player_key)
@@ -233,4 +325,5 @@ class DB:
                 me = {"rank": rank, "name": row["name"] if row else None, "value": value, "tier": 0, "year": 1}
         async with self.conn.execute(f"SELECT COUNT(*) c FROM ({base})", args) as cur:
             total = (await cur.fetchone())["c"]
-        return {"period": period, "top": top, "me": me, "total": total}
+        ends = next_end(period, now) if period in ("week", "month") else None
+        return {"period": period, "top": top, "me": me, "total": total, "endsAt": int(ends.timestamp()) if ends else None}

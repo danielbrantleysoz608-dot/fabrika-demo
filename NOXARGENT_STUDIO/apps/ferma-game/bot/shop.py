@@ -95,7 +95,7 @@ class ShopDB:
         return self.db.conn
 
     async def init(self) -> None:
-        await self.c.executescript(SCHEMA)
+        await self.c.executescript(SCHEMA + AWARDS_SCHEMA)
         await self.c.commit()
 
     async def new_invoice(self, user_id: int, item: str, stars: int, amount: int) -> str:
@@ -260,10 +260,23 @@ def make_router(shop: ShopDB, admin_id: int, channel_url: str) -> Router:
             "💬 <b>Вопросы по оплате</b>\n\nЕсли покупка не пришла или списались звёзды — напишите нам: "
             f"{channel_url}\nУкажите время покупки и что покупали. Покупки выдаются сами при следующем входе в игру.")
 
+    @r.message(Command("myid"))
+    async def myid(message: Message) -> None:
+        await message.answer(f"Ваш Telegram id: <code>{message.from_user.id}</code>")
+
+    @r.message(Command("test_results"))
+    async def test_results(message: Message) -> None:
+        """Только для владельца: показать, кто сейчас победил бы за неделю и месяц (ничего не выдаётся)."""
+        if not admin_id or message.from_user.id != admin_id:
+            return
+        await init_awards(shop.db)
+        for kind in ("week", "month"):
+            await period_results(shop.db, shop, message.bot, admin_id, kind, dry=True)
+
     @r.message(Command("refund_last"))
     async def refund_last(message: Message) -> None:
         """Только для владельца: вернуть звёзды за последнюю покупку (для тестовых оплат)."""
-        if message.from_user.id != admin_id:
+        if not admin_id or message.from_user.id != admin_id:
             return
         p = await shop.last_payment()
         if not p:
@@ -278,96 +291,177 @@ def make_router(shop: ShopDB, admin_id: int, channel_url: str) -> Router:
     return r
 
 
-# ---------------- Приз «Фермер недели» ----------------
-PRIZE_MIN, PRIZE_MAX = 100, 250
+# ---------------- Итоги недели и месяца ----------------
+# Неделя: 1 место — подарок Telegram за 25 ⭐ (sendGift со счёта бота; не хватило — пишем владельцу), 2–3 — значки 🥈/🥉.
+# Месяц: 1 место — NFT-подарок PoolFloat (передаёт владелец вручную: бот пишет ему, кому отдать).
+WEEK_GIFT_STARS = 25
+NFT = {"name": "PoolFloat", "url": "https://t.me/nft/PoolFloat-92287", "img": "https://nft.fragment.com/gift/poolfloat-92287.webp"}
+PRIZES = {
+    "week": {1: {"icon": "🎁", "label": "25 ⭐", "text": "Подарок Telegram за 25 ⭐"},
+             2: {"icon": "🥈", "label": "значок", "text": "Значок «Фермер недели» на всю следующую неделю"},
+             3: {"icon": "🥉", "label": "значок", "text": "Значок «Фермер недели» на всю следующую неделю"}},
+    "month": {1: {"icon": "🎁", "label": "NFT", "text": f"NFT-подарок «{NFT['name']}»", "nft": NFT}},
+}
 MIN_AGE = 3 * 24 * 3600
 
+AWARDS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS awards (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,          -- week | month
+    period     TEXT NOT NULL,          -- 2026-W47 | 2026-11
+    rank       INTEGER NOT NULL,
+    player_key TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    value      INTEGER NOT NULL,       -- прирост капитала за период
+    prize      TEXT,
+    status     TEXT,                   -- ok | manual | no-dm | empty
+    at         INTEGER NOT NULL,
+    UNIQUE (kind, period, rank)
+);
+"""
 
-def next_results_time(now: datetime) -> datetime:
-    """Ближайшее воскресенье 20:00 по Москве."""
-    now = now.astimezone(MSK)
-    t = now.replace(hour=20, minute=0, second=0, microsecond=0) + timedelta(days=(6 - now.weekday()) % 7)
-    return t if t > now else t + timedelta(days=7)
+
+def next_results_time(now: datetime, kind: str = "week") -> datetime:
+    from db import next_end
+    return next_end(kind, now.timestamp())
 
 
-async def week_results(db, shop: ShopDB, bot: Bot | None, admin_id: int, now: float | None = None) -> list[dict]:
-    """Подвести итоги недели: топ по приросту капитала, без новичков (< 3 дней). Один раз на неделю."""
+async def init_awards(db) -> None:
+    await db.conn.executescript(AWARDS_SCHEMA)
+    await db.conn.commit()
+
+
+async def period_top(db, kind: str, period: str, now: float, limit: int = 3) -> list[dict]:
+    """Топ по приросту капитала за период: только игроки Telegram, ферма старше 3 дней, один приз на id."""
+    table, col = ("weekly", "week") if kind == "week" else ("monthly", "month")
+    q = f"""SELECT t.player_key, p.name, (t.capital - t.start_capital) AS value, s.capital AS capital, p.created_at, u.username
+            FROM {table} t JOIN players p USING(player_key) LEFT JOIN scores s USING(player_key)
+            LEFT JOIN users u ON u.user_id = CAST(substr(t.player_key, 4) AS INTEGER)
+            WHERE t.{col}=? AND t.capital > t.start_capital AND t.player_key LIKE 'tg:%' AND p.created_at <= ?
+            ORDER BY value DESC, t.player_key LIMIT ?"""
+    async with db.conn.execute(q, (period, int(now) - MIN_AGE, limit)) as cur:
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def period_done(db, kind: str, period: str) -> bool:
+    async with db.conn.execute("SELECT 1 FROM awards WHERE kind=? AND period=? LIMIT 1", (kind, period)) as cur:
+        return bool(await cur.fetchone())
+
+
+def num(x) -> str:
+    return f"{int(x or 0):,}".replace(",", " ")
+
+
+def who(r: dict) -> str:
+    return f"{r['name']}" + (f" (@{r['username']})" if r.get("username") else "") + f", id {r['player_key'][3:]}"
+
+
+async def period_results(db, shop: ShopDB, bot, admin_id: int, kind: str, now: float | None = None, dry: bool = False) -> list[dict]:
+    """Подвести итоги недели или месяца (один раз). dry=True — только показать владельцу, ничего не выдавая."""
+    from db import current_month, current_week, next_end
     now = now or time.time()
-    week = current_week(now)
-    if await shop.week_done(week):
+    period = current_week(now) if kind == "week" else current_month(now)
+    if not dry and await period_done(db, kind, period):
         return []
-    q = """SELECT w.player_key, p.name, (w.capital - w.start_capital) AS value, p.created_at
-           FROM weekly w JOIN players p USING(player_key)
-           WHERE w.week=? AND w.capital > w.start_capital AND w.player_key LIKE 'tg:%' AND p.created_at <= ?
-           ORDER BY value DESC, w.player_key LIMIT 3"""
-    async with db.conn.execute(q, (week, int(now) - MIN_AGE)) as cur:
-        top = [dict(r) for r in await cur.fetchall()]
-    next_week_end = int(next_results_time(datetime.fromtimestamp(now, MSK) + timedelta(minutes=1)).timestamp())
+    top = await period_top(db, kind, period, now, 3 if kind == "week" else 1)
     out = []
-    for rank, row in enumerate(top, 1):
-        uid = int(row["player_key"][3:])
-        prize, status = None, None
-        if rank == 1:
-            prize, status = await send_gift(bot, uid, admin_id, row)
-        else:
-            await shop.add_badge(row["player_key"], "silver" if rank == 2 else "bronze", until=next_week_end)
-            prize, status = ("badge", "ok")
-        await db.conn.execute("INSERT OR IGNORE INTO week_results(week, rank, player_key, name, value, prize, status) VALUES(?,?,?,?,?,?,?)",
-                              (week, rank, row["player_key"], row["name"], row["value"], prize, status))
-        out.append({"rank": rank, **row, "prize": prize, "status": status})
-        if bot:
-            text = {1: "🏆 Ты — <b>Фермер недели</b>! Прирост капитала за неделю — больше всех. Лови подарок от фермы деда 🎁",
-                    2: "🥈 Второе место в рейтинге недели! Значок «Фермер недели» у ника — на всю следующую неделю.",
-                    3: "🥉 Третье место в рейтинге недели! Значок «Фермер недели» у ника — на всю следующую неделю."}[rank]
-            try:
-                await bot.send_message(uid, text)
-            except Exception as e:  # noqa: BLE001 — игрок мог не писать боту
-                log.info("не написать %s: %s", uid, e)
-    if not top:  # пустую неделю тоже отмечаем, чтобы не считать повторно
-        await db.conn.execute("INSERT OR IGNORE INTO week_results(week, rank, player_key, name, value, prize, status) VALUES(?,?,?,?,?,?,?)",
-                              (week, 0, "-", "-", 0, None, "empty"))
+    badge_until = int(next_end("week", now + 3600).timestamp())  # значок — до итогов следующей недели
+    for rank, r in enumerate(top, 1):
+        uid = int(r["player_key"][3:])
+        prize = PRIZES[kind][rank]["text"]
+        status = "dry" if dry else "ok"
+        if not dry:
+            if kind == "week" and rank == 1:
+                status = await send_week_gift(bot, uid, admin_id, r)
+            elif kind == "week":
+                await shop.add_badge(r["player_key"], "silver" if rank == 2 else "bronze", until=badge_until)
+            else:
+                status = "manual"  # NFT передаёт владелец
+                if bot and admin_id:
+                    await safe_send(bot, admin_id, f"🏆 Победитель месяца {period}: {who(r)}\nПрирост за месяц: +{num(r['value'])} ₽, капитал: {num(r['capital'])} ₽\n"
+                                                   f"Передайте NFT «{NFT['name']}»: {NFT['url']}")
+            text = {("week", 1): "🏆 Ты — <b>Фермер недели</b>! Лови подарок от фермы деда 🎁",
+                    ("week", 2): "🥈 Второе место за неделю! Значок «Фермер недели» у ника — на всю следующую неделю.",
+                    ("week", 3): "🥉 Третье место за неделю! Значок «Фермер недели» у ника — на всю следующую неделю.",
+                    ("month", 1): f"🏆 Ты №1 фермы за месяц! NFT-подарок «{NFT['name']}» придёт в течение 24 часов."}[(kind, rank)]
+            if not await safe_send(bot, uid, text) and status == "ok":
+                status = "no-dm"
+            await db.conn.execute("""INSERT OR IGNORE INTO awards(kind, period, rank, player_key, name, value, prize, status, at)
+                                     VALUES(?,?,?,?,?,?,?,?,?)""", (kind, period, rank, r["player_key"], r["name"], r["value"], prize, status, int(now)))
+        out.append({"rank": rank, **r, "prize": prize, "status": status})
+    if not dry and not top:  # пустой период тоже отмечаем, чтобы не считать повторно
+        await db.conn.execute("INSERT OR IGNORE INTO awards(kind, period, rank, player_key, name, value, prize, status, at) VALUES(?,?,0,'-','-',0,NULL,'empty',?)",
+                              (kind, period, int(now)))
     await db.conn.commit()
     if bot and admin_id:
-        lines = [f"{r['rank']}. {r['name']} (+{r['value']:,} ₽) — {r['prize'] or ''} {r['status'] or ''}".replace(",", " ") for r in out] or ["никого"]
-        try:
-            await bot.send_message(admin_id, f"📊 Итоги недели {week}:\n" + "\n".join(lines))
-        except Exception as e:  # noqa: BLE001
-            log.warning("админу не отправить: %s", e)
+        title = ("🧪 ТЕСТ (ничего не выдано) — " if dry else "📊 ") + ("итоги недели " if kind == "week" else "итоги месяца ") + period
+        lines = [f"{x['rank']}. {who(x)} — +{num(x['value'])} ₽ → {x['prize']} [{x['status']}]" for x in out] or ["никого (нужен прирост и ферма старше 3 дней)"]
+        await safe_send(bot, admin_id, title + "\n" + "\n".join(lines))
     return out
 
 
-async def send_gift(bot: Bot | None, uid: int, admin_id: int, row: dict) -> tuple[str, str]:
+async def safe_send(bot, chat_id: int, text: str) -> bool:
     if not bot:
-        return "gift", "no-bot"
+        return False
+    try:
+        await bot.send_message(chat_id, text)
+        return True
+    except Exception as e:  # noqa: BLE001 — игрок мог не писать боту / закрыть личку
+        log.info("не написать %s: %s", chat_id, e)
+        return False
+
+
+async def send_week_gift(bot, uid: int, admin_id: int, r: dict) -> str:
+    if not bot:
+        return "no-bot"
     try:
         gifts = (await bot.get_available_gifts()).gifts
-        ok = [g for g in gifts if PRIZE_MIN <= g.star_count <= PRIZE_MAX]
+        ok = [g for g in gifts if g.star_count == WEEK_GIFT_STARS]
         if not ok:
-            raise RuntimeError("нет подарков за 100–250 ⭐")
-        g = max(ok, key=lambda x: x.star_count)
-        await bot.send_gift(user_id=uid, gift_id=g.id, text="Фермер недели! 🌾")
-        return f"gift {g.star_count}⭐", "ok"
+            raise RuntimeError(f"нет подарков за {WEEK_GIFT_STARS} ⭐")
+        await bot.send_gift(user_id=uid, gift_id=ok[0].id, text="Фермер недели! 🌾")
+        return "ok"
     except Exception as e:  # noqa: BLE001 — чаще всего не хватает звёзд у бота
         log.warning("подарок не отправлен: %s", e)
         if admin_id:
-            try:
-                await bot.send_message(admin_id, f"🎁 Не удалось отправить подарок победителю недели {row['name']} "
-                                                 f"(id {uid}): {e}\nОтправьте, пожалуйста, вручную (100–250 ⭐).")
-            except Exception:  # noqa: BLE001
-                pass
-        return "gift", "manual"
+            await safe_send(bot, admin_id, f"🎁 Не удалось отправить подарок за {WEEK_GIFT_STARS} ⭐ победителю недели {who(r)}: {e}\nОтправьте, пожалуйста, вручную.")
+        return "manual"
 
 
-async def weekly_loop(db, shop: ShopDB, bot: Bot | None, admin_id: int) -> None:
-    """Каждое воскресенье в 20:00 МСК. Если сервер был выключен — подведёт итоги после запуска (в тот же вечер)."""
+async def last_winners(db) -> dict:
+    out = {}
+    for kind in ("week", "month"):
+        async with db.conn.execute("SELECT period FROM awards WHERE kind=? AND rank>0 ORDER BY at DESC LIMIT 1", (kind,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            continue
+        async with db.conn.execute("SELECT rank, name, value FROM awards WHERE kind=? AND period=? AND rank>0 ORDER BY rank", (kind, row["period"])) as cur:
+            out[kind] = {"period": row["period"], "top": [dict(x) for x in await cur.fetchall()]}
+    return out
+
+
+async def results_loop(db, shop: ShopDB, bot, admin_id: int) -> None:
+    """Итоги: неделя — каждое воскресенье 20:00 МСК, месяц — последний день месяца 20:00 МСК.
+    Если сервер был выключен в момент итогов — подводит их после запуска (пока период «заморожен»)."""
+    from db import next_end, period_open
     while True:
-        now = datetime.now(MSK)
-        t = next_results_time(now)
-        # пропущенные итоги текущей недели (сервер перезапускали после 20:00 воскресенья)
-        if now.weekday() == 6 and now.hour >= 20:
-            await week_results(db, shop, bot, admin_id)
-        await asyncio.sleep(max(30, (t - datetime.now(MSK)).total_seconds()))
-        try:
-            await week_results(db, shop, bot, admin_id)
-        except Exception:  # noqa: BLE001
-            log.exception("итоги недели")
+        now = time.time()
+        for kind in ("week", "month"):
+            if not period_open(kind, now):  # 20:00 последнего дня прошло — итоги этого периода
+                try:
+                    await period_results(db, shop, bot, admin_id, kind, now)
+                except Exception:  # noqa: BLE001
+                    log.exception("итоги %s", kind)
+        t = min(next_end(k, now).timestamp() for k in ("week", "month"))
+        await asyncio.sleep(max(5, min(t - time.time() + 2, 3600)))
+
+
+# совместимость со старыми тестами/вызовами
+async def week_results(db, shop, bot, admin_id, now=None):
+    await init_awards(db)
+    return await period_results(db, shop, bot, admin_id, "week", now)
+
+
+async def weekly_loop(db, shop, bot, admin_id):
+    await init_awards(db)
+    await results_loop(db, shop, bot, admin_id)
