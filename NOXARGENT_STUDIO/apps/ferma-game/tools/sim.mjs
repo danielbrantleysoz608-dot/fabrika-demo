@@ -243,3 +243,36 @@ if (arg === 'unlock') {
     }
   }
 }
+
+// node tools/sim.mjs steps [N] [types] — время до каждого открытия поздней игры и уровень фермы в этот момент
+if (arg === 'steps') {
+  if (process.env.SETTLE !== undefined) (await import('../webapp/js/data.js')).SETTLE.on = process.env.SETTLE === '1';
+  if (process.env.LATE_INC) (await import('../webapp/js/data.js')).LATE_INC.k = +process.env.LATE_INC;
+  if (process.env.GOALK) (await import('../webapp/js/data.js')).GOAL_K.k = +process.env.GOALK;
+  const N = +process.argv[3] || 3;
+  const types = process.argv[4] ? process.argv[4].split(',') : ['m30', 'active'];
+  const STEPS = [
+    ['Райцентр открыт', (st) => st.tier >= 2], ['  Магазин', (st) => st.lv.shop > 0], ['  Кафе', (st) => st.lv.cafe > 0], ['  Рынок', (st) => st.lv.market > 0],
+    ['  Магазин ур.5', (st) => st.lv.shop >= 5], ['Агрохолдинг открыт', (st) => st.tier >= 3], ['  Большие поля', (st) => st.lv.tractor > 0], ['  Элеватор', (st) => st.lv.elevator > 0],
+    ['  Своя марка', (st) => st.lv.brand > 0], ['  Большие поля ур.5', (st) => st.lv.tractor >= 5], ['Цель 1 млрд (будущий «Посёлок»)', (st) => st.tier >= 4], ['Цель 10 млрд (будущий «Город»)', (st) => st.tier >= 5],
+  ];
+  for (const t of types) {
+    const res = STEPS.map(() => []);
+    for (let i = 0; i < N; i++) {
+      const hit = STEPS.map(() => null);
+      play(i + 1, t, { maxDays: +process.env.DAYS || 20, until: 1e18, onVisit: (st, ms) => {
+        STEPS.forEach(([, f], k) => { if (!hit[k] && f(st)) hit[k] = { ms, lvl: E.farmLevel(st) }; });
+        return hit[hit.length - 1];
+      } });
+      hit.forEach((h, k) => res[k].push(h));
+    }
+    console.log(`\n${PLAYERS[t].name} (медиана по ${N} фермам)`);
+    console.log('Шаг'.padEnd(34), 'время'.padStart(11), ' от прошлого', ' уровень');
+    let prev = null;
+    STEPS.forEach(([name], k) => {
+      const a = res[k].filter(Boolean).sort((x, y) => x.ms - y.ms), m = a.length > N / 2 ? a[Math.floor(a.length / 2)] : null;
+      console.log(name.padEnd(34), fmtT(m?.ms).padStart(11), (m && prev ? '+' + fmtT(m.ms - prev) : '').padStart(12), String(m ? m.lvl : '—').padStart(8));
+      if (m) prev = m.ms;
+    });
+  }
+}
