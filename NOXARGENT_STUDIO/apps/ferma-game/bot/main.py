@@ -8,20 +8,24 @@ import argparse
 import asyncio
 import logging
 
-from aiogram import Bot, Dispatcher, F
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandStart
-from aiogram.types import (BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo)
+from aiogram.types import (BotCommand, BotCommandScopeChatAdministrators, InlineKeyboardButton, InlineKeyboardMarkup, MenuButtonWebApp, Message, WebAppInfo)
 from aiohttp import web
 
 import config
 from db import DB
 from shop import ShopDB, make_router, weekly_loop
+import moderation
 import sub as subscription
 from web import make_app
 
 log = logging.getLogger("ferma")
 dp = Dispatcher()
+# игровые команды и ответы — только в личке с ботом; в чате фермеров работает только модерация
+private = Router(name="private")
+private.message.filter(F.chat.type == "private")
 CFG = config.load()
 
 WELCOME = (
@@ -42,14 +46,14 @@ def play_keyboard() -> InlineKeyboardMarkup:
 SUB: subscription.SubChecker | None = None
 
 
-@dp.message(CommandStart())
+@private.message(CommandStart())
 async def start(message: Message) -> None:
     if SUB and not await subscription.gate(message, SUB, CFG.channel_url):
         return  # сначала подписка на канал
     await message.answer(WELCOME, reply_markup=play_keyboard())
 
 
-@dp.message(Command("help"))
+@private.message(Command("help"))
 async def help_(message: Message) -> None:
     await message.answer(
         "Тапай по постройкам — собирай урожай, выполняй заказы и копи опыт ⭐.\n"
@@ -79,15 +83,29 @@ async def run(web_only: bool) -> None:
                                    BotCommand(command="myid", description="Мой Telegram id"),
                                    BotCommand(command="help", description="Как играть"),
                                    BotCommand(command="paysupport", description="Вопросы по оплате")])
-        dp.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))
+        # модерация чата фермеров (группа); всё игровое — в роутере private (только личка)
+        mod = moderation.ModDB(db)
+        await mod.init()
+        dp.include_router(moderation.make_router(mod, CFG.chat_id, CFG.admin_id))
+        if CFG.chat_id:  # подсказки команд модерации — видят только админы чата
+            try:
+                await bot.set_my_commands(moderation.ADMIN_COMMANDS, scope=BotCommandScopeChatAdministrators(chat_id=CFG.chat_id))
+            except Exception as e:  # noqa: BLE001 — бот ещё не в чате
+                log.warning("подсказки команд для чата: %s", e)
+        private.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))
         global SUB
         SUB = subscription.SubChecker(bot, subscription.default_needs(CFG.channel_id, CFG.channel_url, CFG.chat_id, CFG.chat_url),
                                       CFG.require_sub, CFG.admin_id)
-        dp.include_router(subscription.make_router(SUB, CFG.channel_url, WELCOME, play_keyboard))
+        private.include_router(subscription.make_router(SUB, CFG.channel_url, WELCOME, play_keyboard))
 
-        @dp.message(F.text)
+        # «Жми Играть» — последним, чтобы не перехватывать команды (/myid, /paysupport, /test_results…)
+        fallback = Router(name="fallback")
+
+        @fallback.message(F.text)
         async def any_text(message: Message) -> None:
             await message.answer("Жми «Играть» 👇", reply_markup=play_keyboard())
+        private.include_router(fallback)
+        dp.include_router(private)
         log.info("Бот @%s запущен%s", username, " (ТЕСТОВЫЕ ЦЕНЫ: всё по 1 ⭐)" if CFG.test_prices else "")
 
     app = make_app(CFG, db, username, shop=shop, bot=bot,
