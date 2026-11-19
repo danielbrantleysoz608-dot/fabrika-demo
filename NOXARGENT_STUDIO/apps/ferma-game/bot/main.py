@@ -39,7 +39,8 @@ WELCOME = (
 def play_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/"))],
-        [InlineKeyboardButton(text="📺 Канал «Ферма с нуля»", url=CFG.channel_url)],
+        # кнопка канала — только когда подписка обязательна (REQUIRE_SUB=1)
+        *([[InlineKeyboardButton(text="📺 Канал «Ферма с нуля»", url=CFG.channel_url)]] if CFG.require_sub else []),
     ])
 
 

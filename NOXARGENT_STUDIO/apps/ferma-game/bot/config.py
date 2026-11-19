@@ -24,7 +24,7 @@ class Config:
     channel_url: str = "https://t.me/predstav_kanal"
     test_prices: bool = False  # все покупки по 1 ⭐ — для проверки оплаты перед запуском
     channel_id: str = "@predstav_kanal"  # канал для обязательной подписки (бот — админ канала)
-    require_sub: bool = True
+    require_sub: bool = False
     chat_id: str = "@predstav_chat"  # чат фермеров (обязательно вступить); пусто — только канал
     chat_url: str = "https://t.me/predstav_chat"
 
@@ -48,7 +48,7 @@ def load() -> Config:
         channel_url=os.getenv("CHANNEL_URL", "https://t.me/predstav_kanal"),
         test_prices=os.getenv("TEST_PRICES", "0") == "1",
         channel_id=os.getenv("CHANNEL_ID", "@predstav_kanal"),
-        require_sub=os.getenv("REQUIRE_SUB", "1") == "1",
+        require_sub=os.getenv("REQUIRE_SUB", "0") == "1",  # обязательная подписка пока выключена; включить — REQUIRE_SUB=1 в .env
         chat_id=os.getenv("CHAT_ID", "@predstav_chat"),
         chat_url=os.getenv("CHAT_URL", "https://t.me/predstav_chat"),
     )
