@@ -526,7 +526,8 @@ function orderBoard(st) {
       <path d="M${x + 4} ${720} h12 M${x + 4} ${725} h9 M${x + 4} ${730} h11" stroke="#b9a07c" stroke-width="1.4"/><circle cx="${x + 10}" cy="714" r="2" fill="#d8392d"/></g>` : '';
   }).join('');
   const badge = done ? `<g class="board-badge"><circle cx="400" cy="700" r="11" fill="#d8392d" stroke="#fff" stroke-width="2.5"/><text x="400" y="704.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="12" fill="#fff">${done}</text></g>` : '';
-  return `<g id="board" data-tap="board">
+  // доска стоит чуть левее правого края — справа над «Тетрадью» место для кнопки «🧺 Собрать всё»
+  return `<g id="board" data-tap="board"><g transform="translate(-46 0)">
     <rect x="312" y="690" width="100" height="78" fill="transparent"/>
     <ellipse cx="363" cy="766" rx="44" ry="5" fill="#000" opacity=".12"/>
     <rect x="332" y="728" width="6" height="38" fill="#7b5236" ${OLt}/><rect x="388" y="728" width="6" height="38" fill="#7b5236" ${OLt}/>
@@ -534,7 +535,7 @@ function orderBoard(st) {
     <rect x="326" y="704" width="74" height="36" rx="3" fill="#a8743f"/>
     <rect x="334" y="692" width="58" height="13" rx="3" fill="#f8efd9" stroke="#8a5a3c" stroke-width="1.6"/>
     <text x="363" y="702" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="8.5" fill="#5b3a26">ЗАКАЗЫ</text>
-    ${notes}${badge}</g>`;
+    ${notes}${badge}</g></g>`;
 }
 
 /* ---------- Мусор (уборка) ---------- */
@@ -811,7 +812,7 @@ function homeSigns(sf) {
   if (sf.eco) boards.push(['ЭКО-ФЕРМА', '#4fae54', '#fff']);
   if (sf.farmOfYear) boards.push(['ФЕРМА ГОДА', '#fff4d6', '#8a5a0c']);
   if (boards.length) {
-    s += `<g id="signs" pointer-events="none" transform="translate(435 700)"><rect x="-2" y="0" width="4" height="${10 + boards.length * 17}" fill="#7b5236"/>
+    s += `<g id="signs" pointer-events="none" transform="translate(402 646)"><rect x="-2" y="0" width="4" height="${10 + boards.length * 17}" fill="#7b5236"/>
       ${boards.map(([t, bg, fg], i) => `<rect x="-25" y="${i * 17}" width="50" height="14" rx="3" fill="${bg}" stroke="#3b2a1f" stroke-width="1.6"/>
       <text x="0" y="${i * 17 + 10}" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="6.6" fill="${fg}">${t}</text>`).join('')}</g>`;
   }
@@ -1153,7 +1154,7 @@ function fishBadge(spot, x, y) {
 }
 function creek(m) {
   const w = m.season === 'winter' ? '#dce9f2' : '#6fb6ec', wl = m.season === 'winter' ? '#f4f9fc' : '#a9d8f6';
-  return `<g id="creek" data-tap="fish" data-spot="home"><g transform="translate(0 -24)">
+  return `<g id="creek" data-tap="fish" data-spot="home"><g transform="translate(-26 -24)">
     <path d="M118 806 C 112 770, 150 748, 214 746 C 270 744, 304 760, 300 806 Z" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>
     <path d="M150 778 q12 -5 24 0 q12 5 24 0 M222 790 q10 -4 20 0 q10 4 20 0" stroke="${wl}" stroke-width="3" fill="none" stroke-linecap="round" class="ripples"/>
     <g stroke="#3b2a1f" stroke-width="1.5"><rect x="226" y="752" width="46" height="9" fill="#b9844f"/><rect x="230" y="761" width="5" height="16" fill="#7b5236"/><rect x="263" y="761" width="5" height="16" fill="#7b5236"/></g>

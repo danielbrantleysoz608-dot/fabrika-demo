@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_REWARD_K, FAIR, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_REWARD_K, FAIR, LATE_MIN, LOC_INC, PRICE_MIN, CAPITAL_PAID, SETTLE, upkeepShare, DYN, LOCATIONS, CATCHUP_AFTER_MS, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -80,10 +80,23 @@ export function hitTrash(st, id) {
 export const level = (st, id) => st.lv[id] || 0;
 // доход постройки на уровне L (₽/мин без сезона и бонусов)
 // доход на уровне L: inc + inc·g + inc·g² + … — каждый уровень прибавляет больше предыдущего
+// масштаб поздней локации (1 — Ферма деда, Река и луг и старые сохранения)
+export const locK = (st, id) => (st?.locK?.[BUILDINGS[id]?.loc]) || 1;
+// «живые» постройки (Река и луг и дальше): доход — сумма прибавок от покупок (st.binc), цена — минуты текущего дохода
+export const isDyn = (id) => (BUILDINGS[id]?.tier || 0) >= 1 && BUILDINGS[id]?.kind !== 'once';
+export const dynPayback = (st) => DYN.payback[Math.min(st.tier || 0, DYN.payback.length - 1)];
+const classicInc = (st, id, L) => baseIncome(id, L) * (st?.locKi?.[BUILDINGS[id]?.loc] || locK(st, id));
+// доход постройки на уровне L: текущий — из st.binc (у старых сохранений — по прежней формуле), следующий — + цена/окупаемость
+export function incOf(st, id, L) {
+  if (!st || !isDyn(id) || BUILDINGS[id].kind !== 'prod') return classicInc(st, id, L);
+  const cur = level(st, id), now = st.binc?.[id] ?? classicInc(st, id, cur);
+  if (L <= cur) return L === cur ? now : now * L / Math.max(1, cur);
+  return now + (L - cur) * dynPrice(st, id) / (dynPayback(st) * globalMult(st, false));
+}
 export const baseIncome = (id, L) => { const g = BUILDINGS[id].incGrowth || INC_GROWTH; return L > 0 ? BUILDINGS[id].inc * (g ** L - 1) / (g - 1) : 0; };
 // окупаемость следующего уровня (минуты, в сезон)
 export function paybackMin(st, id) {
-  const L = level(st, id), d = (baseIncome(id, L + 1) - baseIncome(id, L)) * globalMult(st, false);
+  const L = level(st, id), d = (incOf(st, id, L + 1) - incOf(st, id, L)) * globalMult(st, false);
   return d > 0 ? priceOf(st, id) / d : Infinity;
 }
 
@@ -111,7 +124,7 @@ export const seasonMult = (st, id, m = st.month) => {
 // бонус работников к постройке (птичница, пасечник, доярка)
 export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id] * (1 + 0.6 * (wLv(st, w) - 1)); return k; };
 // текущая скорость, ₽/мин
-export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * boostMult(st, id) * effMod(st, id) * globalMult(st);
+export const rate = (st, id) => incOf(st, id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * boostMult(st, id) * effMod(st, id) * globalMult(st);
 
 /* ---------- Эффекты решений и доверие ---------- */
 // множитель по ключу (sales или id постройки): на этот месяц (mods) × навсегда (perm) × временные (effects, до месяца until)
@@ -204,11 +217,11 @@ export function activateBooster(st, kind, now = Date.now(), source = '') {
 }
 export const totalRate = (st) => PRODUCERS.reduce((a, id) => a + rate(st, id), 0);
 // вместимость склада: 2 часа номинального производства
-export const storageCap = (st, id) => baseIncome(id, level(st, id)) * globalMult(st, false) * 1.5 * STORAGE_MIN;
+export const storageCap = (st, id) => incOf(st, id, level(st, id)) * globalMult(st, false) * 1.5 * STORAGE_MIN;
 // «масштаб» экономики для событий: доход за месяц без сезонов
 // доход фермы в минуту для наград и цен: текущий, но не меньше половины номинального (зимой не обесценивается)
-export const perMin = (st) => Math.max(totalRate(st), PRODUCERS.reduce((a, id) => a + baseIncome(id, level(st, id)), 0) * globalMult(st, false) * 0.5, 30);
-export const monthScale = (st) => Math.max(15000, PRODUCERS.reduce((a, id) => a + baseIncome(id, level(st, id)), 0) * globalMult(st, false) * MONTH_MS / 60000);
+export const perMin = (st) => Math.max(totalRate(st), PRODUCERS.reduce((a, id) => a + incOf(st, id, level(st, id)), 0) * globalMult(st, false) * 0.5, 30);
+export const monthScale = (st) => Math.max(15000, PRODUCERS.reduce((a, id) => a + incOf(st, id, level(st, id)), 0) * globalMult(st, false) * MONTH_MS / 60000);
 
 /* ---------- Реальное время ---------- */
 export function tick(st, now = Date.now()) {
@@ -217,6 +230,7 @@ export function tick(st, now = Date.now()) {
   if (st.phase === 'clean') return { changed: false, offline: 0 };
   st.playMs = (st.playMs || 0) + Math.min(real, 60000); // время в игре (офлайн не считается) — для соседа
   logCapital(st, now, real);
+  markCapital(st, now);
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
@@ -262,7 +276,7 @@ export function collect(st, id, auto = false) {
   gain(st, amt + fresh - reserved.value);
   lastFresh = fresh;
   lastXp = 0;
-  if (!auto) { st.taps++; dailyProgress(st, 'collect', amt + fresh); lastXp = addXp(st, XP.collect); }
+  if (!auto) { st.taps++; dailyProgress(st, 'collect', amt + fresh); if (st.taps % XP.collectEvery === 0) lastXp = addXp(st, XP.collect); }
   else if (st.daily) st.daily.sold += amt + fresh;
   checkGoals(st);
   return amt + fresh;
@@ -343,7 +357,7 @@ export function repairHouse(st) {
 // выгода ремонта для «самого выгодного» (₽/мин на рубль) — для симуляции
 export function repairValue(st) {
   const n = nextRepair(st); if (!n) return 0;
-  const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0) * globalMult(st, false);
+  const base = PRODUCERS.reduce((a, p) => a + incOf(st, p, level(st, p)) * soonSeason(st, p), 0) * globalMult(st, false);
   return base * HOUSE_BONUS / (1 + HOUSE_BONUS * (st.house || 0)) / n.cost;
 }
 
@@ -351,7 +365,10 @@ export function repairValue(st) {
 export function farmLevel(st) { let n = 1; while ((st.xp || 0) >= xpForLevel(n + 1)) n++; return n; }
 export const levelProgress = (st) => { const n = farmLevel(st), a = xpForLevel(n), b = xpForLevel(n + 1); return { level: n, have: (st.xp || 0) - a, need: b - a }; };
 // «догоняющий» бонус: капитал для следующей цели уже есть, а уровня фермы не хватает — опыт ×2
-export const catchUp = (st) => st.phase !== 'clean' && st.tier !== undefined && ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) < goalLevel(st.tier);
+export const catchUp = (st) => st.phase !== 'clean' && st.tier !== undefined && ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) < goalLevel(st.tier)
+  && st.capAt?.tier === st.tier && (st.lastTick || Date.now()) - st.capAt.at >= CATCHUP_AFTER_MS;
+// когда капитал для текущей цели набран впервые (для «догоняющего» бонуса)
+function markCapital(st, now) { if ((!st.capAt || st.capAt.tier !== st.tier) && ratingCapital(st) >= goalOf(st.tier)) st.capAt = { tier: st.tier, at: now }; }
 export function addXp(st, n) {
   const add = Math.round(n * (catchUp(st) ? 2 : 1));
   st.xp = (st.xp || 0) + add;
@@ -789,25 +806,52 @@ export function declineOrder(st, i, now = Date.now()) {
 export const levelMult = (b) => b.costMult || LEVEL_COST_MULT;
 // цена перехода с уровня L на L+1
 export function costAt(b, L) { return b.cost * levelMult(b) ** L; }
+// постоянный доход фермы (без счастливого часа, бустеров, щенка и событий месяца)
+export const steadyRate = (st) => PRODUCERS.reduce((a, id) => a + incOf(st, id, level(st, id)) * workerMult(st, id) * (st.perm?.[id] ?? 1), 0) * globalMult(st, false);
+// доход «чистыми» — после расходов на содержание (корм, свет, налоги): из него игрок копит на покупки
+export const netRate = (st) => steadyRate(st) * (1 - upkeepShare(st.tier || 0));
+// при открытии поздней локации: k = доход фермы / расчётный доход (первая постройка ≈ LATE_MIN минут дохода)
+function setLocK(st) {
+  for (const L of LOCATIONS) {
+    if (L.tier < 1 || L.tier !== st.tier || st.locK?.[L.id]) continue;
+    const first = Math.min(...Object.keys(BUILDINGS).filter(id => BUILDINGS[id].loc === L.id && BUILDINGS[id].tier === L.tier).map(id => BUILDINGS[id].cost));
+    const k = Math.max(1, steadyRate(st) * LATE_MIN / first);
+    (st.locK ||= {})[L.id] = k; (st.locKi ||= {})[L.id] = k * (LOC_INC[L.id] ?? 1);
+  }
+}
+// цена «живой» постройки: ~35 минут текущего дохода; «Своя марка» (+доля ко всему) и «Рынок» (+к заказам) — по их эффекту
+function dynPrice(st, id) {
+  const b = BUILDINGS[id], base = Math.max(netRate(st), 1000), L = level(st, id); // от дохода «чистыми» — копится ~35 минут
+  if (b.kind === 'boost') return base * b.boost / (1 + b.boost * L) * dynPayback(st) * (1 - upkeepShare(st.tier || 0)); // +доля ко всему доходу — по её окупаемости
+  return base * DYN.mins;                                       // постройка, уровень, рынок — ~35 минут дохода «чистыми»
+}
 export function priceOf(st, id) {
   const b = BUILDINGS[id], L = level(st, id);
-  let p = costAt(b, L);
+  let p = isDyn(id) ? dynPrice(st, id) : costAt(b, L) * locK(st, id);
   const disc = st.flags.disc?.[id];
   if (disc) p *= 1 - disc;
   return Math.round(p);
 }
 // сколько стоят постройки сейчас (всё, что вложено в уровни и ремонт дома)
+// сколько вложено в постройку: «живые» — сколько заплачено; остальные — по прежней формуле уровней
+function bookValue(st, id) {
+  if (st.bpaid?.[id] !== undefined) return st.bpaid[id];
+  const b = BUILDINGS[id], L = level(st, id);
+  let v = 0, p = b.cost * locK(st, id);
+  for (let i = 0; i < L; i++) { v += p; p *= levelMult(b); }
+  return v;
+}
 export function buildingsValue(st) {
   let v = 0;
   for (let i = 0; i < (st.house || 0); i++) v += HOUSE_STAGES[i].cost;
   for (const d of DECOR) if (st.decor?.[d.id] === true) v += d.cost; // старые сохранения
   for (const w of Object.values(st.workers || {})) v += w.spent || 0; // наём и улучшения работников — тоже вложения в ферму
+  if (CAPITAL_PAID.on) v += st.bvExtra || 0;                                                // доплата сверх «книжной» цены — тоже вложено в ферму
   for (const id of Object.keys(st.decor || {})) v += st.decor[id] === true ? 0 : st.decor[id]; // украшения — по цене покупки
   for (const id of Object.keys(st.lv)) {
     const b = BUILDINGS[id], L = level(st, id);
     if (b.kind === 'once') { v += b.cost * L; continue; }
-    let p = b.cost;
-    for (let i = 0; i < L; i++) { v += p; p *= levelMult(b); }
+    v += bookValue(st, id);
   }
   return v;
 }
@@ -828,6 +872,11 @@ export function buy(st, id) {
   if (why) return why;
   const p = priceOf(st, id);
   st.money -= p;
+  if (isDyn(id)) {
+    // «живая» постройка: доход растёт на цену/окупаемость, в капитал — сколько заплачено
+    if (BUILDINGS[id].kind === 'prod') (st.binc ||= {})[id] = incOf(st, id, level(st, id) + 1);
+    (st.bpaid ||= {})[id] = (st.bpaid[id] ?? bookValue(st, id)) + p;
+  }
   st.lv[id] = level(st, id) + 1;
   if (st.flags.disc?.[id]) delete st.flags.disc[id];
   dailyProgress(st, 'build', 1);
@@ -844,16 +893,16 @@ export function buyValue(st, id) {
   const b = BUILDINGS[id];
   const L = level(st, id);
   const k = globalMult(st, false);
-  if (b.kind === 'prod') return (baseIncome(id, L + 1) - baseIncome(id, L)) * soonSeason(st, id) * k;
+  if (b.kind === 'prod') return (incOf(st, id, L + 1) - incOf(st, id, L)) * soonSeason(st, id) * k;
   if (b.kind === 'boost') {
-    const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0);
+    const base = PRODUCERS.reduce((a, p) => a + incOf(st, p, level(st, p)) * soonSeason(st, p), 0);
     return base * k * b.boost / (1 + b.boost * L);
   }
   if (id === 'stove') return baseIncome('greenhouse', level(st, 'greenhouse')) * 1.5 * k * (isWinter(st.month + 1) ? 1 : 0.25);
   if (id === 'omshanik') return baseIncome('apiary', level(st, 'apiary')) * k * (st.month % 12 >= 6 && st.month % 12 <= 9 ? 0.5 : 0.05);
-  if (id === 'fence') return PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)), 0) * 0.02;
+  if (id === 'fence') return PRODUCERS.reduce((a, p) => a + incOf(st, p, level(st, p)), 0) * 0.02;
   if (b.kind === 'orders') { // рынок: заказы дороже — грубо: заказы дают ~15% дохода
-    const base = PRODUCERS.reduce((a, p) => a + baseIncome(p, level(st, p)) * soonSeason(st, p), 0);
+    const base = PRODUCERS.reduce((a, p) => a + incOf(st, p, level(st, p)) * soonSeason(st, p), 0);
     return base * k * 0.15 * b.orderBoost / (1 + b.orderBoost * L);
   }
   return 0;
@@ -899,12 +948,20 @@ export function grantAch(st, id) {
   st.achNew.push(id);
   return true;
 }
+// что ещё не построено в текущей поздней локации (для цели нужно «обжиться»: всё по 1-му уровню)
+export function settleMissing(st) {
+  if (!SETTLE.on) return [];
+  const L = LOCATIONS.find(l => l.tier === st.tier && l.tier >= 2);
+  if (!L) return [];
+  return Object.keys(BUILDINGS).filter(id => BUILDINGS[id].loc === L.id && BUILDINGS[id].tier === L.tier && !level(st, id));
+}
 export function checkGoals(st) {
   let reached = false;
-  while (ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) >= goalLevel(st.tier)) {
+  while (ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) >= goalLevel(st.tier) && !settleMissing(st).length) {
     grantAch(st, goalAchievement(st.tier));
     addHistory(st, { m: st.month, t: `Цель достигнута: ${tierName(st.tier)}! Открыты новые постройки.` });
     st.tier++;
+    setLocK(st);
     reached = true;
   }
   return reached;
@@ -1045,7 +1102,8 @@ function closeMonth(st) {
   const m = st.month;
   const income = Math.round(st.monthIncome);
   const costs = [];
-  if (income > 0) costs.push({ label: 'Корм, свет и налоги', amount: Math.round(income * UPKEEP_SHARE) });
+  const up = upkeepShare(st.tier || 0);
+  if (income > 0) costs.push({ label: up > 0.1 ? `Содержание хозяйства (${Math.round(up * 100)}%)` : 'Корм, свет и налоги', amount: Math.round(income * up) });
   // месяц ускорили — платим только за реально прошедшее время (доход за промотанное время не начислялся)
   const lived = 1 - Math.min(MONTH_MS, st.skippedMs || 0) / MONTH_MS;
   if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE * lived) });
@@ -1112,6 +1170,7 @@ export function migrate(save) {
   save.trust ??= TRUST.start; save.orderStreak ??= 0;
   // опыт по новым правилам: заказы и задания дают вдвое больше, +1 ⭐ за каждый сбор руками — пересчитываем, не понижая
   if (!save.xpV2) { save.xp = Math.max(save.xp || 0, Math.round((save.xp || 0) * 2 + (save.taps || 0) * XP.collect)); save.xpV2 = 1; }
+  if (!save.locK) { save.locK = {}; for (const L of LOCATIONS) if (L.tier >= 1 && (save.tier || 0) >= L.tier) save.locK[L.id] = 1; } // уже открытые — без изменений
   save.storyFlags ??= {}; save.storyQueue ??= []; save.goods ??= { equip: {}, supply: {} }; save.perm ??= {}; save.effects ??= []; save.decisions ??= [];
   // раньше события повторялись каждый год («id@год») — теперь каждое один раз
   save.usedEvents = [...new Set((save.usedEvents || []).map(k => String(k).split('@')[0]))];

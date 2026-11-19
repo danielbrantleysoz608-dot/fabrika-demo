@@ -803,3 +803,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .sub2 { font-size: 12px; font-weight: 800; color: #8a6a52; margin: 8px 2px 4px; text-transform: uppercase; letter-spacing: .02em; }
 .fx.up { background: #efe6ff; border-color: #7a52c7; color: #5a35a0; }
 .fair-card { border-color: #7a52c7; }
+/* ===== «🧺 Собрать всё» — круглая кнопка над «Тетрадью» ===== */
+.collect-btn { position: absolute; right: 8px; bottom: calc(100px + var(--safe-bot)); z-index: 6; width: 56px; height: 56px; border-radius: 50%; padding: 0;
+  border: 3px solid var(--line); background: #fff3d6; box-shadow: 0 3px 0 rgba(59,42,31,.3); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.collect-btn[hidden] { display: none; }
+.collect-btn span { font-size: 22px; line-height: 1; position: relative; }
+.collect-btn small { font-size: 8.5px; font-weight: 900; color: var(--brown); line-height: 1.05; text-align: center; max-width: 54px; position: relative; }
+.collect-btn .cb-ring { position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: conic-gradient(rgba(59,42,31,.35) calc(var(--cd, 0) * 360deg), transparent 0); }
+.collect-btn .cb-badge { position: absolute; top: -6px; right: -6px; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; background: #3fa34d; color: #fff;
+  border: 2px solid #1f5e2a; font-size: 12px; font-weight: 900; line-height: 18px; text-align: center; }
+.collect-btn .cb-badge[hidden] { display: none; }
+.collect-btn.off { background: #e9e2d4; filter: grayscale(.7); }
+.collect-btn.off .cb-badge { background: #8a8f96; border-color: #5c6168; }
+.collect-btn.vanya { border-color: #2f6fb5; }
+.collect-btn:active { transform: translateY(2px); }
+/* сундучок — над кнопкой «Собрать всё» */
+.chest-btn { bottom: calc(172px + var(--safe-bot)); }
+#app.cut .collect-btn { opacity: 0; pointer-events: none; }

@@ -312,6 +312,50 @@ function hitTrash(id) {
   persist();
 }
 
+/* ================= «🧺 Собрать всё» ================= */
+const COLLECT_ALL_CD = 2 * 60000;
+const collectBtn = $('#collectAll');
+const vanyaOn = () => E.hired(st, 'helper'); // помощник Ваня: без перезарядки и со всех локаций
+const readyIds = (all) => E.PRODUCERS.filter(id => E.level(st, id) > 0 && E.unitsReady(st, id) >= 1 && (all || (BUILDINGS[id].loc || 'home') === (st.loc || 'home')));
+const collectLeft = () => (vanyaOn() ? 0 : Math.max(0, (st.collectAllAt || 0) + COLLECT_ALL_CD - Date.now()));
+function collectAllTick() {
+  const show = !!st && st.phase === 'play' && !!profile.game;
+  collectBtn.hidden = !show;
+  if (!show) return;
+  const ids = readyIds(vanyaOn()), left = collectLeft();
+  collectBtn.classList.toggle('off', !ids.length || left > 0);
+  collectBtn.classList.toggle('vanya', vanyaOn());
+  collectBtn.style.setProperty('--cd', (left / COLLECT_ALL_CD).toFixed(3));
+  const bd = collectBtn.querySelector('.cb-badge');
+  bd.hidden = !ids.length; bd.textContent = ids.length;
+  collectBtn.querySelector('small').textContent = left > 0 ? `через ${mmss(left)}` : vanyaOn() ? 'Ваня: всё' : 'Собрать всё';
+}
+fastTap(collectBtn, () => {
+  if (!st || st.phase !== 'play') return;
+  const left = collectLeft(), all = vanyaOn(), ids = readyIds(all);
+  if (left > 0) { haptic('rigid'); return toast(`Собрать всё — через ${mmss(left)}. Без ожидания и со всех локаций — с помощником Ваней 👷`); }
+  if (!ids.length) { haptic('rigid'); return toast('Пока собирать нечего — пузыри ещё не созрели'); }
+  const xp0 = st.xp || 0, doneBefore = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
+  let sold = 0, toOrders = 0, here = 0;
+  for (const id of ids) {
+    const amt = E.collect(st, id); if (amt <= 0) continue;
+    const s1 = amt - E.lastReserved.value; sold += s1; toOrders += E.lastReserved.units;
+    if ((BUILDINGS[id].loc || 'home') === (st.loc || 'home') && READY_POSITIONS[id]) { // монеты летят в счётчик от каждого пузыря на экране
+      const pos = READY_POSITIONS[id];
+      if (s1 > 0) { setTimeout(() => flyToMoney(id, `+${short(s1)}`), here * 70); floatText(svg, pos[0], pos[1], `+${short(s1)}`); }
+      here++;
+    }
+  }
+  if (!all) st.collectAllAt = Date.now();
+  const gotXp = Math.round((st.xp || 0) - xp0);
+  haptic('medium'); sfx.coin(); setTimeout(() => sfx.coin(), 140);
+  render('ready');
+  toast(`🧺 Собрано с ${ids.length} ${ids.length === 1 ? 'постройки' : 'построек'}: +${short(sold)}${toOrders ? ` · в заказы ${toOrders}` : ''}${gotXp > 0 ? ` · +${gotXp} ⭐` : ''}`);
+  const doneNow = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
+  if (doneNow > doneBefore) { render(); sfx.bell(); toast('📋 Заказ собран — сдай его на доске заказов!'); } else if (toOrders) render();
+  collectAllTick(); updateDots(); afterGain(); persist();
+});
+
 function collect(id) {
   const pos = READY_POSITIONS[id];
   // собираем только из пузыря: пока урожай не созрел хотя бы на 1 штуку — тап открывает карточку постройки
@@ -367,6 +411,7 @@ loop.every(1000, () => {
   autoNotes(r.auto);
   fishBadges();
   chestTick();
+  collectAllTick();
   happyHint();
   expiredNotes();
   hud();
@@ -758,13 +803,13 @@ function card(id) {
   const k = E.globalMult(st, false);
   let stats = '';
   if (b.kind === 'prod') {
-    const next = (E.baseIncome(id, L + 1) - E.baseIncome(id, L)) * k;
+    const next = (E.incOf(st, id, L + 1) - E.incOf(st, id, L)) * k;
     const w = E.seasonWait(st, id);
     const waiting = w && w.months > 0;
     const nowTag = waiting
       ? `<span class="tag wait">🌱 ${seasonLine(w, L > 0)}</span>`
-      : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.baseIncome(id, 1) * k)}/мин`}</span>`;
-    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.baseIncome(id, 1) * k)}/мин в сезон</span>` : ''}${L < max ? `<span class="tag inc">${L ? `+${short(next)}/мин за уровень` : ''}</span>`.replace('<span class="tag inc"></span>', '') : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
+      : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.incOf(st, id, 1) * k)}/мин`}</span>`;
+    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.incOf(st, id, 1) * k)}/мин в сезон</span>` : ''}${L < max ? `<span class="tag inc">${L ? `+${short(next)}/мин за уровень` : ''}</span>`.replace('<span class="tag inc"></span>', '') : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
   } else if (b.kind === 'gear') {
     stats = `<span class="tag inc">окно поклёвки ${(E.biteWindow(st) / 1000).toFixed(2).replace('.', ',')} с${L < max ? ` → ${(0.6 * (1 + 0.25 * (L + 1))).toFixed(2).replace('.', ',')} с` : ''}</span><span class="tag">редкая рыба ×${1 + 0.5 * L}${L < max ? ` → ×${1 + 0.5 * (L + 1)}` : ''}</span>`;
   } else if (b.kind === 'boost') {
@@ -794,7 +839,7 @@ function openBuild(focus, keep = false) {
   const nr = E.nextRepair(st);
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
-  sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
+  sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b>${st.tier >= 1 ? ` · чистыми ≈ <b>${short(E.netRate(st))}/мин</b>` : ''}</div>
     ${st.tier >= 1 && E.farmLevel(st) < goalLevel(st.tier) ? fairCard() : ''}${houseCard}${workersCard()}${goodsCard()}${decorCard()}${open.map(card).join('')}${st.tier >= 1 && E.farmLevel(st) >= goalLevel(st.tier) ? fairCard() : ''}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
@@ -1220,22 +1265,22 @@ function openLevelHelp() {
   sheet(`⭐ Уровень фермы ${lp.level}`, `
     <div class="trust-big"><b>${lp.level}</b><span>${lp.have}/${lp.need} ⭐ до ${lp.level + 1}-го</span><div class="tb"><i style="width:${Math.round(100 * lp.have / lp.need)}%"></i></div></div>
     <p class="note">${lp.level >= need ? `Для «${nextPlace()}» уровня хватает — копи капитал ${short(E.goal(st))}.` : `Для «${nextPlace()}» нужен ${need}-й уровень — осталось <b>${E.xpToGoal(st)} ⭐</b>.`}
-    ${E.catchUp(st) ? '<br><b>🚀 Капитал уже есть — весь опыт ×2, пока не догонишь уровень!</b>' : ''}${next.length ? `<br>На ${lp.level + 1}-м уровне откроется: ${next.join(', ')}.` : ''}</p>
+    ${E.catchUp(st) ? '<br><b>🚀 Капитал уже есть — весь опыт ×2, пока не догонишь уровень!</b>' : E.ratingCapital(st) >= E.goal(st) ? '<br>Капитал уже есть — через 15 минут включится бонус: весь опыт ×2.' : ''}${next.length ? `<br>На ${lp.level + 1}-м уровне откроется: ${next.join(', ')}.` : ''}</p>
     <div class="sub">Где взять ⭐</div><ul class="todo">
-      <li>📋 заказы на доске — 24–60 ⭐, большой заказ дня — до 240 ⭐</li>
-      <li>🧺 сбор урожая — +1 ⭐ за каждый сбор (тапни по пузырю)</li>
+      <li>📋 заказы на доске — 18–45 ⭐, большой заказ дня — до 160 ⭐</li>
+      <li>🧺 сбор урожая — +1 ⭐ за каждый второй сбор (тапни по пузырю)</li>
       <li>🔨 стройка и улучшения — 6–15 ⭐</li>
       <li>🎣 рыбалка — от 4 ⭐ за улов</li>
       <li>✅ задания дня — по 20 ⭐</li>
       <li>🧭 решения в событиях после месяца — +10 ⭐</li>
-      <li>🎪 ярмарка в райцентре (Стройка) — ⭐ за деньги, раз в 2 часа${st.tier < 1 ? ' (после первого миллиона)' : fl > 0 ? ` (следующая через ${Math.ceil(fl / 60000)} мин)` : ' — <b>можно сейчас</b>'}</li>
+      <li>🎪 ярмарка в райцентре (Стройка) — ⭐ за деньги, раз в 3 часа${st.tier < 1 ? ' (после первого миллиона)' : fl > 0 ? ` (следующая через ${Math.ceil(fl / 60000)} мин)` : ' — <b>можно сейчас</b>'}</li>
       <li>🎁 сундучок за время в игре — иногда ⭐</li></ul>
     <div class="row"><button class="btn wide" data-act="close">Понятно</button><button class="btn primary wide" data-act="fairOpen">🎪 К ярмарке</button></div>`, 'level');
 }
 function fairCard() {
   const left = E.fairLeft(st), price = E.fairPrice(st), xp = E.fairXp(st) * (E.catchUp(st) ? 2 : 1);
   return `<div class="card fair-card" id="card-fair"><h3>🎪 Ярмарка в райцентре</h3><div class="price">${short(price)}</div>
-    <p>Свези излишки на ярмарку — о ферме узнают в районе: <b>+${xp} ⭐</b> опыта${E.catchUp(st) ? ' (с бонусом ×2)' : ''}. Раз в 2 часа.</p>
+    <p>Свези излишки на ярмарку — о ферме узнают в районе: <b>+${xp} ⭐</b> опыта${E.catchUp(st) ? ' (с бонусом ×2)' : ''}. Раз в 3 часа.</p>
     <button class="btn primary go" data-act="fair" ${left > 0 ? 'disabled' : ''} ${left <= 0 && st.money < price ? `data-lock="Не хватает ${short(price - st.money)}"` : ''}>${left > 0 ? `Следующая через ${Math.ceil(left / 60000)} мин` : `Поехать за ${short(price)}`}</button></div>`;
 }
 
@@ -1801,10 +1846,11 @@ function openRules() {
     <p><b>9. Рыбалка.</b> Мостки у речки внизу фермы: раз в 20 минут. Тапни, когда поплавок нырнёт! Рыбу можно продать или отдать в заказ «Уха». Удочку улучшают в «Стройке».</p>
     <p><b>10. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» (пруд — раз в 15 минут, рыба дороже), дальше — Райцентр и Агрохолдинг.</p>
     <p><b>11. Работники.</b> «👷 Работники» в «Стройке» и в разделе «Моя ферма»: помощник сам собирает урожай, водитель сдаёт заказы. Зарплата — раз в месяц.</p>
-    <p><b>12. Цели и уровень ⭐.</b> Цель открывается, когда есть и капитал, и уровень фермы. Опыт — за сбор урожая, заказы, стройку, рыбалку, задания дня, решения в событиях и ярмарку в райцентре (Стройка, раз в 2 часа, за ₽). Капитал уже набран, а уровня не хватает — опыт ×2. Тапни по ⭐ сверху — там всё написано.</p>
+    <p><b>12. Цели и уровень ⭐.</b> Цель открывается, когда есть и капитал, и уровень фермы. Опыт — за сбор урожая, заказы, стройку, рыбалку, задания дня, решения в событиях и ярмарку в райцентре (Стройка, раз в 3 часа, за ₽). Капитал уже набран, а уровня не хватает дольше 15 минут — опыт ×2. Тапни по ⭐ сверху — там всё написано.</p>
     <p><b>13. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
-    <p><b>14. Доверие покупателей 🤝</b> (значок рядом с соседом, 0–100, старт 50). Растёт: заказы сданы вовремя, серия заказов без отказов, свежий урожай (собран до того, как пузырь полон), честные решения. Падает: отказ от заказа, просроченный заказ (⏳ на карточке), перестоявший урожай, нечестные решения — задрать цены, продать подпорченное, приукрасить. Влияет на цену продажи: от −20% (0 🤝) до +30% (100 🤝). При высоком доверии приходят ресторан и кафе-пекарня с выгодными заказами, при низком — только мелкие.</p>
-    <p><b>15. Решения с последствиями.</b> Каждое событие бывает один раз, а выбор влияет на следующие: пустишь завод — река помутнеет, откажешь — завод уйдёт к соседу. Всё построенное появляется на ферме (поливалки, панели, дорога, завод), временные эффекты — значком с таймером сверху. Лента решений — «Тетрадь → История».</p>
+    <p><b>14. Большое хозяйство.</b> С «Реки и луга» каждая постройка и каждый уровень стоят около 35 минут дохода «чистыми» — новое открытие примерно раз в полчаса игры. Чем больше ферма, тем больше содержание (видно в итогах месяца), а новые постройки окупаются всё дольше — путь к миллиардам долгий.</p>
+    <p><b>15. Доверие покупателей 🤝</b> (значок рядом с соседом, 0–100, старт 50). Растёт: заказы сданы вовремя, серия заказов без отказов, свежий урожай (собран до того, как пузырь полон), честные решения. Падает: отказ от заказа, просроченный заказ (⏳ на карточке), перестоявший урожай, нечестные решения — задрать цены, продать подпорченное, приукрасить. Влияет на цену продажи: от −20% (0 🤝) до +30% (100 🤝). При высоком доверии приходят ресторан и кафе-пекарня с выгодными заказами, при низком — только мелкие.</p>
+    <p><b>16. Решения с последствиями.</b> Каждое событие бывает один раз, а выбор влияет на следующие: пустишь завод — река помутнеет, откажешь — завод уйдёт к соседу. Всё построенное появляется на ферме (поливалки, панели, дорога, завод), временные эффекты — значком с таймером сверху. Лента решений — «Тетрадь → История».</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }

@@ -18,11 +18,28 @@ export const FRESH_BONUS = 0.2;
 export const DAILY_REWARD = 0.1;       // за каждое задание дня
 export const LOGIN_REWARD = 0.05;        // × номер дня серии (1…7)
 export const LOGIN_DAYS = 7;
-export const UPKEEP_SHARE = 0.10;           // корм, свет, налоги — 10% месячного дохода
+// Темп после первого миллиона:
+// 1) любая постройка/уровень стоит не меньше PRICE_MIN.mins минут постоянного дохода — новое открытие каждые ~30–40 минут игры;
+export const PRICE_MIN = { fromTier: 1, mins: 35 };
+// Постройки «Реки и луга» и дальше (tier ≥ 1): цена = DYN.mins минут текущего дохода фермы (новое открытие каждые ~30–40 минут),
+// прибавка дохода от покупки = цена / окупаемость; окупаемость растёт с каждой целью (DYN.payback[номер цели], минуты) —
+// игра идёт всё медленнее. Подобрано по sim: 1 млн ≈ 3 ч, 10 млн ≈ 1 день, 100 млн ≈ 3–4 дня, 1 млрд ≈ 7–10 дней.
+export const DYN = { mins: 35, payback: [1200, 1200, 2000, 2600, 4500, 6000, 8000, 10000], cap: [0, 8, 12, 16, 20] }; // cap — потолок уровней «живых» построек по целям (чтобы покупать было что всегда)
+export const LATE_MIN = 35;
+export const LOC_INC = { river: 0.2, town: 0.2, agro: 0.2 };
+export const CAPITAL_PAID = { on: false }; // true — постройки в капитале по цене покупки; false — по «книжной» цене (переплата за спешку в капитал не идёт)
+// «Обжиться»: следующая цель после Райцентра/Агрохолдинга открывается, когда в текущей поздней локации построено всё (по 1-му уровню)
+export const SETTLE = { on: false };
+export const UPKEEP_SHARE = 0.10;           // корм, свет, налоги — 10% месячного дохода (на Ферме деда)
+// чем больше хозяйство, тем больше расходы: доля по целям (индекс — номер цели), дальше — последнее значение
+export const UPKEEP_BY_TIER = { v: [0.10, 0.62, 0.55, 0.68] }; // корм, свет, налоги: Ферма деда — 10%, большое хозяйство: Река 62%, Райцентр 55%, дальше 68%
+export const upkeepShare = (tier) => UPKEEP_BY_TIER.v[Math.min(tier, UPKEEP_BY_TIER.v.length - 1)];
 export const LOAN_RATE = 0.05;
 
 // Цели: 1 млн → 10 млн → 100 млн → … (бесконечно)
-export const goalOf = (tier) => 10 ** (6 + tier);
+// GOAL_K.from — с какой цели капитал умножается на GOAL_K.k (1 — как было)
+export const GOAL_K = { from: 2, k: 1 };
+export const goalOf = (tier) => 10 ** (6 + tier) * (tier >= GOAL_K.from ? GOAL_K.k : 1);
 export const goalLabel = (tier) => {
   const g = goalOf(tier);
   if (g >= 1e12) return `${g / 1e12} трлн`;
@@ -235,13 +252,14 @@ export const ORDER_DECLINE_MIN = 10;        // после отказа — че�
 // Уровень фермы: опыт (⭐) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n
 export const xpForLevel = (n) => (n <= 1 ? 0 : Math.round(30 * (n - 1) ** 1.7));
 // Опыт ⭐: сбор урожая (+1 за сбор руками), заказы, большой заказ дня, стройка (6–15), рыбалка, задания дня, выбор в событии, ярмарка.
-export const XP = { build: [5, 15], repair: 60, order: [24, 60], big: 240, daily: 20, login: 10, collect: 1, story: 10, fish: 3 };
+export const XP = { build: [5, 15], repair: 60, order: [18, 45], big: 160, daily: 20, login: 10, collect: 1, collectEvery: 2, story: 10, fish: 3 };
+export const CATCHUP_AFTER_MS = 15 * 60000; // «догоняющий» ×2 — если уровня не хватает дольше 15 минут после набора капитала
 // «Ярмарка в райцентре» (Стройка): раз в 2 часа — деньги (≈45 минут дохода) в опыт ⭐ (целый нынешний уровень)
-export const FAIR = { mins: 45, everyMs: 2 * 3600000, share: 1 }; // ярмарка = целый уровень опыта
+export const FAIR = { mins: 45, everyMs: 3 * 3600000, share: 1 }; // ярмарка = целый уровень опыта, раз в 3 часа
 // Цель открывается, когда есть И капитал, И уровень фермы («нас в районе должны знать»).
 // Опыт — из игры (сбор, заказы, стройка, рыбалка, задания, события) и с ярмарки за ₽. За Stars — нельзя.
 // Капитал есть, а уровня нет — «догоняющий» бонус: опыт ×2.
-export const GOAL_LEVELS = [1, 13, 20, 36]; // подобрано по sim: у игрока «раз в 30 мин» уровень дозревает почти вместе с капиталом (+10…25%)
+export const GOAL_LEVELS = [1, 21, 48, 105, 140]; // подобрано по sim: уровень дозревает почти вместе с капиталом (≤ +15%)
 export const goalLevel = (tier) => GOAL_LEVELS[tier] ?? GOAL_LEVELS[GOAL_LEVELS.length - 1] + (tier - GOAL_LEVELS.length + 1) * 10;
 // Украшения фермы — куда тратить деньги, пока копишь опыт: каждое +2% ко всему доходу, на картинке фермы.
 // Цена — от текущего дохода: прибавка +2% окупается за 1–2 часа (cost — нижняя граница).
@@ -283,7 +301,9 @@ export const PRODUCERS = BUILD_ORDER.filter(id => BUILDINGS[id].kind === 'prod')
 // Сверх 5-й цели максимальный уровень растёт: +5 за каждую следующую цель
 // Открытые уровни: до 1 млн — 1–5, дальше +1 уровень за каждые две цели (10-й — после 1 трлн), потом +5 за цель
 export const levelCap = (tier) => (tier <= 10 ? 5 + Math.floor(tier / 2) : 10 + (tier - 10) * 5);
-export const maxLevel = (id, tier) => (BUILDINGS[id].kind === 'once' ? 1 : Math.min(BUILDINGS[id].max + Math.max(0, tier - 10) * 5, levelCap(tier)));
+export const maxLevel = (id, tier) => (BUILDINGS[id].kind === 'once' ? 1
+  : (BUILDINGS[id].tier || 0) >= 1 ? Math.max(levelCap(tier), DYN.cap[Math.min(tier, DYN.cap.length - 1)] + Math.max(0, tier - DYN.cap.length + 1) * 4) // «живые» постройки — выше потолок
+  : Math.min(BUILDINGS[id].max + Math.max(0, tier - 10) * 5, levelCap(tier)));
 
 // Достижения-открытки (раньше — концовки). Игра теперь бесконечная.
 export const ACHIEVEMENTS = {
