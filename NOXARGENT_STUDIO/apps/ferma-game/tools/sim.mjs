@@ -76,6 +76,8 @@ function visit(st, now, r, trace, log) {
     if (E.orderDone(o)) E.deliverOrder(st, i, now);
     else if (now - o.at > 40 * MIN && E.orderStalled(st, o)) E.declineOrder(st, i, now); // висит из-за сезона — отказ без штрафа
   }
+  // ярмарка в райцентре: капитал уже есть, а уровня нет — едем сразу (раньше построек); иначе — если денег вдвое больше цены
+  if (E.buyFair && st.tier >= 1 && E.fairLeft(st, now) <= 0 && st.money >= E.fairPrice(st) * (E.catchUp(st) ? 1 : 2)) E.buyFair(st, now);
   hireWorkers(st, now, trace, log);
   shop(st, now, trace, log);
   if (E.monthReady(st)) {
@@ -93,7 +95,7 @@ function visit(st, now, r, trace, log) {
   }
 }
 
-export function play(seed, type, { until = 1e9, maxDays = 60, trace = false } = {}) {
+export function play(seed, type, { until = 1e9, maxDays = 60, trace = false, onVisit = null } = {}) {
   const P = PLAYERS[type];
   let now = 8 * HOUR; // игра начинается в 8 утра
   const st = E.newGame(seed, now);
@@ -109,11 +111,11 @@ export function play(seed, type, { until = 1e9, maxDays = 60, trace = false } = 
       // внутри сессии — каждые 30 с; между сессиями — прыжок к следующей
       const dayStart = Math.floor(now / DAY) * DAY;
       const inSession = P.sessions.some(h => now >= dayStart + h * HOUR && now < dayStart + h * HOUR + P.len);
-      if (inSession) { visit(st, now, r, trace, log); mark(); now += P.every; continue; }
+      if (inSession) { visit(st, now, r, trace, log); mark(); if (onVisit?.(st, now - start)) break; now += P.every; continue; }
       const next = [...P.sessions.map(h => dayStart + h * HOUR), ...P.sessions.map(h => dayStart + DAY + h * HOUR)].find(t => t > now);
       now = next; continue;
     }
-    visit(st, now, r, trace, log); mark(); now += P.every;
+    visit(st, now, r, trace, log); mark(); if (onVisit?.(st, now - start)) break; now += P.every;
   }
   return { hit, st, log };
 }
@@ -208,4 +210,36 @@ if (arg === 'story') {
   console.log(`\nСобытий: ${st.decisions.length}, повторов: ${ids.length - new Set(ids).size}, продолжений сюжета: ${st.decisions.filter(d => EVENT_BY_ID[d.ev].follow).length}`);
   console.log('Флаги сюжета:', Object.entries(st.storyFlags).map(([k, v]) => (v === true ? k : `${k}=${v}`)).join(', '));
   console.log('Навсегда:', Object.entries(st.perm).map(([k, v]) => E.effectText(k, v)).join(', ') || '—');
+}
+
+// node tools/sim.mjs unlock [N] [types] — когда открываются локации: капитал готов / уровень готов / открыто
+if (arg === 'unlock') {
+  const N = +process.argv[3] || 6;
+  const types = process.argv[4] ? process.argv[4].split(',') : ['active', 'm30', 'real'];
+  const D = await import('../webapp/js/data.js');
+  const LOC = (t) => D.LOCATIONS.find(l => l.tier === t);
+  console.log(`Открытие локаций (медиана по ${N} фермам). Капитал — когда набран капитал цели, уровень — когда набран уровень фермы, открыто — когда есть и то и другое.\n`);
+  console.log('Игрок'.padEnd(26), 'Локация'.padEnd(13), 'капитал'.padStart(10), 'уровень'.padStart(10), 'открыто'.padStart(10), '  уровень/капитал');
+  for (const t of types) {
+    const res = { 1: [], 2: [], 3: [] };
+    for (let i = 0; i < N; i++) {
+      const hit = {};
+      play(i + 1, t, { maxDays: 40, until: 1e15, onVisit: (st, ms) => {
+        for (const g of [1, 2, 3]) {
+          const tier = g - 1, h = (hit[g] ||= {});
+          if (h.cap == null && E.ratingCapital(st) >= D.goalOf(tier)) h.cap = ms;
+          if (h.lvl == null && E.farmLevel(st) >= D.goalLevel(tier)) h.lvl = ms;
+          if (h.open == null && st.tier >= g) h.open = ms;
+        }
+        return st.tier >= 3; // всё открыто — дальше не играем
+      } });
+      for (const g of [1, 2, 3]) res[g].push(hit[g] || {});
+    }
+    for (const g of [1, 2, 3]) {
+      const med = (k) => { const a = res[g].map(h => h[k]).filter(x => x != null).sort((x, y) => x - y); return a.length > N / 2 ? a[Math.floor(a.length / 2)] : null; };
+      const c = med('cap'), l = med('lvl'), o = med('open');
+      const ratio = c && l ? `${l > c ? '+' : ''}${Math.round(100 * (l - c) / c)}%` : '—';
+      console.log(PLAYERS[t].name.slice(0, 25).padEnd(26), LOC(g).name.padEnd(13), fmtT(c).padStart(10), fmtT(l).padStart(10), fmtT(o).padStart(10), '  ' + ratio);
+    }
+  }
 }

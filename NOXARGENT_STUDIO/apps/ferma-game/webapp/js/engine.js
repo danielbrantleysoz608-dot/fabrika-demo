@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_REWARD_K, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_REWARD_K, FAIR, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -51,7 +51,7 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
     ledger: [], taps: 0, offline: 0,
     daily: null, login: null, tzOff: 0,
-    xp: 0, lvlSeen: 1,                       // опыт фермы (⭐) и последний показанный уровень
+    xp: 0, xpV2: 1, lvlSeen: 1,                       // опыт фермы (⭐) и последний показанный уровень
     orders: [], big: null,                   // доска заказов: 3 обычных + большой заказ дня
     house: 0,                                // сколько этапов ремонта дома деда сделано (0…5)
   };
@@ -245,6 +245,7 @@ function gain(st, sum) { st.money += sum; st.monthIncome += sum; }
 export let lastFresh = 0;
 export let lastReserved = { units: 0, value: 0 };
 export const freshShare = (st, id) => { const a = st.acc[id] || 0; return a > 0 ? Math.min(1, rate(st, id) * FRESH_MIN / a) : 0; };
+export let lastXp = 0; // опыт за последний сбор (для всплывающего «+N ⭐»)
 export function collect(st, id, auto = false) {
   const amt = ready(st, id);
   lastFresh = 0; lastReserved = { units: 0, value: 0 };
@@ -260,7 +261,8 @@ export function collect(st, id, auto = false) {
   lastReserved = reserved;
   gain(st, amt + fresh - reserved.value);
   lastFresh = fresh;
-  if (!auto) { st.taps++; dailyProgress(st, 'collect', amt + fresh); }
+  lastXp = 0;
+  if (!auto) { st.taps++; dailyProgress(st, 'collect', amt + fresh); lastXp = addXp(st, XP.collect); }
   else if (st.daily) st.daily.sold += amt + fresh;
   checkGoals(st);
   return amt + fresh;
@@ -348,7 +350,31 @@ export function repairValue(st) {
 /* ---------- Уровень фермы (⭐ опыт) ---------- */
 export function farmLevel(st) { let n = 1; while ((st.xp || 0) >= xpForLevel(n + 1)) n++; return n; }
 export const levelProgress = (st) => { const n = farmLevel(st), a = xpForLevel(n), b = xpForLevel(n + 1); return { level: n, have: (st.xp || 0) - a, need: b - a }; };
-export function addXp(st, n) { st.xp = (st.xp || 0) + n; if (st.tier !== undefined && st.ach) checkGoals(st); } // новый уровень может открыть цель
+// «догоняющий» бонус: капитал для следующей цели уже есть, а уровня фермы не хватает — опыт ×2
+export const catchUp = (st) => st.phase !== 'clean' && st.tier !== undefined && ratingCapital(st) >= goalOf(st.tier) && farmLevel(st) < goalLevel(st.tier);
+export function addXp(st, n) {
+  const add = Math.round(n * (catchUp(st) ? 2 : 1));
+  st.xp = (st.xp || 0) + add;
+  if (st.tier !== undefined && st.ach) checkGoals(st); // новый уровень может открыть цель
+  return add;
+}
+// сколько ⭐ осталось до уровня, нужного для следующей цели
+export const xpToGoal = (st) => Math.max(0, xpForLevel(goalLevel(st.tier)) - (st.xp || 0));
+
+/* ---------- Ярмарка в райцентре: деньги → опыт (раз в 2 часа) ---------- */
+export const fairPrice = (st) => nice(Math.max(2000, perMin(st) * FAIR.mins));
+export const fairXp = (st) => { const L = farmLevel(st); return Math.max(20, Math.round((xpForLevel(L + 1) - xpForLevel(L)) * FAIR.share)); };
+export const fairLeft = (st, now = Date.now()) => Math.max(0, (st.fairAt || 0) + FAIR.everyMs - now);
+export function buyFair(st, now = Date.now()) {
+  if (st.phase === 'clean') return 'сначала уборка';
+  if ((st.tier || 0) < 1) return 'ярмарка откроется после первого миллиона';
+  const w = fairLeft(st, now); if (w > 0) return `следующая ярмарка через ${Math.ceil(w / 60000)} мин`;
+  const c = fairPrice(st); if (st.money < c) return 'не хватает ' + fmt(c - st.money);
+  st.money -= c; st.fairAt = now;
+  const got = addXp(st, fairXp(st));
+  addHistory(st, { m: st.month, t: `🎪 Ярмарка в райцентре: −${fmt(c)}, +${got} ⭐.` });
+  return null;
+}
 // постройки, открытые на уровне фермы n
 export const unlockedAt = (n) => Object.keys(BUILDINGS).filter(id => BUILDINGS[id].lvl === n);
 
@@ -550,7 +576,7 @@ export function landFish(st, f, spot, toOrder = false) {
     checkGoals(st);
     return { sold: value, order: false };
   }
-  addXp(st, 2 + Math.round(f.min / 4));
+  addXp(st, XP.fish + Math.round(f.min / 4));
   if (toOrder && ukhaOrder(st)) {
     reserveForOrders(st, 'fish', 1);
     addHistory(st, { m: st.month, t: `🎣 ${f.name} — в заказ «Уха».` });
@@ -633,7 +659,7 @@ export function makeOrder(st, now, big = false) {
     const need = 1 + (r() < 0.4 ? 1 : 0);
     return { client: 'cafe', ukha: true, name: 'Кафе «У трассы» — уха', emoji: '🍲', big: false, items: [{ p: 'fish', need, have: 0 }],
       // награда ≈9 мин дохода за рыбу
-      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), xp: 12 + need * 6, at: now }; // уха — без срока: рыбалка по желанию
+      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), xp: 24 + need * 12, at: now }; // уха — без срока: рыбалка по желанию
   }
   const tr = st.trust ?? TRUST.start;
   const premium = !big && tr >= TRUST.high && r() < 0.5, small = !big && tr < TRUST.low;
@@ -734,7 +760,7 @@ export function deliverOrder(st, i, now = Date.now()) {
   const o = orderAt(st, i);
   if (!orderDone(o)) return null;
   st.money += o.reward; st.monthIncome += o.reward;
-  addXp(st, o.xp);
+  o.gotXp = addXp(st, o.xp);
   // доверие: сдан вовремя +1, каждые 5 заказов подряд без отказов — ещё +2
   st.orderStreak = (st.orderStreak || 0) + 1;
   o.trust = trustDaily(st, 'order', TRUST.order + (st.orderStreak % TRUST.streak === 0 ? TRUST.streakBonus : 0), TRUST.orderDay, now);
@@ -805,7 +831,7 @@ export function buy(st, id) {
   st.lv[id] = level(st, id) + 1;
   if (st.flags.disc?.[id]) delete st.flags.disc[id];
   dailyProgress(st, 'build', 1);
-  addXp(st, XP.build);
+  addXp(st, Math.min(XP.build[1], XP.build[0] + st.lv[id]));   // постройка/улучшение: 6–15 ⭐
   const L = st.lv[id], b = BUILDINGS[id];
   addHistory(st, { m: st.month, t: L === 1 ? `Построили: ${b.name} (${fmt(p)}).` : `${b.name}: уровень ${L} (${fmt(p)}).` });
   checkGoals(st);
@@ -998,6 +1024,7 @@ export function choose(st, i) {
   const log = [], chg = [];
   const trust0 = st.trust ?? TRUST.start;
   const text = o.effect(st, helpers(st, log, chg)); // событие действует на новый (уже начавшийся) месяц
+  if (!e.repeat) chg.push(`+${addXp(st, XP.story)} ⭐`); // решение в событии — опыт
   if (!e.repeat && !st.usedEvents.includes(e.id)) st.usedEvents.push(e.id);
   st.storyQueue = (st.storyQueue || []).filter(q => q.id !== e.id);
   delete st.eventKey;
@@ -1083,6 +1110,8 @@ export function migrate(save) {
   if (!save || typeof save !== 'object' || save.v !== SCHEMA_VERSION) return null;
   // новые поля для старых сохранений (прогресс не трогаем)
   save.trust ??= TRUST.start; save.orderStreak ??= 0;
+  // опыт по новым правилам: заказы и задания дают вдвое больше, +1 ⭐ за каждый сбор руками — пересчитываем, не понижая
+  if (!save.xpV2) { save.xp = Math.max(save.xp || 0, Math.round((save.xp || 0) * 2 + (save.taps || 0) * XP.collect)); save.xpV2 = 1; }
   save.storyFlags ??= {}; save.storyQueue ??= []; save.goods ??= { equip: {}, supply: {} }; save.perm ??= {}; save.effects ??= []; save.decisions ??= [];
   // раньше события повторялись каждый год («id@год») — теперь каждое один раз
   save.usedEvents = [...new Set((save.usedEvents || []).map(k => String(k).split('@')[0]))];

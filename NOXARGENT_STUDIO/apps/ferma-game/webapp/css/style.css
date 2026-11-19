@@ -801,3 +801,5 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .good-row .g-btns .btn { min-width: 84px; padding: 5px 8px; font-size: 13px; }
 .good-row .g-star { background: #fff3d6; border-color: #e8a21a; color: #8a5a0c; }
 .sub2 { font-size: 12px; font-weight: 800; color: #8a6a52; margin: 8px 2px 4px; text-transform: uppercase; letter-spacing: .02em; }
+.fx.up { background: #efe6ff; border-color: #7a52c7; color: #5a35a0; }
+.fair-card { border-color: #7a52c7; }
