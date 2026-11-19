@@ -696,3 +696,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* полноэкранный режим Telegram: шторки не залезают под кнопки «✕» и «⌄ ⋮» */
 .sheet { max-height: calc(100% - var(--safe-top) - 12px); }
 #layer.sheet-wrap { padding-top: var(--safe-top); }
+/* компактная плашка локаций: только стрелки и название */
+.locnav { gap: 4px; }
+.locnav .ln-arrow { width: 34px; height: 30px; border-radius: 10px; font-size: 13px; }
+.locnav .ln-name { height: 30px; min-width: 0; padding: 0 12px; font-size: 13.5px; border-radius: 15px; }

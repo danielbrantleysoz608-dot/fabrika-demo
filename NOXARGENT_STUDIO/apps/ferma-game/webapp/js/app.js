@@ -81,7 +81,26 @@ const hives = () => E.level(st, 'apiary') * 3 + E.level(st, 'honeyfield') * 20;
 function render(layers = 'all') {
   renderScene(svg, view(), BUILDINGS, layers);
   hud();
+  fitScene();
 }
+
+// Сцена «отъезжает» под высоту верхней панели: крыши, «ур.N» и пузыри с урожаем всегда ниже
+// плашки локаций и кнопок меню (в полноэкранном Telegram панель выше — сцена чуть мельче, по бокам больше неба и травы).
+const SCENE_TOP = { home: 206, river: 226, town: 262, agro: 196 }; // самая верхняя точка построек/пузырей в координатах сцены
+function fitScene() {
+  if (!st) return;
+  const W = svg.clientWidth, H = svg.clientHeight, app = $('#app').getBoundingClientRect();
+  if (!W || !H) return;
+  const hudB = Math.max(...[...document.querySelectorAll('.hud > *')].filter(e => e.offsetParent && !e.hidden).map(e => e.getBoundingClientRect().bottom)) - app.top + 10;
+  const top = SCENE_TOP[st.loc || 'home'] ?? 230;
+  const natural = Math.max(W / 460, H / 890);                         // как раньше (preserveAspectRatio slice)
+  const limit = (H - hudB) / (890 - top);                             // не выше: иначе верх построек уйдёт под панель
+  const s = Math.max(0.3, Math.min(natural, limit));
+  const vw = W / s, vh = H / s;
+  const vb = `${((460 - vw) / 2).toFixed(1)} ${(890 - vh).toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}`;
+  if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+}
+window.addEventListener('resize', () => requestAnimationFrame(fitScene));
 
 function hud() {
   const m = monthOf(st.month), y = yearOf(st.month);
@@ -1567,6 +1586,7 @@ window.addEventListener('error', (e) => { try { toast('Ошибка: ' + e.messa
 function fitViewport() {
   const h = Math.round(window.visualViewport?.height || window.innerHeight || tg?.viewportHeight || 0);
   if (h > 100) document.documentElement.style.setProperty('--app-h', h + 'px');
+  requestAnimationFrame(() => typeof fitScene === 'function' && fitScene());
 }
 function backToFull() {
   try { tg?.ready?.(); if (tg && !tg.isExpanded) tg.expand(); } catch { /* */ }
@@ -1587,7 +1607,7 @@ function goFullscreen() {
     if (MOBILE_TG && tg.isVersionAtLeast?.('8.0') && !tg.isFullscreen) tg.requestFullscreen();
   } catch { /* старый Telegram — остаётся обычный режим с шапкой цвета неба */ }
 }
-['safeAreaChanged', 'contentSafeAreaChanged', 'fullscreenChanged'].forEach(ev => tg?.onEvent?.(ev, () => { applySafeArea(); fitViewport(); }));
+['safeAreaChanged', 'contentSafeAreaChanged', 'fullscreenChanged'].forEach(ev => tg?.onEvent?.(ev, () => { applySafeArea(); fitViewport(); requestAnimationFrame(fitScene); }));
 tg?.onEvent?.('fullscreenFailed', () => { applySafeArea(); fitViewport(); });
 applySafeArea();
 fitViewport();

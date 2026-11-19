@@ -119,7 +119,7 @@ export function tick(st, now = Date.now()) {
   st.lastTick = now;
   if (st.phase === 'clean') return { changed: false, offline: 0 };
   st.playMs = (st.playMs || 0) + Math.min(real, 60000); // время в игре (офлайн не считается) — для соседа
-  logCapital(st);
+  logCapital(st, now, real);
   const dt = Math.min(real, OFFLINE_CAP_MS);
   st.monthMs = Math.min(MONTH_MS, st.monthMs + real);
   newDay(st, now);
@@ -463,33 +463,22 @@ export function petDog(st, now = Date.now()) {
 }
 // Сосед-соперник Петрович: идёт вровень с игроком — 85–110% твоего капитала с запаздыванием ~6 минут игры.
 // Множитель медленно «гуляет» (период ~47 мин), поэтому он то обгоняет, то отстаёт.
-const NB_DELAY_MIN = 6;
-function logCapital(st) {
-  const t = (st.playMs || 0) / 60000;
-  const log = st.capLog || (st.capLog = []);
-  if (!log.length || t - log[log.length - 1][0] >= 1) {
-    log.push([Math.round(t * 10) / 10, Math.round(ratingCapital(st))]);
-    if (log.length > 20) log.shift();
-  }
-  // сосед никогда не беднеет: тянется к цели (85–110% твоего капитала 6 минут назад),
-  // а когда цель ниже — всё равно растёт, на 70% от твоего темпа
-  const dtMin = Math.max(0, t - (st.nbT ?? t)); st.nbT = t;
-  const old = log.find(x => x[0] >= t - NB_DELAY_MIN) || log[0];
-  const now = Math.max(1, ratingCapital(st));
-  const rate = old && old[1] > 0 && t - old[0] > 0.5 ? Math.max(0, (now / old[1]) ** (1 / (t - old[0])) - 1) : 0;
-  const grown = (st.nbVal || 0) * (1 + 0.7 * Math.min(rate, 0.05) * dtMin);   // не быстрее ~3,5% в минуту
-  st.nbVal = Math.min(Math.max(grown, neighborTarget(st)), Math.max(st.nbVal || 0, now * 1.1)); // и не выше 110% твоего
+// Сосед Петрович: тянется к 85–110% ТВОЕГО ТЕКУЩЕГО капитала с запаздыванием ~4 минуты реального времени.
+// Время — реальное, включая офлайн: пока ты спал, сосед тоже работал, поэтому после ночи он не отстаёт в разы.
+// Множитель медленно «гуляет» (период ~47 мин) — то обгоняет, то отстаёт. Никогда не беднеет.
+const NB_TAU_MIN = 4;
+function logCapital(st, now = Date.now(), realMs = 0) {
+  const me = Math.max(0, ratingCapital(st));
+  const t = now / 60000;
+  const f = 0.975 + 0.125 * Math.sin(2 * Math.PI * t / 47 + (st.seed % 7));
+  const target = Math.max(START_MONEY * 0.9, me * f);
+  const dt = Math.min(realMs / 60000, 24 * 60);
+  const k = 1 - Math.exp(-dt / NB_TAU_MIN);
+  const prev = st.nbVal || START_MONEY * 0.9;
+  // за офлайн сосед «доигрывает» до своей цели сразу; онлайн — плавно догоняет
+  st.nbVal = Math.max(prev, Math.min(prev + (target - prev) * k, me * 1.1)); // не беднеет и не уходит выше 110% тебя
 }
 export const neighborCap = (st) => Math.round(Math.max(st.nbVal || 0, START_MONEY * 0.9));
-function neighborTarget(st) {
-  const t = (st.playMs || 0) / 60000;
-  const log = st.capLog || [];
-  let base = Math.max(0, ratingCapital(st)) * 0.9;
-  for (let i = log.length - 1; i >= 0; i--) if (log[i][0] <= t - NB_DELAY_MIN) { base = log[i][1]; break; }
-  if (log.length && log[0][0] > t - NB_DELAY_MIN) base = log[0][1]; // истории ещё мало — берём самое раннее
-  const f = 0.975 + 0.125 * Math.sin(2 * Math.PI * t / 47 + (st.seed % 7));
-  return Math.max(START_MONEY * 0.9, Math.round(Math.max(0, base) * f));
-}
 // перегнал соседа / отстал: возвращает событие один раз при смене лидера
 export function neighborCheck(st, now = Date.now()) {
   if (st.phase === 'clean') return null;

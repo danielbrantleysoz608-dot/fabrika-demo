@@ -14,6 +14,7 @@ export const PLAYERS = {
   m30: { name: 'Раз в 30 мин', every: 30 * MIN },
   h2: { name: 'Раз в 2 часа', every: 2 * HOUR },
   real: { name: 'Реальный: 3×15 мин в день', every: 30000, sessions: [8, 13, 20], len: 15 * MIN },
+  day: { name: 'Раз в 30 мин днём, ночью спит', every: 30 * MIN, sessions: [8], len: 15 * HOUR },
 };
 
 function shop(st, now, trace, log) {
@@ -138,6 +139,35 @@ if (arg === 'trace') {
   for (const t of types) {
     const runs = Array.from({ length: N }, (_, i) => play(i + 1, t, { maxDays: 90 }));
     console.log(PLAYERS[t].name.padEnd(30), MILESTONES.map(m => fmtT(median(runs.map(x => x.hit[m]))).padStart(11)).join(''));
+  }
+}
+if (arg === 'night') {
+  // «Зашёл вечером — вернулся утром»: игрок заходит раз в 30 мин с 8:00 до 23:00, ночью 9 ч не заходит.
+  // Пока игра закрыта, ферма копит не больше 2 часов (OFFLINE_CAP_MS) — проверяем, сколько это даёт за ночь.
+  const days = +process.argv[3] || 6;
+  console.log('Ночь без игры (последний заход 23:00, утром — 08:00), медиана по 3 фермам\n');
+  console.log('Ночь'.padEnd(6), 'капитал в 23:00'.padStart(16), 'утром (после сбора)'.padStart(21), 'прирост'.padStart(12), 'доход/мин'.padStart(11), 'ночь = часов дохода'.padStart(21));
+  const runs = [1, 2, 3].map(seed => {
+    const P = PLAYERS.day, rows = [];
+    let now = 8 * HOUR;
+    const st = E.newGame(seed, now); st.trash.forEach(t => E.hitTrash(st, t.id)); now += 40000; st.lastTick = now;
+    const r = E.rng(seed * 97 + 1), log = [];
+    for (let d = 0; d < days; d++) {
+      const day0 = d * DAY;
+      for (now = Math.max(now, day0 + 8 * HOUR); now < day0 + 23 * HOUR; now += P.every) visit(st, now, r, false, log);
+      const eve = E.ratingCapital(st), rate = E.totalRate(st);
+      now = day0 + DAY + 8 * HOUR;               // утро следующего дня
+      E.tick(st, now); E.collectAll(st);
+      const morn = E.ratingCapital(st);
+      rows.push({ eve, morn, gain: morn - eve, rate, hours: (morn - eve) / Math.max(1, rate * 60) });
+    }
+    return rows;
+  });
+  const med = (a) => a.sort((x, y) => x - y)[1];
+  const M = (v) => (v >= 1e9 ? (v / 1e9).toFixed(2) + ' млрд' : v >= 1e6 ? (v / 1e6).toFixed(2) + ' млн' : Math.round(v / 1e3) + ' тыс');
+  for (let d = 0; d < days; d++) {
+    const g = (k) => med(runs.map(x => x[d][k]));
+    console.log(String(d + 1).padEnd(6), M(g('eve')).padStart(16), M(g('morn')).padStart(21), ('+' + M(g('gain'))).padStart(12), M(g('rate')).padStart(11), g('hours').toFixed(1).padStart(21));
   }
 }
 if (arg === 'income') {
