@@ -65,6 +65,8 @@ export const BUILDINGS = {
                 desc: '«ЯЙЦА деревенские». Каждый уровень — +5% ко всему доходу.' },
   garden:     { product: 'veg', lvl: 2, kind: 'prod', name: 'Огород', cost: 1900, inc: 108.5, unit: 'кг', price: 25, tier: 0, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Грядки на дедовом поле.' },
+  cabbage:    { product: 'cabbage', lvl: 2, kind: 'prod', name: 'Капустная грядка', cost: 1400, inc: 70, unit: 'кочанов', price: 20, tier: 0, max: 10, requires: 'garden',
+                season: months(2, 7), seasonText: 'май – октябрь', desc: 'Две грядки капусты рядом с помидорами. Кочаны — в заказы кафе и дачникам.' },
   fence:      { lvl: 2, kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
   greenhouse: { product: 'cuke', lvl: 1, kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 66.2, unit: 'кг', price: 30, tier: 0, max: 10,
                 season: (m, st) => (m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь, зимой — с печкой',
@@ -123,6 +125,7 @@ export const locOf = (id) => BUILDINGS[id]?.loc || 'home';
 export const PRODUCTS = {
   egg:    { name: 'яйца',    emoji: '🥚', price: 12,    unit: 'шт' },
   veg:    { name: 'овощи',   emoji: '🍅', price: 25,    unit: 'кг' },
+  cabbage: { name: 'капуста', emoji: '🥬', price: 20,    unit: 'шт' },
   cuke:   { name: 'огурцы',  emoji: '🥒', price: 30,    unit: 'кг' },
   honey:  { name: 'мёд',     emoji: '🍯', price: 200,   unit: 'кг' },
   milk:   { name: 'молоко',  emoji: '🥛', price: 60,    unit: 'л' },
@@ -140,6 +143,20 @@ export const CLIENTS = [
   { id: 'store', name: 'Магазин в селе',   emoji: '🏪', mult: 1.35 },
 ];
 export const ORDER_SLOTS = 3;
+// Счастливый час: каждый день 18:00–19:00 по Москве весь доход +20%
+export const HAPPY_HOUR = { from: 18, to: 19, bonus: 0.2 };
+// Новичкам легче: первые 3 игровых месяца доход ×NEWBIE_BONUS, первые заказы маленькие и быстрые
+export const NEWBIE_MONTHS = 3;
+export const NEWBIE_BONUS = 1.5;
+// Бустеры (30 мин; если уже идёт — +30 мин): ⚡ огород и теплица растут вдвое быстрее, 🎁 весь урожай ×2
+export const BOOSTERS = {
+  grow:   { emoji: '⚡', name: 'Быстрый рост', min: 30, desc: 'Огород и теплица растут вдвое быстрее 30 минут.', ids: ['garden', 'greenhouse', 'cabbage'] },
+  double: { emoji: '🎁', name: '×2 урожай',    min: 30, desc: 'Весь урожай фермы ×2 целых 30 минут.' },
+};
+// Сундучок за время в игре: каждые 10 минут активной игры (было действие за последние 5 минут)
+export const CHEST_EVERY_MIN = 10;
+export const CHEST_IDLE_MIN = 5;
+
 // Работники: нанимаются за игровые ₽ (не за Stars), открываются по уровню фермы, зарплата — раз в месяц.
 // hireMin — цена найма в минутах дохода фермы (фиксируется, когда работник открылся), wage — доля собранного за месяц.
 export const WORKERS = {

@@ -235,7 +235,27 @@ function field(m, st) {
     s += `<g stroke="#8a5d3a" stroke-width="2">${f}</g>`;
   }
   // огород построен — тап по грядкам открывает его карточку (или собирает урожай)
-  return st.built?.garden ? `<g id="field" data-tap="bld" data-id="garden">${s}</g>` : `<g id="field">${s}</g>`;
+  const out = st.built?.garden ? `<g id="field" data-tap="bld" data-id="garden">${s}</g>` : `<g id="field">${s}</g>`;
+  return out + (cleared && st.built?.cabbage ? cabbageBeds(m) : '');
+}
+
+// Капустная грядка — две нижние грядки огорода, рядом с помидорами
+function cabbageBeds(m) {
+  let s = '';
+  for (let i = 4; i < 6; i++) {
+    const y0 = 428 + i * 22, t0 = (y0 - 420) / 140, t1 = (y0 + 14 - 420) / 140;
+    s += `<polygon points="${210 - t0 * 16},${y0} ${436 + t0 * 16},${y0} ${436 + t1 * 16},${y0 + 14} ${210 - t1 * 16},${y0 + 14}" fill="#5a3820"/>`;
+    const n = 11, xl = 216 - t0 * 16, xr = 430 + t0 * 16;
+    for (let j = 0; j < n; j++) {
+      const x = xl + (j + .5) * (xr - xl) / n, y = y0 + 6;
+      if (m.season === 'winter') { s += `<ellipse cx="${x}" cy="${y}" rx="7" ry="3.5" fill="#fff"/>`; continue; }
+      if (m.season === 'early' || m.name === 'Апрель') continue;
+      const big = !['Май'].includes(m.name);
+      s += big ? `<g stroke="#3b2a1f" stroke-width="1.1"><circle cx="${x}" cy="${y}" r="7" fill="#9fd36a"/><path d="M${x - 5} ${y} q5 -6 10 0" fill="#c7ec98"/><circle cx="${x}" cy="${y - 1}" r="3" fill="#d9f5b4"/></g>`
+        : `<circle cx="${x}" cy="${y}" r="3.5" fill="#9fd36a" stroke="#3b2a1f" stroke-width="1"/>`;
+    }
+  }
+  return `<g id="cabbage" data-tap="bld" data-id="cabbage">${s}</g>`;
 }
 
 function gardenBeds(m) {
@@ -522,6 +542,7 @@ function trashItem(t) {
 const SLOTS = {
   greenhouse: { x: 92,  y: 462, area: 'M40 453 L53 432 H115 L126 453 V485 H40z' },
   garden:     { x: 323, y: 490, area: null },
+  cabbage:    { x: 262, y: 534, area: 'M196 516 H452 L456 560 H190z' },
   coop:       { x: 104, y: 560, area: 'M36 548 L104 514 L172 548 V602 H36z' },
   fence:      { x: 214, y: 618, area: 'M20 612 H236 V638 H20z' },
   omshanik:   { x: 300, y: 582, area: 'M262 600 Q262 568 300 566 Q338 568 340 600z' },
@@ -551,7 +572,7 @@ function slot(id, label, price, small = false) {
 }
 
 /* ---------- Значок уровня постройки ---------- */
-const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], apiary: [262, 606], cow: [334, 384], stall: [350, 566],
+const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], cabbage: [432, 520], apiary: [262, 606], cow: [334, 384], stall: [350, 566],
   cheese: [140, 724], honeyfield: [262, 716], tractor: [176, 280], shop: [42, 228], brand: [192, 200], factory: [326, 232] };
 function levelTag([x, y], L, id) {
   return `<g class="lvl-badge" data-tap="bld" data-id="${id}"><rect x="${x - 13}" y="${y - 9}" width="26" height="17" rx="8.5" fill="#2f8a2f" stroke="#1f5e2a" stroke-width="2"/>
@@ -560,7 +581,7 @@ function levelTag([x, y], L, id) {
 
 /* ---------- Значки «готово к сбору» ---------- */
 
-const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], apiary: [232, 590], cow: [362, 360],
+const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], cabbage: [268, 512], apiary: [232, 590], cow: [362, 360],
   cheese: [214, 704], honeyfield: [400, 716], tractor: [286, 250], shop: [128, 238], factory: [398, 206] };
 const READY_ICON = {
   coop: '<ellipse cx="0" cy="0" rx="5.5" ry="7" fill="#f6ead3" stroke="#3b2a1f" stroke-width="1.4"/>',
@@ -576,17 +597,17 @@ const READY_ICON = {
 };
 const kfmt = (a) => (a >= 1e9 ? (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? Math.round(a / 1e3) + 'к' : a >= 1000 ? (a / 1e3).toFixed(1) + 'к' : a).toString().replace('.', ',');
 // Пузырь урожая: иконка продукта + число. Невидимая зона нажатия ≥ 44×44 px не качается вместе с пузырём.
-const READY_EMOJI = { coop: '🥚', greenhouse: '🥒', garden: '🍅', apiary: '🍯', cow: '🥛', cheese: '🧀', honeyfield: '🍯', tractor: '🌾', shop: '🛒', factory: '🏭' };
+const READY_EMOJI = { cabbage: '🥬', coop: '🥚', greenhouse: '🥒', garden: '🍅', apiary: '🍯', cow: '🥛', cheese: '🧀', honeyfield: '🍯', tractor: '🌾', shop: '🛒', factory: '🏭' };
 function readyBadge(id, amount, fresh, full) {
   const txt = kfmt(amount);
   const w = 34 + String(txt).length * 7.5;
   const [x, y] = READY_POS[id];
   // «свежее»: созрело за последние 5 минут — собери сейчас и получи +20%
-  const star = fresh ? `<g class="fresh-star" transform="translate(${w / 2 - 2} -14)"><path d="M0 -6 l2.5 5 5.5 .8 -4 3.9 1 5.5 -5 -2.6 -5 2.6 1 -5.5 -4 -3.9 5.5 -.8z" fill="#ffe24a" stroke="#b8801a" stroke-width="1.4"/></g>` : '';
+  const star = ''; // звезду с пузыря убрали: она двигалась и мешала тапу. «Свежее» — зелёная рамка
   return `<g class="ready${fresh ? ' fresh' : ''}${full ? ' full' : ''}" data-tap="bld" data-id="${id}" transform="translate(${x} ${y})">
     <rect class="hit" x="${-w / 2 - 10}" y="-26" width="${w + 20}" height="50" fill="transparent"/>
     <g class="bob"><path d="M0 16 l-6 -8 h12z" fill="#fbf3e3" stroke="#8a5a3c" stroke-width="1.8"/>
-    <rect class="pill" x="${-w / 2}" y="-14" width="${w}" height="26" rx="13" fill="#fbf3e3" stroke="${full ? '#d8392d' : '#8a5a3c'}" stroke-width="2.2"/>
+    <rect class="pill" x="${-w / 2}" y="-14" width="${w}" height="26" rx="13" fill="#fbf3e3" stroke="${full ? '#d8392d' : fresh ? '#3fae4f' : '#8a5a3c'}" stroke-width="${fresh ? 2.8 : 2.2}"/>
     <text x="${-w / 2 + 14}" y="4.5" text-anchor="middle" font-size="14">${READY_EMOJI[id] || '📦'}</text>
     <text x="${-w / 2 + 26}" y="4" text-anchor="start" font-family="Rubik, sans-serif" font-weight="800" font-size="12" fill="#e8891a">${txt}</text>${star}</g></g>`;
 }
@@ -631,7 +652,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       for (const d of st.decor || []) if (DECOR_ART[d]) s += DECOR_ART[d](m);
       for (const w of st.workers || []) if (WORKER_SPOT[w]) s += workerFigure(w, ...WORKER_SPOT[w]);
       if (clean && st.canBuild) s += orderBoard(st) + creek(m);
-    } else s += LOC_OBJ[loc](m, st);
+    } else s += LOC_OBJ[loc](m, st) + (clean && st.canBuild ? orderBoard(st) : ''); // своя доска на каждой локации — заказы общие
     svg.querySelector('#far').innerHTML = '';
     if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
     if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
@@ -884,7 +905,7 @@ function agroObj(m, st) {
 
 // сдвиг/масштаб, чтобы фасады целиком влезали в экран телефона: [scale, tx, ty]
 const TF = { shop: [.887, 20.5, 53.3], cafe: [.93, 16.2, 33], elevator: [1, -16, 0] };
-const SHORT = { brand: 'Своя марка', tractor: 'Большие поля', honeyfield: 'Пасека-поле' };
+const SHORT = { cabbage: 'Капуста', brand: 'Своя марка', tractor: 'Большие поля', honeyfield: 'Пасека-поле' };
 const LOC_NEAR = { river: riverNear, town: townNear, agro: agroNear };
 const LOC_FAR = { town: townFar };
 const LOC_OBJ = { river: riverObj, town: townObj, agro: agroObj };

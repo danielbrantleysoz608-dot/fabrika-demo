@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -89,9 +89,11 @@ export function globalMult(st, withMods = true) {
   if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all * wLv(st, 'seller'); // продавец на прилавке (+10% за уровень)
   k *= 1 + DECOR_BONUS * decorCount(st);    // украшения фермы
   if (st.paid?.samovar) k *= 1.03;          // «Дедов самовар» (за звёзды)
+  if ((st.month || 0) < NEWBIE_MONTHS) k *= NEWBIE_BONUS; // первые 3 месяца — доход ×1.5
   if (withMods) {
     k *= st.mods.sales ?? 1;
     if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
+    if (isHappyHour(st.lastTick || Date.now())) k *= 1 + HAPPY_HOUR.bonus; // счастливый час 18–19 МСК
     if (st.flags.contract) k *= 1.3;
   }
   return k;
@@ -104,7 +106,35 @@ export const seasonMult = (st, id, m = st.month) => {
 // бонус работников к постройке (птичница, пасечник, доярка)
 export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id] * (1 + 0.6 * (wLv(st, w) - 1)); return k; };
 // текущая скорость, ₽/мин
-export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
+export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * boostMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
+
+/* ---------- Счастливый час и бустеры ---------- */
+const mskHour = (ms) => new Date(ms + 3 * 3600000).getUTCHours();
+export const isHappyHour = (ms = Date.now()) => { const h = mskHour(ms); return h >= HAPPY_HOUR.from && h < HAPPY_HOUR.to; };
+// сколько мс до конца (если идёт) или до начала (если нет) счастливого часа
+export function happyHourInfo(ms = Date.now()) {
+  const d = new Date(ms + 3 * 3600000);
+  const dayStart = ms - (d.getUTCHours() * 3600000 + d.getUTCMinutes() * 60000 + d.getUTCSeconds() * 1000 + d.getUTCMilliseconds());
+  let start = dayStart + HAPPY_HOUR.from * 3600000, end = dayStart + HAPPY_HOUR.to * 3600000;
+  if (ms >= end) { start += 86400000; end += 86400000; }
+  return { on: ms >= start && ms < end, left: Math.max(0, end - ms), startsIn: Math.max(0, start - ms), day: Math.floor(start / 86400000) };
+}
+export const boostLeft = (st, kind, ms = st.lastTick || Date.now()) => Math.max(0, (st.boost?.[kind] || 0) - ms);
+export function boostMult(st, id) {
+  const ms = st.lastTick || Date.now();
+  let k = 1;
+  if (boostLeft(st, 'double', ms) > 0) k *= 2;
+  if (boostLeft(st, 'grow', ms) > 0 && BOOSTERS.grow.ids.includes(id)) k *= 2;
+  return k;
+}
+// включить бустер: 30 минут, если уже идёт — ещё +30 минут
+export function activateBooster(st, kind, now = Date.now(), source = '') {
+  const b = BOOSTERS[kind]; if (!b) return null;
+  if (!st.boost) st.boost = {};
+  st.boost[kind] = Math.max(now, st.boost[kind] || 0) + b.min * 60000;
+  addHistory(st, { m: st.month, t: `${b.emoji} Бустер «${b.name}» на ${b.min} мин${source ? ' — ' + source : ''}.` });
+  return st.boost[kind];
+}
 export const totalRate = (st) => PRODUCERS.reduce((a, id) => a + rate(st, id), 0);
 // вместимость склада: 2 часа номинального производства
 export const storageCap = (st, id) => baseIncome(id, level(st, id)) * globalMult(st, false) * 1.5 * STORAGE_MIN;
@@ -200,6 +230,8 @@ export function claimDaily(st, i) {
   st.daily.claimed[i] = true;
   st.money += t.reward;
   addXp(st, XP.daily);
+  if (i === 1) activateBooster(st, 'grow', st.lastTick || Date.now(), 'за задание дня');
+  if (i === 3) activateBooster(st, 'double', st.lastTick || Date.now(), 'за задание дня');
   addHistory(st, { m: st.month, t: `Задание дня «${t.title}»: +${fmt(t.reward)}.` });
   checkGoals(st);
   return t.reward;
@@ -293,6 +325,8 @@ export function applyPurchase(st, p, now = Date.now()) {
       text = 'Помощник Ваня на 7 дней — сам собирает урожай!'; break;
     }
     case 'samovar': st.paid.samovar = true; text = 'Дедов самовар на ферме: +3% ко всему доходу!'; break;
+    case 'boost_grow': activateBooster(st, 'grow', now, 'за звёзды'); text = '⚡ Быстрый рост: огород и теплица ×2 на 30 минут!'; break;
+    case 'boost_double': activateBooster(st, 'double', now, 'за звёзды'); text = '🎁 ×2 урожай на 30 минут!'; break;
     case 'patron': st.paid.patron = true; grantAch(st, 'patron'); text = 'Спасибо, что поддержали автора! Значок «Меценат» — в рейтинге.'; break;
     case 'bag': case 'wallet': case 'chest': {
       const a = Math.max(0, Math.min(1e16, Math.round(+p.amount || 0)));
@@ -530,10 +564,11 @@ export function makeOrder(st, now, big = false) {
   // объём — сколько ферма произведёт этого продукта за t минут после появления заказа (обычный 3–10 мин, большой 20–30);
   // копится только новое производство (it.avail), старый запас амбара разом не засчитывается.
   // Награда — минуты дохода всей фермы: обычный 3–8 мин (больше объём — больше награда), большой — 15–20 мин.
-  const t = big ? rndRange(r, 20, 30) : rndRange(r, 3, 10);
-  const items = chosen.map(p => ({ p, need: Math.max(3, Math.round(can[p] * t)), have: 0, avail: 0 }));
+  const newbie = (st.month || 0) < NEWBIE_MONTHS;
+  const t = big ? rndRange(r, 20, 30) : newbie ? rndRange(r, 1.5, 3) : rndRange(r, 3, 10);  // новичкам — 1,5–3 мин
+  const items = (newbie && !big ? chosen.slice(0, 1) : chosen).map(p => ({ p, need: Math.max(newbie ? 2 : 3, Math.round(can[p] * t)), have: 0, avail: 0 }));
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
-  const rewMin = big ? 15 + (t - 20) / 2 : 3 + (t - 3) / 7 * 5;
+  const rewMin = big ? 15 + (t - 20) / 2 : newbie ? 2 + t / 2 : 3 + (t - 3) / 7 * 5;
   const mult = (big ? 1 : client.mult / 1.3) * (1 + 0.2 * level(st, 'market'));
   return {
     client: client.id, name: client.name, emoji: client.emoji, big, items,

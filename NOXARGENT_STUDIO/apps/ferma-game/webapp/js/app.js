@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, goalLevel, DECOR, WORKER_MAX, xpForLevel,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, BOOSTERS, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -102,6 +102,13 @@ function fitScene() {
 }
 window.addEventListener('resize', () => requestAnimationFrame(fitScene));
 
+// текст не вылезает из рамки: если не влез — уменьшаем шрифт ровно настолько, чтобы влез
+function fitText(el, pad = 6) {
+  if (!el || !el.parentElement) return;
+  el.style.fontSize = '';
+  const box = el.parentElement.clientWidth - pad;
+  if (box > 0 && el.scrollWidth > box) el.style.fontSize = (parseFloat(getComputedStyle(el).fontSize) * box / el.scrollWidth).toFixed(1) + 'px';
+}
 function hud() {
   const m = monthOf(st.month), y = yearOf(st.month);
   $('#monthLbl').textContent = y > 1 ? `ГОД ${y}` : 'МЕСЯЦ';
@@ -109,6 +116,7 @@ function hud() {
   $('#seasonIcon').className = 'ic-' + SEASON_ICON[m.season];
   $('#money').textContent = short(st.money);
   $('#money').classList.toggle('neg', st.money < 0);
+  fitText($('#money'));
   $('#hudHens').textContent = hens();
   $('#hudHives').textContent = hives();
   const cap = E.ratingCapital(st), g = E.goal(st);
@@ -136,6 +144,7 @@ function hud() {
   if (!needQuick && q.children.length) q.innerHTML = '';
   locNav(needQuick);
   rivalBar(needQuick);
+  fxBar(needQuick);
   // уровень фермы ⭐
   const lp = E.levelProgress(st), pill = q.querySelector('.lvl-pill');
   if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; pill.querySelector('i').style.width = Math.round(100 * lp.have / lp.need) + '%'; }
@@ -287,7 +296,9 @@ function collect(id) {
   const pos = READY_POSITIONS[id];
   // собираем только из пузыря: пока урожай не созрел хотя бы на 1 штуку — тап открывает карточку постройки
   if (!pos || E.unitsReady(st, id) < 1) { haptic(); return openBuilding(id); }
+  const xp0 = st.xp || 0;
   const amt = E.collect(st, id);
+  const gotXp = Math.round((st.xp || 0) - xp0);
   if (!pos || amt <= 0) { haptic(); return openBuilding(id); } // нечего собирать — открываем карточку улучшения
   const fresh = E.lastFresh, res = E.lastReserved;
   const doneBefore = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
@@ -299,6 +310,8 @@ function collect(id) {
   if (sold > 0) floatText(svg, pos[0], pos[1], `+${short(sold)}`);
   if (res.units > 0) setTimeout(() => floatText(svg, pos[0], pos[1] - (sold > 0 ? 18 : 0), `в заказ: ${PRODUCTS[BUILDINGS[id].product].emoji} ${res.units}`, '#8a5a3c'), 120);
   if (fresh > 0 && fresh >= amt * 0.15) setTimeout(() => floatText(svg, pos[0], pos[1] - 36, 'свежее +20%!', '#2f8a2f'), 240);
+  // опыт — отдельной всплывающей надписью после сбора (на самом пузыре звезды больше нет)
+  if (gotXp > 0) setTimeout(() => floatText(svg, pos[0] + 34, pos[1] + 6, `+${gotXp} ⭐`, '#c47a0e'), 180);
   // заказ собран полностью — подсветим доску и подскажем
   const doneNow = E.activeOrders(st).filter(x => E.orderDone(x.o)).length;
   if (doneNow > doneBefore) { render(); sfx.bell(); toast('📋 Заказ собран — сдай его на доске заказов!'); }
@@ -333,6 +346,8 @@ setInterval(() => {
   if (r.changed) render('ready');
   autoNotes(r.auto);
   fishBadges();
+  chestTick();
+  happyHint();
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
@@ -802,6 +817,7 @@ function doBuy(id, sure = false) {
     brand: 'Наша марка на полках страны!',
     factory: 'Завод запущен. Дед бы не поверил!',
     cowshed: 'Коровник на лугу! Молоко — и на сыр, и в заказы.',
+    cabbage: 'Капуста посажена рядом с помидорами — кочаны пойдут в заказы!',
     mill: 'Мельница крутится — своя мука!',
     cafe: 'Кафе открыто — пироги из нашей муки и молока!',
     market: 'Место на рынке — заказы теперь дороже!',
@@ -1193,6 +1209,61 @@ function autoNotes(a) {
   }
 }
 
+/* ================= Счастливый час, бустеры, сундучок за время игры ================= */
+const mm = (ms) => { const m = Math.ceil(ms / 60000); return m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m} мин`; };
+function fxBar(show) {
+  const el = $('#fxBar'); if (!el) return;
+  const now = Date.now(), hh = E.happyHourInfo(now), chips = [];
+  const pct = Math.round(HAPPY_HOUR.bonus * 100);
+  if (hh.on) chips.push(`<span class="fx hh" data-short="🔥 +${pct}% · ${mm(hh.left)}">🔥 Счастливый час +${pct}% · ещё ${mm(hh.left)}</span>`);
+  for (const k of ['grow', 'double']) { const l = E.boostLeft(st, k, now); if (l > 0) chips.push(`<span class="fx bs" title="${BOOSTERS[k].name}">${BOOSTERS[k].emoji} ${mmss(l)}</span>`); }
+  if ((st.month || 0) < NEWBIE_MONTHS && st.phase === 'play') chips.push(`<span class="fx nb">🌱 ×1,5</span>`);
+  const html = show && chips.length ? chips.join('') : '';
+  el.hidden = !html;
+  if (el.dataset.html !== html) {
+    el.innerHTML = html; el.dataset.html = html;
+    // не влезло в одну строку — сокращаем плашку счастливого часа
+    if (el.scrollWidth > el.clientWidth + 1) el.querySelectorAll('[data-short]').forEach(c => { c.textContent = c.dataset.short; });
+    requestAnimationFrame(fitScene);
+  }
+}
+// за 10 минут до счастливого часа — подсказка фермера (раз в день)
+function happyHint() {
+  const hh = E.happyHourInfo(Date.now());
+  if (hh.on || hh.startsIn > 10 * 60000 || st.flags.hhSaid === hh.day || st.phase !== 'play') return;
+  st.flags.hhSaid = hh.day;
+  say(`Через ${mm(hh.startsIn)} — <b>счастливый час</b>! С 18:00 до 19:00 весь доход <b>+20%</b>. Не пропусти!`, 'happy', 8000);
+}
+// сундучок: каждые 10 минут активной игры (было действие за последние 5 минут), только пока игра открыта
+let lastAct = Date.now();
+document.addEventListener('pointerdown', () => { lastAct = Date.now(); }, { capture: true, passive: true });
+function chestTick() {
+  if (!st || st.phase !== 'play' || document.visibilityState !== 'visible') return;
+  const c = st.chest || (st.chest = { ms: 0, ready: false });
+  if (!c.ready && Date.now() - lastAct < CHEST_IDLE_MIN * 60000) {
+    c.ms += 1000;
+    if (c.ms >= CHEST_EVERY_MIN * 60000) { c.ready = true; sfx.bell(); }
+  }
+  $('#chestBtn').hidden = !c.ready;
+}
+fastTap($('#chestBtn'), () => {
+  if (!st?.chest?.ready) return;
+  st.chest = { ms: 0, ready: false };
+  $('#chestBtn').hidden = true;
+  const r = Math.random(), pm = E.perMin(st);
+  let text;
+  if (r < 0.55) { const a = E.nice(Math.max(500, pm * (5 + Math.random() * 3))); st.money += a; text = `+${short(a)} на счёт фермы`; }
+  else if (r < 0.75) { const x = 20 + Math.floor(Math.random() * 21); E.addXp(st, x); text = `+${x} ⭐ опыта`; }
+  else if (r < 0.85) { st.fishAt = {}; text = '🎣 Удочка готова — заброс без ожидания!'; }
+  else if (r < 0.93) { E.activateBooster(st, 'grow', Date.now(), 'из сундучка'); text = '⚡ Быстрый рост на 30 минут!'; }
+  else { E.activateBooster(st, 'double', Date.now(), 'из сундучка'); text = '🎁 ×2 урожай на 30 минут!'; }
+  notify('success'); sfx.fanfare(); render(); persist(true);
+  openLayer(`<div class="dialog chest-dlg"><div class="dog-pic">🎁</div><h3>Сундучок за игру!</h3><p><b>${text}</b></p>
+    <p class="note">Следующий — через ${CHEST_EVERY_MIN} минут игры.</p><div class="row"><button class="btn primary wide" data-act="close">Забрать</button></div></div>`, 'screen dim keep-ui', true);
+  layer.dataset.kind = 'chest';
+  afterGain();
+});
+
 /* ================= Сосед-соперник ================= */
 const NB_TEASE = ['Петрович через забор: «Что, сосед, отстаём? Мои куры несутся быстрее!»', 'Петрович машет из-за забора: «Догоняй, внучок!»',
   'Сосед купил новый трактор и хвастается на всю улицу…', 'Петрович: «У меня огурцы — во! А у тебя?»'];
@@ -1393,11 +1464,13 @@ const SHOP_LOOK = {
   helper7: { e: '👷', t: 'Помощник Ваня на 7 дней', d: () => 'Сам собирает урожай раз в 5 минут — 7 дней, без найма и без зарплаты.' },
   samovar: { e: '🫖', t: 'Украшение «Дедов самовар»', d: () => 'Только за звёзды: +3% ко всему доходу навсегда, стоит у дома деда.' },
   patron: { e: '💌', t: 'Поддержать автора', d: () => 'Значок «Меценат» у ника в рейтинге и открытка «Меценат фермы». Спасибо!' },
+  boost_grow: { e: '⚡', t: 'Бустер «Быстрый рост»', d: () => 'Огород, капуста и теплица растут вдвое быстрее 30 минут. Если уже идёт — ещё +30 мин.' },
+  boost_double: { e: '🎁', t: 'Бустер «×2 урожай»', d: () => 'Весь урожай фермы ×2 целых 30 минут. Если уже идёт — ещё +30 мин.' },
   bag: { e: '👝', t: 'Мешочек', pack: true },
   wallet: { e: '👛', t: 'Кошелёк деда', pack: true, best: true },
   chest: { e: '🧰', t: 'Сундук', pack: true },
 };
-const SHOP_DEFAULT = { skip: 15, cast: 10, helper7: 50, samovar: 75, patron: 100, bag: 25, wallet: 75, chest: 150 };
+const SHOP_DEFAULT = { skip: 15, cast: 10, helper7: 50, samovar: 75, patron: 100, bag: 25, wallet: 75, chest: 150, boost_grow: 10, boost_double: 15 };
 const PACKS = { bag: [30, 10000], wallet: [180, 50000], chest: [720, 150000] };
 let shopCatalog = null;
 const starPrice = (id) => shopCatalog?.items?.[id]?.stars ?? SHOP_DEFAULT[id];
@@ -1420,6 +1493,7 @@ async function openShop(section) {
       <button class="btn primary sh-btn" data-act="shopItem" data-id="${id}" ${!on || why ? 'disabled' : ''}>${starPrice(id)} ⭐</button></div>`;
   };
   sheet('⭐ Магазин', `${on ? (shopCatalog?.test ? '<p class="note warn-test">Режим проверки оплаты: всё по 1 ⭐</p>' : '') : '<p class="note">Покупки за звёзды работают в Telegram: откройте игру через бота @ferma_deda_bot.</p>'}
+    <div class="sub">Бустеры</div>${['boost_grow', 'boost_double'].map(row).join('')}
     <div class="sub">Для фермы</div>${['skip', 'cast', 'helper7', 'samovar', 'patron'].map(row).join('')}
     <div class="sub" id="shop-money">💰 Деньги фермы</div>${['bag', 'wallet', 'chest'].map(row).join('')}
     <p class="note">Купленные деньги идут в капитал и рейтинг, как заработанные. Вопросы по оплате — команда /paysupport в боте.</p>`, 'shop');
@@ -1631,7 +1705,7 @@ async function boot() {
   if (saved) profile = { album: {}, introSeen: false, ...saved, game: E.migrate(saved.game) };
   st = profile.game || E.newGame();
   st.tzOff = new Date().getTimezoneOffset();
-  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile };
+  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile, act: (n, id) => ACTIONS[n](id, document.createElement('b')), open: { board: openBoard, building: openBuilding, fishing: openFishing, house: openHouse, chest: () => { st.chest = { ms: 0, ready: true }; chestTick(); $('#chestBtn').click(); } } };
   render();
   say('Привет! Я помогу с фермой.', 'wink');
   if (await subscribed()) showSplash(); else showSubGate();
