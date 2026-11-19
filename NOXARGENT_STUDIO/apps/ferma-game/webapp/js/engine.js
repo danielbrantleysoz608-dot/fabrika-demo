@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_REWARD_K, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -45,6 +45,7 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     usedEvents: [], event: null, report: null,
     trust: TRUST.start, orderStreak: 0,      // доверие покупателей 🤝 и серия заказов без отказов
     storyFlags: {}, storyQueue: [],          // сюжет: решения в событиях и продолжения ({id, at: месяц})
+    goods: { equip: {}, supply: {} },       // товары фермы: оборудование (навсегда) и расходники (до времени)
     perm: {}, effects: [],                   // постоянные множители ({sales: 1.15}) и временные ({key, k, until, icon, label})
     decisions: [],                           // лента решений для «Тетрадь → История»
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
@@ -117,7 +118,41 @@ export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, i
 export function effMod(st, key) {
   let k = (st.mods?.[key] ?? 1) * (st.perm?.[key] ?? 1);
   for (const e of st.effects || []) if (e.key === key && e.until > st.month) k *= e.k;
+  // товары фермы: оборудование — навсегда, расходники — пока не кончились
+  const g = st.goods;
+  if (g) {
+    const now = st.lastTick || Date.now();
+    for (const id in g.equip || {}) if (GOODS[id]?.keys.includes(key)) k *= GOODS[id].k;
+    for (const id in g.supply || {}) if (g.supply[id] > now && GOODS[id]?.keys.includes(key)) k *= GOODS[id].k;
+  }
   return k;
+}
+
+/* ---------- Товары фермы (за ₽ или за ⭐) ---------- */
+export const goodPrice = (st, id) => nice(Math.max(500, perMin(st) * GOODS[id].mins));
+export const supplyLeft = (st, id, now = st.lastTick || Date.now()) => Math.max(0, (st.goods?.supply?.[id] || 0) - now);
+export const hasEquip = (st, id) => !!st.goods?.equip?.[id] || (id === 'sprinklers' && !!st.storyFlags?.sprinklers);
+// почему нельзя купить (null — можно)
+export function goodBlocked(st, id) {
+  const g = GOODS[id];
+  if (!g) return 'нет такого товара';
+  if (st.phase === 'clean') return 'сначала уборка';
+  if (g.kind === 'equip' && hasEquip(st, id)) return 'уже стоит на ферме';
+  if (g.needs.length && !g.needs.some(b => level(st, b) > 0)) return `нужна постройка: ${g.needs.map(b => BUILDINGS[b].name.toLowerCase()).join(' или ')}`;
+  return null;
+}
+// купить товар: pay = 'rub' (с проверкой денег) или 'stars' (уже оплачено звёздами)
+export function buyGood(st, id, pay = 'rub', now = Date.now()) {
+  const why = goodBlocked(st, id); if (why) return why;
+  const g = GOODS[id], price = goodPrice(st, id);
+  if (pay === 'rub') { if (st.money < price) return 'не хватает ' + fmt(price - st.money); st.money -= price; }
+  st.goods ||= { equip: {}, supply: {} };
+  if (g.kind === 'equip') {
+    st.goods.equip[id] = now;
+    if (id === 'sprinklers') st.storyFlags.sprinklers = true; // видно на огороде (как после события «Засуха»)
+  } else st.goods.supply[id] = Math.max(now, st.goods.supply[id] || 0) + SUPPLY_MIN * 60000;
+  addHistory(st, { m: st.month, t: `${g.e} ${g.name}${pay === 'rub' ? ` за ${fmt(price)}` : ' за ⭐'}: ${g.d.toLowerCase()}.` });
+  return null;
 }
 // действующие временные эффекты (для панели): сколько месяцев осталось, включая текущий
 export const activeEffects = (st) => (st.effects || []).filter(e => e.until > st.month).map(e => ({ ...e, months: e.until - st.month }));
@@ -350,7 +385,7 @@ export function applyPurchase(st, p, now = Date.now()) {
   got.push(p.charge_id); if (got.length > 300) got.splice(0, got.length - 300);
   let text = '';
   switch (p.item) {
-    case 'skip': st.monthMs = MONTH_MS; text = 'Месяц ускорен — жми «Следующий месяц»!'; break;
+    case 'skip': fastForward(st); text = 'Месяц ускорен — жми «Следующий месяц»!'; break;
     case 'cast': st.fishAt = {}; text = 'Удочка готова — можно рыбачить прямо сейчас!'; break;
     case 'helper7': {
       if (!st.workers) st.workers = {};
@@ -361,6 +396,12 @@ export function applyPurchase(st, p, now = Date.now()) {
       text = 'Помощник Ваня на 7 дней — сам собирает урожай!'; break;
     }
     case 'samovar': st.paid.samovar = true; text = 'Дедов самовар на ферме: +3% ко всему доходу!'; break;
+    case 'g_fert': case 'g_feed': case 'g_beefeed': case 'g_vitamins': case 'g_kit':
+    case 'g_sprinklers': case 'g_incubator': case 'g_ghheat': case 'g_beebed': case 'g_minitractor': {
+      const gid = p.item.slice(2), err = buyGood(st, gid, 'stars', now);
+      text = err ? `${GOODS[gid].name}: ${err} — звёзды не пропали, напиши /paysupport` : `${GOODS[gid].e} ${GOODS[gid].name} — готово!`;
+      break;
+    }
     case 'boost_grow': activateBooster(st, 'grow', now, 'за звёзды'); text = '⚡ Быстрый рост: огород и теплица ×2 на 30 минут!'; break;
     case 'boost_double': activateBooster(st, 'double', now, 'за звёзды'); text = '🎁 ×2 урожай на 30 минут!'; break;
     case 'patron': st.paid.patron = true; grantAch(st, 'patron'); text = 'Спасибо, что поддержали автора! Значок «Меценат» — в рейтинге.'; break;
@@ -477,7 +518,7 @@ export const spotOpen = (st, spot) => (st.tier || 0) >= FISH_SPOTS[spot].tier &&
 // сколько ждать до следующего заброса (мс), 0 — можно рыбачить
 export const fishWait = (st, spot, now = Date.now()) => Math.max(0, (st.fishAt?.[spot] || 0) + FISH_SPOTS[spot].cd * 60000 - now);
 export const biteWindow = (st) => Math.round(FISH_BITE_MS * (1 + 0.25 * level(st, 'rod')));
-export const fishValue = (st, f, spot) => nice(perMin(st) * f.min * FISH_SPOTS[spot].k * (st.storyFlags?.riverDirty ? 0.6 : 1)); // река помутнела — рыба мельче
+export const fishValue = (st, f, spot) => nice(perMin(st) * f.min * FISH_REWARD_K * FISH_SPOTS[spot].k * (st.storyFlags?.riverDirty ? 0.6 : 1)); // река помутнела — рыба мельче
 // закинуть удочку: попытка тратится сразу (сорвалась — ждать снова)
 export function castRod(st, spot, now = Date.now()) {
   if (!spotOpen(st, spot)) return spot === 'river' ? 'пруд — в локации «Река и луг» (после 1 млн)' : 'сначала уборка';
@@ -848,19 +889,24 @@ export const monthLeft = (st) => Math.max(0, MONTH_MS - st.monthMs);
 export const monthReady = (st) => st.phase === 'play' && monthLeft(st) <= 0;
 // пропуск ожидания: половина того, что ферма заработала бы за оставшееся время (минимум 500 ₽)
 export const skipCost = (st) => nice(Math.max(500, totalRate(st) * 0.5 * monthLeft(st) / 60000));
+// ускорение месяца: запоминаем, сколько времени промотали — зарплаты и проценты за него не берём
+export function fastForward(st) {
+  st.skippedMs = Math.min(MONTH_MS, (st.skippedMs || 0) + monthLeft(st));
+  st.monthMs = MONTH_MS;
+}
 export function skipMonth(st) {
   if (st.phase !== 'play' || monthReady(st)) return 'месяц уже прошёл';
   const c = skipCost(st);
   if (st.money < c) return 'не хватает ' + fmt(c - st.money);
   st.money -= c;
-  st.monthMs = MONTH_MS;
+  fastForward(st);
   addHistory(st, { m: st.month, t: `Поторопили время за ${fmt(c)}.` });
   return null;
 }
 
 // подпись ключа эффекта в ленте решений: «+15% продаж», «пасека −20%»
 const KEY_NAME = { sales: 'продаж' };
-const KEY_SHORT = { garden: 'огород', cabbage: 'капуста', greenhouse: 'теплица', apiary: 'пасека', honeyfield: 'пасека-поле', coop: 'курятник', cow: 'корова', cowshed: 'коровник', mill: 'мельница', cheese: 'сыроварня' };
+const KEY_SHORT = { garden: 'огород', cabbage: 'капуста', carrot: 'морковь', greenhouse: 'теплица', apiary: 'пасека', honeyfield: 'пасека-поле', coop: 'курятник', cow: 'корова', cowshed: 'коровник', mill: 'мельница', cheese: 'сыроварня' };
 export function effectText(key, k, months = 0) {
   const pct = Math.round((k - 1) * 100), sign = pct > 0 ? '+' : '−', v = `${sign}${Math.abs(pct)}%`;
   const name = KEY_NAME[key] ? `${v} ${KEY_NAME[key]}` : `${(KEY_SHORT[key] || BUILDINGS[key]?.name || key).toLowerCase()} ${v}`;
@@ -973,9 +1019,15 @@ function closeMonth(st) {
   const income = Math.round(st.monthIncome);
   const costs = [];
   if (income > 0) costs.push({ label: 'Корм, свет и налоги', amount: Math.round(income * UPKEEP_SHARE) });
-  if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE) });
-  for (const w of WORKER_ORDER) if (hired(st, w) && !st.workers[w].freeUntil) costs.push({ label: `Зарплата: ${WORKERS[w].name}`, amount: wageOf(st, w, income), wage: true });
+  // месяц ускорили — платим только за реально прошедшее время (доход за промотанное время не начислялся)
+  const lived = 1 - Math.min(MONTH_MS, st.skippedMs || 0) / MONTH_MS;
+  if (st.debt) costs.push({ label: 'Проценты по кредиту', amount: Math.round(st.debt * LOAN_RATE * lived) });
+  for (const w of WORKER_ORDER) if (hired(st, w) && !st.workers[w].freeUntil) {
+    const full = wageOf(st, w, income), pay = lived < 1 ? nice(Math.max(WORKERS[w].wage * income, wageFloor(st, w) * lived)) : full;
+    costs.push({ label: `Зарплата: ${WORKERS[w].name}${lived < 1 ? ` (${Math.max(1, Math.round(lived * 15))} из 15 мин)` : ''}`, amount: Math.min(full, pay), wage: true });
+  }
   const notes = [];
+  if (lived < 1) notes.push(`⏩ Месяц ускорили: зарплаты и проценты — только за ${Math.max(1, Math.round(lived * 15))} мин из 15.`);
   if (st.flags.contract) {
     const c = st.flags.contract;
     if (income < c.min) { costs.push({ label: 'Штраф кафе', amount: c.fine }); notes.push('Кафе недовольно: выручка меньше нормы.'); }
@@ -1002,7 +1054,7 @@ function closeMonth(st) {
   const report = { month: m, name: monthOf(m).name, year: yearOf(m), income, costs, expense, notes };
   st.month++;
   st.monthMs = 0;
-  st.monthIncome = 0;
+  st.monthIncome = 0; st.skippedMs = 0;
   st.mods = st.nextMods; st.nextMods = {};
   st.effects = (st.effects || []).filter(e => e.until > st.month);
   if (st.month === 12) grantAch(st, 'alive');
@@ -1031,7 +1083,7 @@ export function migrate(save) {
   if (!save || typeof save !== 'object' || save.v !== SCHEMA_VERSION) return null;
   // новые поля для старых сохранений (прогресс не трогаем)
   save.trust ??= TRUST.start; save.orderStreak ??= 0;
-  save.storyFlags ??= {}; save.storyQueue ??= []; save.perm ??= {}; save.effects ??= []; save.decisions ??= [];
+  save.storyFlags ??= {}; save.storyQueue ??= []; save.goods ??= { equip: {}, supply: {} }; save.perm ??= {}; save.effects ??= []; save.decisions ??= [];
   // раньше события повторялись каждый год («id@год») — теперь каждое один раз
   save.usedEvents = [...new Set((save.usedEvents || []).map(k => String(k).split('@')[0]))];
   return save;

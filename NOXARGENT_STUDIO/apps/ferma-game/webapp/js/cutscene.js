@@ -3,7 +3,8 @@
 // актёры двигаются по таймлайну в requestAnimationFrame (≤ 20 элементов, меняем только transform/opacity).
 // Тап по экрану — ускорить ×3, «Пропустить» — сразу к итогу. В конце — надпись с последствиями.
 import { workerFigure } from './workers-art.js';
-import { factoryArt, sprinklerOne, SPRINKLER_POS, solarCell } from './scene.js';
+import { factoryArt, factoryRoad, FACTORY_ROUTE, sprinklerOne, SPRINKLER_POS, solarCell, animOf } from './scene.js';
+import { loop } from './loop.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const OL = 'stroke="#3b2a1f" stroke-width="1.6" stroke-linejoin="round"';
@@ -35,7 +36,7 @@ const farmer = () => `<g><ellipse cy="1" rx="10" ry="3" fill="#000" opacity=".15
   <g class="arm"><path d="M6 -20 l8 -10" stroke="#d8392d" stroke-width="4" stroke-linecap="round"/><circle cx="14.5" cy="-31" r="2.6" fill="#f6c9a0" ${OL}/></g></g>`;
 const signBoard = (t) => `<g><rect x="-1.5" y="-30" width="3" height="20" fill="#7b5236"/><rect x="-31" y="-48" width="62" height="19" rx="3" fill="#fffaf0" ${OL}/>
   <text y="-34.5" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="10" fill="#c0392b">${t}</text></g>`;
-const coin = () => `<g><circle r="5.5" fill="#f3c94a" ${OL}/><text y="3" text-anchor="middle" font-family="Rubik, sans-serif" font-weight="900" font-size="7" fill="#8a5a0c">₽</text></g>`;
+const coin = () => `<g><circle r="5.5" fill="#f3c94a" ${OL}/><path d="M-1.6 3.4 V-3.2 H1 a1.8 1.8 0 0 1 0 3.6 H-3 M-3 1.9 H1.6" stroke="#8a5a0c" stroke-width="1.1" fill="none"/></g>`; // ₽ — линиями, без текста
 const egg = () => '<ellipse rx="3.6" ry="4.6" fill="#fff4dc" stroke="#3b2a1f" stroke-width="1.2"/>';
 const beetle = () => `<g><ellipse rx="4.6" ry="3.6" fill="#f2c84b" ${OL}/><path d="M-3 -1.5 h6 M-3 1.5 h6 M0 -3.6 v7.2" stroke="#3b2a1f" stroke-width="1"/><circle cx="5" r="1.8" fill="#3b2a1f"/></g>`;
 const hen = () => `<g><ellipse cy="-6" rx="8" ry="6" fill="#fff" ${OL}/><circle cx="7" cy="-12" r="4" fill="#fff" ${OL}/><path d="M7 -16.5 l2 -2.5 l1.5 2.5z" fill="#d8392d"/><path d="M11 -12 l3 1 l-3 1z" fill="#f2a530"/><circle cx="8" cy="-12.5" r=".9" fill="#2a1d16"/><path d="M-2 0 v3 M2 0 v3" stroke="#f2a530" stroke-width="1.4"/></g>`;
@@ -47,15 +48,15 @@ const roller = () => `<g><rect x="-16" y="-20" width="26" height="14" rx="3" fil
 
 /* ---------- сцены ---------- */
 // focus — куда подъезжает камера (x, y, w, h в координатах сцены 460×890); hide — что из настоящей фермы спрятать на время
-const FACTORY_ROAD = [[330, 452], [300, 392], [262, 312]];
+const FACTORY_ROAD = FACTORY_ROUTE; // та же дорога, что на ферме: с юга, через свой мостик, вверх к заводу
 function factoryScene(kind) {
   return {
-    loc: 'river', dur: 4.8, focus: [170, 200, 290, 280], hide: ['#story-factory', '#thanks'],
+    loc: 'river', dur: 4.8, focus: [110, 230, 330, 340], hide: ['#story-factory', '#thanks'],
     build(add) {
       const yes = kind !== 'no';
       const a = {};
       if (yes) {
-        a.road = add(`<path d="M304 440 L356 440 L268 306 L254 306z" fill="#9a9488" opacity=".85"/>`);
+        a.road = add(factoryRoad());
         a.fac = add(factoryArt(kind === 'deal'));
         a.smoke = [0, 1, 2, 3].map(() => add(`<circle r="8" fill="${kind === 'deal' ? '#f4f6f8' : '#8d939a'}" stroke="#5c6168" stroke-width=".8"/>`));
         a.stall = add(`<g><rect x="-16" y="-20" width="32" height="6" fill="#d8392d" ${OL}/><rect x="-14" y="-14" width="28" height="14" fill="#f8efd9" ${OL}/>${[-8, -2, 4, 10].map(x => `<ellipse cx="${x - 1}" cy="-16" rx="2.6" ry="3.2" fill="#fff4dc" stroke="#3b2a1f" stroke-width=".8"/>`).join('')}</g>`);
@@ -63,6 +64,7 @@ function factoryScene(kind) {
         a.eggs = [0, 1, 2].map(() => add(egg()));
         if (kind === 'deal') a.hand = add('<text text-anchor="middle" font-size="22">🤝</text>');
       } else {
+        a.road = add(factoryRoad()); // дорогу уже начали размечать — после отказа она исчезает
         a.people = ['milkmaid', 'henwife', 'beekeeper'].map(id => add(person(id)));
         a.sign = add(signBoard('СПАСИБО!'));
         a.farmer = add(farmer());
@@ -73,15 +75,15 @@ function factoryScene(kind) {
         a.trucks.forEach((tr, i) => {
           const k = seg(t, 0.4 + i * 0.5, 2.6 + i * 0.5);
           if (yes || k < 0.55) {
-            const [x, y] = along(FACTORY_ROAD, yes ? ease(k) : k);
-            const s = lerp(1, 0.55, yes ? ease(k) : k);
-            tr.set(x, y, s, -1, k > 0 && k < 1 || (yes && k >= 1) ? 1 : k > 0 ? 1 : 0);
+            const [x, y, d] = along(FACTORY_ROAD, yes ? ease(k) : k);
+            const s = lerp(1, 0.6, clamp(((yes ? ease(k) : k) - 0.55) / 0.45)); // меньше — когда уезжают вдаль, к заводу
+            tr.set(x, y, s, d, k > 0 ? 1 : 0);
             if (yes && k >= 1) tr.op(1 - seg(t, 3.2, 3.6));
           } else { // отказ: постояли, развернулись и уехали обратно через мост — к соседу
             const k2 = ease(seg(t, 2.4 + i * 0.4, 4.4 + i * 0.4));
             const [x0, y0] = along(FACTORY_ROAD, 0.55);
-            const [x, y] = along([[x0, y0], [330, 452], [520, 470]], k2);
-            tr.set(x, y, lerp(0.75, 1, k2), 1, 1);
+            const [x, y] = along([[x0, y0], [207, 518], [182, 540], [120, 548], [-40, 552]], k2);
+            tr.set(x, y, 1, -1, 1);
           }
         });
         if (yes) {
@@ -111,6 +113,7 @@ function factoryScene(kind) {
             const k = ease(seg(t, 0.2 + i * 0.2, 2.0 + i * 0.2));
             p.set(lerp(490 + i * 20, 318 + i * 22, k), 552 + Math.sin(t * 16 + i) * (k < 1 ? 1 : 0), 0.9, -1, 1);
           });
+          a.road.op(seg(t, 0, 0.3) * (1 - seg(t, 3.9, 4.6)) * 0.8);
           a.sign.set(340, 552, pop(seg(t, 2.0, 2.5)), 1, seg(t, 2.0, 2.1));
           a.farmer.set(272, 432, 1, 1, 1);
           a.farmer.el.querySelector('.arm').setAttribute('transform', `rotate(${Math.sin(t * 9) * 22} 6 -20)`);
@@ -139,7 +142,7 @@ const SCENES = {
         sp.forEach((s, i) => {
           const at = 0.2 + 3.2 * (i + 1) / (route.length - 1) - 0.1;
           s.set(SPRINKLER_POS[i][0], SPRINKLER_POS[i][1], pop(seg(t, at, at + 0.35)), 1, seg(t, at, at + 0.05));
-          s.el.querySelector('.spray').style.display = t > 3.3 ? '' : 'none';
+          const on = t > 3.3 ? '' : 'none', sp = s.el.querySelector('.spray'); if (sp.style.display !== on) sp.style.display = on;
         });
         green.op(0.35 * ease(seg(t, 3.3, 4.4)));
       };
@@ -190,14 +193,14 @@ const SCENES = {
   road: {
     loc: 'home', dur: 4.0, focus: [0, 560, 460, 180], hide: ['#hwy', '#signs'],
     build(add) {
-      const asph = add('<rect x="-200" y="640" width="1" height="48" fill="#757b82"/>');
+      const asph = add('<rect x="0" y="640" width="1" height="48" fill="#757b82"/>');
       const dash = add('<path d="M-10 664 H470" stroke="#fff" stroke-width="3.5" stroke-dasharray="20 16"/>');
       const r = add(roller());
       const sign = add(signBoard('ТРАССА →'));
       return (t) => {
         const k = ease(seg(t, 0.4, 3.2)), x = lerp(-30, 490, k);
         r.set(x, 672 + Math.sin(t * 30) * 0.6, 1.2, 1, 1);
-        asph.el.setAttribute('width', Math.max(1, x + 200 - 8));
+        asph.el.setAttribute('transform', `translate(-200 0) scale(${Math.max(1, x + 200 - 8).toFixed(1)} 1)`); asph.op(1);
         dash.op(seg(t, 3.0, 3.5));
         sign.set(436, 728, pop(seg(t, 3.3, 3.7)), 1, seg(t, 3.3, 3.4));
       };
@@ -256,17 +259,27 @@ export function playCutscene({ key, svg, app, caption, setLoc, onDone }) {
   if (!sc) { onDone?.(); return; }
   const prevLoc = setLoc(sc.loc);
   const scroll = svg.closest('.farm-scroll'); if (scroll) scroll.scrollTop = 0;
+  // актёры — в слое анимаций (#anim): каждый кадр перерисовывается только он, а не вся ферма
+  const layerSvg = animOf(svg), cam = svg.parentElement.id === 'stage' ? svg.parentElement : svg;
   const g = document.createElementNS(NS, 'g'); g.setAttribute('id', 'cut'); g.setAttribute('pointer-events', 'none');
-  svg.appendChild(g);
+  layerSvg.appendChild(g);
   // настоящие постройки прячем через CSS — даже если ферма перерисуется посреди сценки
   const css = document.createElement('style');
-  css.textContent = sc.hide.length ? sc.hide.map(sel => `#app.cut #scene ${sel}`).join(',') + '{visibility:hidden}' : '';
+  css.textContent = sc.hide.length ? sc.hide.map(sel => `#app.cut #scene ${sel}, #app.cut #anim [data-owner="${sel.slice(1)}"]`).join(',') + '{visibility:hidden}' : '';
   document.head.appendChild(css);
   const add = (html) => {
     const el = document.createElementNS(NS, 'g'); el.innerHTML = html; el.setAttribute('opacity', '0'); g.appendChild(el);
+    // меняем атрибут, только если значение изменилось: стоящие актёры кадр не стоят ничего
+    let tr = '', opv = '0';
+    const setOp = (v) => { if (v !== opv) { opv = v; el.setAttribute('opacity', v); } };
     const a = { el,
-      set(x, y, s = 1, dir = 1, o = 1) { el.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${(s * dir).toFixed(3)} ${s.toFixed(3)})`); el.setAttribute('opacity', o.toFixed(2)); },
-      op(o) { el.setAttribute('opacity', clamp(o).toFixed(2)); } };
+      set(x, y, s = 1, dir = 1, o = 1) {
+        const ov = clamp(o).toFixed(2); setOp(ov);
+        if (ov === '0.00') return;
+        const t = `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${(s * dir).toFixed(3)} ${s.toFixed(3)})`;
+        if (t !== tr) { tr = t; el.setAttribute('transform', t); }
+      },
+      op(o) { setOp(clamp(o).toFixed(2)); } };
     return a;
   };
   let step;
@@ -281,9 +294,11 @@ export function playCutscene({ key, svg, app, caption, setLoc, onDone }) {
   // ферма всегда закрывает экран целиком: сдвиг не больше, чем позволяет увеличенная картинка
   const tx = clamp((A.left + A.width / 2) - r.left - s * px, A.right - r.left - s * r.width, A.left - r.left);
   const ty = clamp((A.top + A.height * 0.47) - r.top - s * py, A.bottom - r.top - s * r.height, A.top - r.top);
-  svg.style.transformOrigin = '0 0';
-  svg.style.transition = 'transform 1.1s cubic-bezier(.45,0,.25,1)';
-  requestAnimationFrame(() => { svg.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`; });
+  // камера — анимация Web Animations (идёт в GPU-потоке, без перерасчёта страницы каждый кадр)
+  cam.style.transformOrigin = '0 0';
+  const camTo = `translate(${tx.toFixed(1)}px, ${ty.toFixed(1)}px) scale(${s.toFixed(3)})`;
+  const CAM = 0.6; // сначала камера (актёры стоят — иначе браузер пересчитывает всю сцену каждый кадр), потом действие
+  const camIn = cam.animate([{ transform: 'none' }, { transform: camTo }], { duration: CAM * 1000, easing: 'cubic-bezier(.45,0,.25,1)', fill: 'forwards' });
   app.classList.add('cut');
 
   // интерфейс: тап — быстрее, «Пропустить», надпись-итог
@@ -291,31 +306,33 @@ export function playCutscene({ key, svg, app, caption, setLoc, onDone }) {
   ui.className = 'cutui';
   ui.innerHTML = `<div class="cut-cap" hidden></div><div class="cut-hint">тап — быстрее</div><button class="btn cut-skip">Пропустить ⏭</button>`;
   app.appendChild(ui);
-  let speed = 1, t = 0, last = performance.now(), done = false, capShown = false, raf = 0;
+  let speed = 1, t = 0, done = false, capShown = false, stop = null;
   ui.addEventListener('pointerdown', (e) => { if (e.target.closest('.cut-skip')) return; speed = 3; ui.querySelector('.cut-hint').textContent = 'быстрее ×3'; });
   ui.querySelector('.cut-skip').addEventListener('click', () => finish());
   const frames = [];
-  const loop = (now) => {
+  // общий цикл кадров игры (в «Экономии батареи» — 30 fps)
+  stop = loop.add((ms, now) => {
     if (done) return;
-    const dt = Math.min(0.1, (now - last) / 1000); last = now; frames.push(now);
+    const dt = Math.min(0.1, ms / 1000); frames.push(now);
     t += dt * speed;
-    try { if (!step) return finish(); step(Math.min(t, sc.dur)); } catch (e) { console.warn(e); return finish(); }
-    if (!capShown && t >= sc.dur - 1.4 && caption) { capShown = true; const c = ui.querySelector('.cut-cap'); c.innerHTML = caption; c.hidden = false; }
-    if (t >= sc.dur + 0.4) return finish();
-    raf = requestAnimationFrame(loop);
-  };
-  raf = requestAnimationFrame(loop);
+    const tt = Math.max(0, (t - CAM) * 1.1);   // время действия: после наезда, чуть быстрее
+    try { if (!step) return finish(); if (t >= CAM || t === dt * speed) step(Math.min(tt, sc.dur)); } catch (e) { console.warn(e); return finish(); }
+    if (!capShown && tt >= sc.dur - 1.4 && caption) { capShown = true; const c = ui.querySelector('.cut-cap'); c.innerHTML = caption; c.hidden = false; }
+    if (tt >= sc.dur + 0.3) return finish();
+  });
   playCutscene.last = { key, frames };
 
   function finish() {
     if (done) return; done = true;
-    cancelAnimationFrame(raf);
+    stop?.();
     // fps для самопроверки (window.__cutFps)
     if (frames.length > 10) window.__cutFps = (frames.length - 1) / ((frames[frames.length - 1] - frames[0]) / 1000);
     css.remove(); g.remove(); ui.remove();
-    svg.style.transition = 'transform .45s ease-out'; svg.style.transform = '';
+    const camOut = cam.animate([{ transform: camTo }, { transform: 'none' }], { duration: 380, easing: 'ease-out', fill: 'forwards' });
+    camIn.cancel();
+    camOut.onfinish = () => camOut.cancel();
     app.classList.remove('cut');
-    setTimeout(() => { svg.style.transition = ''; svg.style.transformOrigin = ''; if (prevLoc !== sc.loc) setLoc(prevLoc, true); onDone?.(); }, 380);
+    setTimeout(() => { cam.style.transformOrigin = ''; if (prevLoc !== sc.loc) setLoc(prevLoc, true); onDone?.(); }, 380);
   }
   return finish;
 }

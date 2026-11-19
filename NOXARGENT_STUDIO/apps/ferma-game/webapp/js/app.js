@@ -2,10 +2,11 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, BOOSTERS, TRUST, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, BOOSTERS, TRUST, GOODS, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
-import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
+import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS, prewarmBg } from './scene.js';
+import { loop } from './loop.js';
 import { playCutscene, quickEffect, sceneFor } from './cutscene.js';
 import { farmerSVG } from './farmer.js';
 import { workerPortrait } from './workers-art.js';
@@ -20,11 +21,15 @@ import { openRating, submitScore } from './rating.js';
 const tg = window.Telegram?.WebApp;
 const $ = (s) => document.querySelector(s);
 const svg = $('#scene');
+const animSvg = $('#anim'), stage = $('#stage');
+const setBar = (el, k) => { if (el) el.style.transform = `scaleX(${Math.max(0, Math.min(1, k)).toFixed(4)})`; }; // полоски — transform, не width
 const fmt = E.fmt;
 // Настройки игрока (хранятся в браузере)
-const prefs = (() => { try { return { haptics: true, hints: true, scenes: true, ...JSON.parse(localStorage.getItem('ferma-prefs') || '{}') }; } catch { return { haptics: true, hints: true, scenes: true }; } })();
+const prefs = (() => { try { return { haptics: true, hints: true, scenes: true, eco: false, ...JSON.parse(localStorage.getItem('ferma-prefs') || '{}') }; } catch { return { haptics: true, hints: true, scenes: true }; } })();
 const savePrefs = () => { try { localStorage.setItem('ferma-prefs', JSON.stringify(prefs)); } catch { /* */ } };
 const haptic = (t = 'light') => prefs.haptics && tg?.HapticFeedback?.impactOccurred?.(t);
+function applyEco() { $('#app').classList.toggle('eco', !!prefs.eco); loop.eco = !!prefs.eco; }
+applyEco();
 const notify = (t) => prefs.haptics && tg?.HapticFeedback?.notificationOccurred?.(t);
 const SKY = { early: '#6db8ef', spring: '#55b0f1', summer: '#35a6f3', autumn: '#79b4dd', late: '#8fb0c8', winter: '#8eb0cc' };
 const TRASH_DEF = Object.fromEntries(TRASH.map(t => [t.id, t]));
@@ -64,7 +69,7 @@ function view() {
     full[id] = stock[id] > 0 && (st.acc[id] || 0) >= E.storageCap(st, id) * 0.98; // склад полон — пузырь мигает
   }
   return {
-    month: st.month, loc: st.loc || 'home', house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags, storyFlags: st.storyFlags || {},
+    month: st.month, loc: st.loc || 'home', house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags, storyFlags: st.storyFlags || {}, eco: !!prefs.eco, equip: st.goods?.equip || {},
     clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
@@ -79,6 +84,16 @@ function view() {
 const hens = () => E.level(st, 'coop') * 10;
 const hives = () => E.level(st, 'apiary') * 3 + E.level(st, 'honeyfield') * 20;
 
+// фон соседних локаций готовим заранее, в свободное время
+let prewarmT = 0;
+function prewarmSoon() {
+  clearTimeout(prewarmT);
+  prewarmT = setTimeout(() => {
+    const open = openLocations().map(l => l.id), i = open.indexOf(st.loc || 'home');
+    const run = () => prewarmBg(view(), [open[i - 1], open[i + 1]].filter(Boolean));
+    (window.requestIdleCallback || ((f) => setTimeout(f, 50)))(run);
+  }, 400);
+}
 function render(layers = 'all') {
   renderScene(svg, view(), BUILDINGS, layers);
   hud();
@@ -99,7 +114,7 @@ function fitScene() {
   const s = Math.max(0.3, Math.min(natural, limit));
   const vw = W / s, vh = H / s;
   const vb = `${((460 - vw) / 2).toFixed(1)} ${(890 - vh).toFixed(1)} ${vw.toFixed(1)} ${vh.toFixed(1)}`;
-  if (svg.getAttribute('viewBox') !== vb) svg.setAttribute('viewBox', vb);
+  if (svg.getAttribute('viewBox') !== vb) { svg.setAttribute('viewBox', vb); animSvg.setAttribute('viewBox', vb); }
 }
 window.addEventListener('resize', () => requestAnimationFrame(fitScene));
 
@@ -124,10 +139,10 @@ function hud() {
   $('#goalLbl').textContent = st.tier === 0 ? 'ДО МИЛЛИОНА' : `ДО ${goalLabel(st.tier).toUpperCase()}`;
   const lp0 = E.levelProgress(st), needL = goalLevel(st.tier);
   if (E.goalNeedsLevel(st)) { // капитал есть — ждём уровень фермы
-    $('#goalFill').style.width = Math.min(100, 100 * (st.xp || 0) / xpForLevel(needL)) + '%';
+    setBar($('#goalFill'), Math.max(0.03, (st.xp || 0) / xpForLevel(needL)));
     $('#goalNum').textContent = `капитал ✅ · ур. ${lp0.level}/${needL} ⭐`;
   } else {
-    $('#goalFill').style.width = (E.progress(st) * 100) + '%';
+    setBar($('#goalFill'), Math.max(0.03, E.progress(st)));
     $('#goalNum').textContent = `${short(cap, '')} / ${short(g)}`;
   }
   $('.goal').classList.toggle('need-lvl', E.goalNeedsLevel(st));
@@ -148,7 +163,7 @@ function hud() {
   fxBar(needQuick);
   // уровень фермы ⭐
   const lp = E.levelProgress(st), pill = q.querySelector('.lvl-pill');
-  if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; pill.querySelector('i').style.width = Math.round(100 * lp.have / lp.need) + '%'; }
+  if (pill) { pill.querySelector('b').textContent = `⭐ ${lp.level}`; setBar(pill.querySelector('i'), lp.have / lp.need); }
   const sky = SKY[m.season];
   music.setSeason(m.season); // плавная смена мелодии вместе с сезоном (если музыка уже играет)
   if (hud.sky !== sky) {
@@ -171,7 +186,7 @@ function updateNext() {
   $('#nextLbl').innerHTML = ready
     ? 'Следующий месяц ▶'
     : `Следующий месяц<small>через ${mmss(left)} · ⏩ ускорить</small>`;
-  $('#monthBar').style.width = (100 * (1 - left / MONTH_MS)) + '%';
+  setBar($('#monthBar'), 1 - left / MONTH_MS);
 }
 
 // Чистота считается в одном месте и показывается одинаково сверху и на кнопке
@@ -179,13 +194,13 @@ function updateClean() {
   const cleaning = st.phase === 'clean';
   const pct = Math.round(E.cleanLevel(st) * 100);
   $('#cleanBar').hidden = !cleaning;
-  $('#cleanFill').style.width = pct + '%';
+  setBar($('#cleanFill'), Math.max(0.03, pct / 100));
   $('#cleanNum').textContent = pct + '%';
   if (cleaning) {
     $('#btnNext').classList.add('locked');
     $('#btnNext').classList.remove('ready', 'wait');
     $('#nextLbl').innerHTML = `Сначала уборка<small>чистота ${pct}%</small>`;
-    $('#monthBar').style.width = '0';
+    setBar($('#monthBar'), 0);
   }
 }
 
@@ -251,7 +266,7 @@ function toast(text) {
 /* ================= Тапы по сцене ================= */
 // Мгновенный отклик: действие — сразу в момент касания (pointerdown), не ждём отпускания пальца.
 // Так тап не теряется, если палец чуть сдвинулся или пузырь урожая как раз перерисовался.
-svg.addEventListener('pointerdown', (e) => {
+function onSceneTap(e) {
   if (e.button > 0 || !st || coach.isOpen() || tapsBlocked()) return;
   const el = e.target.closest('[data-tap]');
   if (!el) return;
@@ -265,7 +280,11 @@ svg.addEventListener('pointerdown', (e) => {
   if (tap === 'fish') { haptic(); sfx.click(); return openFishing(el.dataset.spot || 'home'); }
   if (tap === 'dog') return petDog();
   if (tap === 'workers') { haptic(); sfx.click(); return openWorkers(); }
-});
+}
+svg.addEventListener('pointerdown', onSceneTap);
+animSvg.addEventListener('pointerdown', onSceneTap);
+// ферма прокручена вниз (информация под фермой) — анимации на паузу
+new IntersectionObserver(([en]) => animSvg.classList.toggle('offscreen', en.intersectionRatio < 0.15), { threshold: [0, 0.15, 0.5] }).observe(stage);
 
 function hitTrash(id) {
   const res = E.hitTrash(st, id);
@@ -324,7 +343,7 @@ function collect(id) {
 
 // «+N ₽» вылетает от пузыря к счётчику денег
 function flyToMoney(id, text) {
-  const from = svg.querySelector(`#ready [data-id="${id}"] .pill`) || svg.querySelector(`#${id}`);
+  const from = animSvg.querySelector(`#ready [data-id="${id}"] .pill`) || svg.querySelector(`#${id}`);
   const to = $('#money');
   if (!from || !to) return;
   const a = from.getBoundingClientRect(), b = to.getBoundingClientRect(), app = $('#app').getBoundingClientRect();
@@ -341,7 +360,7 @@ function flyToMoney(id, text) {
 
 /* ================= Реальное время ================= */
 const tickReady = {};
-setInterval(() => {
+loop.every(1000, () => {
   if (!st || !profile.game || st.phase === 'clean' || coach.isOpen()) return;
   const r = E.tick(st);
   if (r.changed) render('ready');
@@ -359,8 +378,8 @@ setInterval(() => {
   // напоминание: месяц прошёл
   if (E.monthReady(st) && !tickReady.done) { tickReady.done = true; notify('success'); if (layer.hidden) hint(); }
   if (!E.monthReady(st)) tickReady.done = false;
-}, 1000);
-setInterval(() => profile.game && st.phase !== 'clean' && persist(), 10000);
+});
+loop.every(10000, () => profile.game && st.phase !== 'clean' && persist());
 
 // Вернулся в игру — показать, сколько накопилось за время отсутствия
 function welcomeBack() {
@@ -377,6 +396,7 @@ function welcomeBack() {
 }
 // Свернули игру — музыка и звуки на паузе; вернулись — продолжаем
 document.addEventListener('visibilitychange', () => {
+  $('#app').classList.toggle('paused', document.visibilityState !== 'visible'); // всё на паузу
   if (document.visibilityState === 'visible') { sfx.resume(); welcomeBack(); } else { sfx.suspend(); if (profile.game) persist(true); }
 });
 tg?.onEvent?.('deactivated', () => sfx.suspend());
@@ -509,6 +529,7 @@ function fastTap(el, fn) {
 // keep-ui: окно поверх, но нижняя панель и фермер остаются на месте (фон затемнён)
 function openLayer(html, cls = 'sheet-wrap', back = true) {
   layer.className = cls;
+  $('#app').classList.add('layer-open');
   $('#app').classList.toggle('covered', cls.startsWith('screen') && !cls.includes('keep-ui'));
   $('#app').classList.toggle('bare', cls === 'screen');
   layer.innerHTML = html;
@@ -519,7 +540,7 @@ function openLayer(html, cls = 'sheet-wrap', back = true) {
 function closeLayer() {
   tapBlockUntil = Date.now() + 300;
   layer.hidden = true; layer.innerHTML = '';
-  $('#app').classList.remove('covered', 'bare');
+  $('#app').classList.remove('covered', 'bare', 'layer-open');
   tg?.BackButton.hide();
   setTimeout(afterGain, 300);
 }
@@ -593,6 +614,15 @@ const ACTIONS = {
     <div class="row"><button class="btn wide" data-act="workers">Оставить</button><button class="btn wide danger" data-act="fireYes" data-id="${id}">Уволить</button></div></div>`, 'screen dim keep-ui', true); layer.dataset.kind = 'fire'; },
   upWorker: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.upWorker(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openWorkers, '#w-' + id); toast(`${WORKERS[id].name}: уровень ${E.wLv(st, id)}!`); },
   decor: () => openDecor(),
+  goods: () => openGoods(),
+  goodRub: (id, el) => {
+    if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); }
+    const err = E.buyGood(st, id, 'rub'); if (err) { sfx.error(); return toast(cap1(err)); }
+    const g = GOODS[id];
+    notify('success'); sfx.build(); render(); persist(true);
+    reopenKeepScroll(layer.dataset.kind === 'shop' ? () => openShop() : openGoods, '#g-' + id);
+    say(`${g.e} <b>${g.name}</b>: ${g.d.charAt(0).toLowerCase() + g.d.slice(1)}${g.kind === 'equip' ? '' : ''}`, 'happy', 5000);
+  },
   buyDecor: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } const err = E.buyDecor(st, id); if (err) return toast(cap1(err)); notify('success'); sfx.build(); render(); persist(true); reopenKeepScroll(openDecor, '#d-' + id); const d = DECOR.find(x => x.id === id); say(`${d.emoji} ${d.name} — красота! Ферма стала уютнее: +2% ко всему доходу.`, 'happy', 5000); },
   fireYes: (id) => { E.fire(st, id); render(); persist(true); openWorkers(); toast(`${WORKERS[id].name} больше не работает`); },
   dogName: () => { const v = layer.querySelector('#dogName')?.value || ''; E.nameDog(st, v); closeLayer(); render(); persist(true); sfx.woof(); say(`<b>${escH(st.dog.name)}</b> теперь живёт у крыльца! Гладь его раз в 4 часа — <b>+10% к доходу</b> на 30 минут.`, 'happy', 7000); },
@@ -615,8 +645,8 @@ const ACTIONS = {
   pref: (id, el) => {
     if (id === 'sound') sfx.toggle();
     else if (id === 'music') music.enable(!sfx.settings.music);
-    else { prefs[id] = !prefs[id]; savePrefs(); }
-    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : id === 'scenes' ? `Сценки: ${prefs.scenes ? 'вкл' : 'выкл'}` : id === 'music' ? `Музыка: ${sfx.settings.music ? 'вкл' : 'выкл'}` : id === 'sound' ? `Звуки: ${sfx.muted ? 'выкл' : 'вкл'}` : 'Сохранено');
+    else { prefs[id] = !prefs[id]; savePrefs(); if (id === 'eco') { applyEco(); render(); } }
+    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : id === 'scenes' ? `Сценки: ${prefs.scenes ? 'вкл' : 'выкл'}` : id === 'eco' ? `Экономия батареи: ${prefs.eco ? 'вкл' : 'выкл'}` : id === 'music' ? `Музыка: ${sfx.settings.music ? 'вкл' : 'выкл'}` : id === 'sound' ? `Звуки: ${sfx.muted ? 'выкл' : 'вкл'}` : 'Сохранено');
     if (el?.dataset.from === 'book') openBook('tasks'); else openSettings();
   },
   saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
@@ -757,7 +787,7 @@ function openBuild(focus, keep = false) {
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
   sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
-    ${houseCard}${workersCard()}${decorCard()}${open.map(card).join('')}
+    ${houseCard}${workersCard()}${goodsCard()}${decorCard()}${open.map(card).join('')}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
 // перерисовать шторку, не сбрасывая прокрутку: та же карточка остаётся на том же месте экрана
@@ -821,6 +851,7 @@ function doBuy(id, sure = false) {
     factory: 'Завод запущен. Дед бы не поверил!',
     cowshed: 'Коровник на лугу! Молоко — и на сыр, и в заказы.',
     cabbage: 'Капуста посажена рядом с помидорами — кочаны пойдут в заказы!',
+    carrot: 'Морковь посеяна между помидорами и капустой — пойдёт и на прилавок, и в заказы!',
     mill: 'Мельница крутится — своя мука!',
     cafe: 'Кафе открыто — пироги из нашей муки и молока!',
     market: 'Место на рынке — заказы теперь дороже!',
@@ -1063,13 +1094,25 @@ const locCount = (loc) => Object.keys(BUILDINGS).filter(id => locOf(id) === loc 
 
 function goLoc(id, anim = true, dir = 0) {
   if (!LOC_BY_ID[id] || LOC_BY_ID[id].tier > st.tier || (st.loc || 'home') === id) return;
+  let ghost = null;
+  if (anim && prefs.eco !== true) { // снимок текущей сцены: держит картинку, пока новая въезжает (без пустого кадра)
+    ghost = stage.cloneNode(true);
+    ghost.removeAttribute('id'); ghost.className = 'stage-ghost';
+    ghost.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    ghost.style.height = stage.offsetHeight + 'px'; ghost.style.top = stage.offsetTop + 'px';
+    stage.parentNode.insertBefore(ghost, stage.nextSibling);
+  }
   st.loc = id;
   render();
   if (anim) {
-    svg.classList.remove('slide-l', 'slide-r'); void svg.getBoundingClientRect();
-    svg.classList.add(dir < 0 ? 'slide-r' : 'slide-l');
+    const toLeft = dir >= 0; // ▶ — старая уезжает влево, новая въезжает справа
+    stage.classList.remove('in-l', 'in-r'); void stage.offsetWidth;
+    stage.classList.add(toLeft ? 'in-l' : 'in-r');
+    if (ghost) { ghost.classList.add(toLeft ? 'out-l' : 'out-r'); setTimeout(() => ghost.remove(), 380); }
+    setTimeout(() => stage.classList.remove('in-l', 'in-r'), 380);
     sfx.whoosh?.();
   }
+  prewarmSoon();
   $('#farmScroll').scrollTo({ top: 0 });
   persist();
 }
@@ -1161,6 +1204,31 @@ const W_UP = {
   seller: 'Уровни: ко всему доходу +10% → +20% → +30%.',
   driver: 'На 3-м уровне сам отвозит и большой заказ дня.',
 };
+/* ================= Товары фермы (за ₽ или за ⭐) ================= */
+function goodsRows(starsOn = shopEnabled()) {
+  const now = Date.now();
+  const block = (kind) => Object.entries(GOODS).filter(([, g]) => g.kind === kind).map(([id, g]) => {
+    const why = E.goodBlocked(st, id), left = g.kind === 'supply' ? E.supplyLeft(st, id, now) : 0, price = E.goodPrice(st, id);
+    const owned = g.kind === 'equip' && E.hasEquip(st, id);
+    const note = owned ? '✓ стоит на ферме' : why ? '🔒 ' + why : left > 0 ? `✓ действует ещё ${mmss(left)} — купишь ещё, будет +30 мин` : g.d;
+    const lack = st.money < price;
+    return `<div class="shop-row good-row" id="g-${id}"><span class="sh-e">${g.e}</span>
+      <div class="sh-t"><b>${g.name}</b><small>${note}</small></div>
+      ${owned ? '' : `<div class="g-btns"><button class="btn primary sh-btn" data-act="goodRub" data-id="${id}" ${why ? 'disabled' : ''} ${lack && !why ? `data-lock="Не хватает ${short(price - st.money)}"` : ''}>${short(price)}</button>
+        <button class="btn sh-btn g-star" data-act="shopItem" data-id="g_${id}" ${why || !starsOn ? 'disabled' : ''}>${starPrice('g_' + id)} ⭐</button></div>`}</div>`;
+  }).join('');
+  return `<div class="sub2">Расходники · 30 минут</div>${block('supply')}<div class="sub2">Оборудование · навсегда, видно на ферме</div>${block('equip')}`;
+}
+function goodsCard() {
+  const eq = Object.keys(GOODS).filter(id => GOODS[id].kind === 'equip' && E.hasEquip(st, id)).length;
+  return `<div class="card goods-card"><h3>🌱 Товары фермы</h3><div class="price">${eq}/5</div>
+    <p>Удобрение, корм, подкормка для пчёл, витамины, набор фермера — <b>+30–50% на 30 минут</b>. Поливалки, инкубатор, подогрев теплицы, улей-лежак, мини-трактор — <b>навсегда</b>. За ₽ или за ⭐.</p>
+    <button class="btn primary go" data-act="goods">Открыть товары</button></div>`;
+}
+function openGoods() {
+  sheet('🌱 Товары фермы', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
+    ${goodsRows()}<p class="note">Цена в ₽ растёт вместе с доходом фермы (расходник — 15–25 минут дохода, оборудование — 1–2 часа). За ⭐ — в Telegram.</p>`, 'goods');
+}
 function decorCard() {
   const n = E.decorCount(st), next = DECOR.find(d => !E.hasDecor(st, d.id) && d.tier <= st.tier);
   return `<div class="card decor-card"><h3>🌼 Украшения фермы</h3><div class="price">${n}/${DECOR.length}</div>
@@ -1240,6 +1308,7 @@ function fxBar(show) {
   if (hh.on) chips.push(`<span class="fx hh" data-short="🔥 +${pct}% · ${mm(hh.left)}">🔥 Счастливый час +${pct}% · ещё ${mm(hh.left)}</span>`);
   for (const k of ['grow', 'double']) { const l = E.boostLeft(st, k, now); if (l > 0) chips.push(`<span class="fx bs" title="${BOOSTERS[k].name}">${BOOSTERS[k].emoji} ${mmss(l)}</span>`); }
   if ((st.month || 0) < NEWBIE_MONTHS && st.phase === 'play') chips.push(`<span class="fx nb">🌱 ×1,5</span>`);
+  for (const [id, g] of Object.entries(GOODS)) { const l = g.kind === 'supply' ? E.supplyLeft(st, id, now) : 0; if (l > 0) chips.push(`<span class="fx bs" title="${g.name}">${g.e} ${mmss(l)}</span>`); }
   // временные последствия решений: значок, % и сколько осталось (месяцы → минуты игры)
   for (const e of E.activeEffects(st)) {
     const pct = Math.round((e.k - 1) * 100), left = (e.months - 1) * MONTH_MS + Math.max(0, MONTH_MS - st.monthMs);
@@ -1251,7 +1320,9 @@ function fxBar(show) {
     el.innerHTML = html; el.dataset.html = html;
     // не влезло в одну строку — сокращаем плашку счастливого часа
     if (el.scrollWidth > el.clientWidth + 1) el.querySelectorAll('[data-short]').forEach(c => { c.textContent = c.dataset.short; });
-    requestAnimationFrame(fitScene);
+    // сцену подгоняем, только если панель поменяла высоту (таймеры тикают каждую секунду — сцену не трогаем)
+    const h = el.hidden ? 0 : el.offsetHeight;
+    if (+el.dataset.h !== h) { el.dataset.h = h; requestAnimationFrame(fitScene); }
   }
 }
 // за 10 минут до счастливого часа — подсказка фермера (раз в день)
@@ -1331,7 +1402,7 @@ function rivalBar(show) {
   const me = E.ratingCapital(st), nb = E.neighborCap(st), ahead = me >= nb;
   $('#rvMe').textContent = short(Math.max(0, me), '');
   $('#rvNb').textContent = short(nb, '');
-  $('#rvFill').style.width = Math.round(100 * Math.max(0, me) / (Math.max(0, me) + nb || 1)) + '%';
+  setBar($('#rvFill'), Math.max(0.02, Math.max(0, me) / (Math.max(0, me) + nb || 1)));
   bar.classList.toggle('ahead', ahead);
 }
 let lastTease = Date.now();
@@ -1400,7 +1471,7 @@ const waitTxt = (ms) => mmss(ms);
 // бейджи над мостками и прудом: «🎣 клюёт!» или таймер
 function fishBadges() {
   for (const spot of Object.keys(FISH_SPOTS)) {
-    const g = svg.querySelector('#fishBadge-' + spot);
+    const g = document.getElementById('fishBadge-' + spot);
     if (!g) continue;
     const w = E.fishWait(st, spot), t = w > 0 ? `⏳ ${waitTxt(w)}` : '🎣 клюёт!';
     const tx = g.querySelector('text');
@@ -1527,12 +1598,16 @@ const SHOP_LOOK = {
   wallet: { e: '👛', t: 'Кошелёк деда', pack: true, best: true },
   chest: { e: '🧰', t: 'Сундук', pack: true },
 };
-const SHOP_DEFAULT = { skip: 15, cast: 10, helper7: 50, samovar: 75, patron: 100, bag: 25, wallet: 75, chest: 150, boost_grow: 10, boost_double: 15 };
+const SHOP_DEFAULT = { skip: 15, cast: 10, helper7: 50, samovar: 75, patron: 100, bag: 25, wallet: 75, chest: 150, boost_grow: 10, boost_double: 15,
+  ...Object.fromEntries(Object.entries(GOODS).map(([id, g]) => ['g_' + id, g.stars])) };
+// товары фермы в магазине звёзд: g_<id>
+for (const [id, g] of Object.entries(GOODS)) SHOP_LOOK['g_' + id] = { e: g.e, t: g.name, d: () => g.d + (g.kind === 'supply' ? ' Купишь ещё — +30 минут.' : '') };
 const PACKS = { bag: [30, 10000], wallet: [180, 50000], chest: [720, 150000] };
 let shopCatalog = null;
 const starPrice = (id) => shopCatalog?.items?.[id]?.stars ?? SHOP_DEFAULT[id];
 const packSum = (id) => E.packAmount(st, ...PACKS[id]);
 function shopBlocked(id) {
+  if (id.startsWith('g_')) return E.goodBlocked(st, id.slice(2));
   if (id === 'samovar' && st.paid?.samovar) return 'уже стоит на ферме';
   if (id === 'helper7' && E.hired(st, 'helper') && !st.workers.helper.freeUntil) return 'Ваня уже нанят насовсем';
   if (id === 'skip' && (st.phase !== 'play' || E.monthReady(st))) return 'месяц уже прошёл';
@@ -1551,6 +1626,7 @@ async function openShop(section) {
   };
   sheet('⭐ Магазин', `${on ? (shopCatalog?.test ? '<p class="note warn-test">Режим проверки оплаты: всё по 1 ⭐</p>' : '') : '<p class="note">Покупки за звёзды работают в Telegram: откройте игру через бота @ferma_deda_bot.</p>'}
     <div class="sub">Бустеры</div>${['boost_grow', 'boost_double'].map(row).join('')}
+    <div class="sub" id="shop-goods">🌱 Товары фермы — за ₽ или за ⭐</div>${goodsRows(on)}
     <div class="sub">Для фермы</div>${['skip', 'cast', 'helper7', 'samovar', 'patron'].map(row).join('')}
     <div class="sub" id="shop-money">💰 Деньги фермы</div>${['bag', 'wallet', 'chest'].map(row).join('')}
     <p class="note">Купленные деньги идут в капитал и рейтинг, как заработанные. Вопросы по оплате — команда /paysupport в боте.</p>`, 'shop');
@@ -1666,6 +1742,7 @@ function openSettings() {
       <li><span>🔊 Звуки<small>вжух, монетки, молоток, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
       <li><span>📳 Вибрация<small>в Telegram на телефоне</small></span>${sw('haptics', prefs.haptics)}</li>
       <li><span>🧑‍🌾 Подсказки фермера<small>${prefs.hints ? 'вкл — важное фермер расскажет по центру экрана' : 'выкл — тапни по фермеру, и он подскажет'}</small></span>${sw('hints', prefs.hints)}</li>
+      <li><span>🔋 Экономия батареи<small>${prefs.eco ? 'вкл — меньше анимаций, до 30 кадров в секунду' : 'выкл — все анимации фермы'}</small></span>${sw('eco', !!prefs.eco)}</li>
       <li><span>🎬 Сценки после решений<small>${prefs.scenes !== false ? 'вкл — короткий мультик 3–6 секунд, один раз' : 'выкл — только итог выбора'}</small></span>${sw('scenes', prefs.scenes !== false)}</li>
       <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
     </ul>

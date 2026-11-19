@@ -28,7 +28,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* Ферма листается вертикально; шапка, помощник и нижние кнопки — поверх, на месте */
 .farm-scroll { position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgba(59,42,31,.35) transparent; }
 .farm-scroll::-webkit-scrollbar { width: 5px; } .farm-scroll::-webkit-scrollbar-thumb { background: rgba(59,42,31,.35); border-radius: 3px; }
-#scene { display: block; width: 100%; height: auto; min-height: 100%; aspect-ratio: 460 / 890; }
+/* сцена: статичная ферма + слой анимаций поверх; оба — отдельные GPU-слои */
+.stage { position: relative; min-height: 100%; display: flex; flex-direction: column; will-change: transform; }
+#scene { display: block; width: 100%; height: auto; flex: 1 0 auto; aspect-ratio: 460 / 890; will-change: transform; }
+#anim { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; will-change: transform; contain: strict; }
+#anim [data-tap] { pointer-events: auto; cursor: pointer; touch-action: manipulation; }
 .farm-spacer { height: calc(96px + var(--safe-bot)); background: var(--meadow, #8dc95a); }
 
 /* ---------- HUD ---------- */
@@ -88,7 +92,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #scene [data-tap] { cursor: pointer; }
 .trash .trash-art { animation: wobble 2.6s ease-in-out infinite; }
 .trash.cracked { opacity: .8; }
-.slot-area { fill: rgba(255,255,255,.18); stroke: #fffaf0; stroke-width: 2.5; stroke-dasharray: 7 6; animation: dash 1.2s linear infinite; }
+.slot-area { fill: rgba(255,255,255,.18); stroke: #fffaf0; stroke-width: 2.5; stroke-dasharray: 7 6; }
 .slot-pin { animation: pulse 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 .ready .bob { animation: bob 1.4s ease-in-out infinite; }
 .hen { transform-box: fill-box; animation: peck 2.4s ease-in-out infinite; }
@@ -284,12 +288,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .trash.cut { pointer-events: none; animation: none; }
 .trash.cut .trash-art { animation: cutDown .4s ease-in forwards; }
 .trash.fly .tap-ring, .trash.cut .tap-ring { display: none; }
-.slot .slot-area { animation: dash 1.2s linear infinite, glow 1.6s ease-in-out infinite; }
+.slot-area { animation: glow 1.6s ease-in-out infinite; }
 #ready .bob { filter: drop-shadow(0 0 4px rgba(255,236,150,.95)); }
 @keyframes ring { 0%, 100% { transform: scale(.9); opacity: .55 } 50% { transform: scale(1.15); opacity: 1 } }
 @keyframes flyAway { to { transform: translate(30px, -120px) rotate(200deg) scale(.3); opacity: 0 } }
 @keyframes cutDown { 40% { transform: scaleY(.25) skewX(18deg) } to { transform: scaleY(0) translateY(6px); opacity: 0 } }
-@keyframes glow { 50% { fill: rgba(255,255,255,.38) } }
+@keyframes glow { 50% { opacity: .55 } }
 
 /* ===== v2: таймер месяца, уровни, поздравления ===== */
 #btnNext { position: relative; overflow: hidden; }
@@ -297,7 +301,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #btnNext.wait { background: #6fae66; border-color: #3f7a3a; box-shadow: 0 4px 0 #3f7a3a; font-size: 15px; }
 #btnNext.ready { animation: readyPulse 1.4s ease-in-out infinite; }
 #btnNext span { position: relative; }
-@keyframes readyPulse { 50% { transform: scale(1.04); box-shadow: 0 4px 0 var(--btn-dark), 0 0 0 6px rgba(63,163,77,.35); } }
+@keyframes readyPulse { 50% { transform: scale(1.04); } }
 .bubble[hidden] { display: none !important; }
 .lvl { grid-column: 1 / -1; display: flex; align-items: center; gap: 3px; }
 .lvl i { width: 14px; height: 8px; border-radius: 3px; background: #eadcc0; border: 1.5px solid #c9b48e; }
@@ -405,7 +409,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 /* Подсветка кнопки «Стройка» после уборки */
 #btnBuild.glow { animation: glowBtn 1.1s ease-in-out infinite; border-color: #e8a21a; }
-@keyframes glowBtn { 0%, 100% { box-shadow: 0 4px 0 var(--line), 0 0 0 0 rgba(255,210,63,.0); transform: scale(1); } 50% { box-shadow: 0 4px 0 var(--line), 0 0 0 8px rgba(255,210,63,.75); transform: scale(1.08); } }
+@keyframes glowBtn { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
 
 /* ===== Свежий сбор, задания дня, бонус за вход ===== */
 #ready .fresh .bob { filter: drop-shadow(0 0 6px rgba(255,226,74,1)); }
@@ -504,8 +508,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .locnav button:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(59,42,31,.3); }
 .ln-dot { position: absolute; top: -4px; right: -4px; width: 12px; height: 12px; border-radius: 50%; background: #3fae4f; border: 2px solid #fff; animation: pop 1.2s infinite alternate; }
 #app.clean-phase .locnav { display: none; }
-#scene.slide-l { animation: slideL .32s cubic-bezier(.2,.8,.2,1); }
-#scene.slide-r { animation: slideR .32s cubic-bezier(.2,.8,.2,1); }
+/* смена локации: снимок старой сцены уезжает, новая въезжает — обе непрозрачные, пустого кадра нет */
+.stage-ghost { position: absolute; left: 0; right: 0; top: 0; z-index: 1; pointer-events: none; will-change: transform; }
+.stage-ghost.out-l { animation: outL .34s cubic-bezier(.4,0,.2,1) forwards; }
+.stage-ghost.out-r { animation: outR .34s cubic-bezier(.4,0,.2,1) forwards; }
+.stage.in-l { animation: inL .34s cubic-bezier(.4,0,.2,1); }
+.stage.in-r { animation: inR .34s cubic-bezier(.4,0,.2,1); }
+@keyframes outL { to { transform: translateX(-100%); } }
+@keyframes outR { to { transform: translateX(100%); } }
+@keyframes inL { from { transform: translateX(100%); } }
+@keyframes inR { from { transform: translateX(-100%); } }
 @keyframes slideL { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
 @keyframes slideR { from { transform: translateX(-40px); opacity: .3; } to { transform: none; opacity: 1; } }
 .mcard { display: flex; gap: 10px; background: #fff8ea; border: 2.5px solid var(--line); border-radius: 14px; padding: 8px; margin-bottom: 10px; }
@@ -541,11 +553,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .bar.rival.ahead .rv-me::before { content: "🏁 "; }
 
 /* ===== Щенок ===== */
-#dog .dog-tail { transform-box: fill-box; transform-origin: 0% 100%; animation: wag .5s ease-in-out infinite alternate; }
+#dog .dog-tail, .dog-tail { transform-box: fill-box; transform-origin: 0% 100%; animation: wag .5s ease-in-out infinite alternate; }
 #dog.dog-happy .dog-tail { animation-duration: .18s; }
 @keyframes wag { from { transform: rotate(-14deg); } to { transform: rotate(16deg); } }
-#dog .dog-ask { animation: pop 1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
-#dog .hearts text { animation: floatUp 2s ease-in-out infinite; }
+#dog .dog-ask, .dog-ask { animation: pop 1s ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+#dog .hearts text, .hearts text { animation: floatUp 2s ease-in-out infinite; }
 @keyframes floatUp { 0% { transform: translateY(4px); opacity: .2; } 50% { opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
 .dog-dialog input { width: 100%; box-sizing: border-box; font: inherit; font-weight: 800; font-size: 18px; text-align: center; padding: 10px; border: 2.5px solid var(--line); border-radius: 12px; margin: 6px 0 12px; color: var(--brown); background: #fff; }
 .dog-pic { font-size: 54px; text-align: center; line-height: 1.1; }
@@ -751,7 +763,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ev-opts .opt:nth-child(3):last-child svg { width: 64px; height: 48px; grid-row: 1 / span 3; }
 .ev-opts .opt:nth-child(3):last-child b { font-size: 18px; }
 /* ===== Сценки после решений ===== */
-#app.cut .hud, #app.cut .dock, #app.cut .helper, #app.cut #chestBtn, #app.cut #scene #ready { opacity: 0; pointer-events: none; transition: opacity .35s; }
+#app.cut .hud, #app.cut .dock, #app.cut .helper, #app.cut #chestBtn, #app.cut #anim #ready { opacity: 0; pointer-events: none; transition: opacity .35s; }
 #app.cut .farm-scroll { overflow: hidden; }
 .cutui { position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
   padding: 0 16px calc(18px + var(--safe-bot)); gap: 10px; background: linear-gradient(transparent 70%, rgba(30,20,10,.35)); touch-action: manipulation; }
@@ -763,3 +775,29 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .cut-hint { font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
 .cut-skip { min-width: 180px; font-size: 15px; }
 .cut-cap { position: absolute; left: 16px; right: 16px; top: calc(64px + var(--safe-top)); margin: 0 auto; }
+
+/* ===== Производительность ===== */
+/* полоски прогресса — через transform (без перерасчёта ширины) */
+.track .fill { width: 100%; min-width: 0; transform-origin: 0 50%; transition: transform .5s cubic-bezier(.2,.8,.2,1); will-change: transform; }
+#btnNext .month-bar { width: 100%; transform-origin: 0 50%; transform: scaleX(0); transition: transform 1s linear; }
+.lvl-pill i { transform-origin: 0 50%; }
+/* свечение кнопок — кольцо-псевдоэлемент, мигает прозрачностью */
+#btnNext.ready::after, #btnBuild.glow::after { content: ""; position: absolute; inset: -5px; border-radius: inherit; pointer-events: none; animation: ringFade 1.4s ease-in-out infinite; }
+#btnNext.ready::after { box-shadow: 0 0 0 6px rgba(63,163,77,.35); }
+#btnBuild.glow::after { box-shadow: 0 0 0 7px rgba(255,210,63,.75); animation-duration: 1.1s; }
+#btnBuild { position: relative; }
+@keyframes ringFade { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+/* пауза: игра свернута, открыто окно поверх фермы или ферма прокручена вниз */
+#app.paused *, #app.layer-open #anim *, #anim.offscreen *, #app.paused .farmer { animation-play-state: paused !important; }
+#app.layer-open #anim #fx *, #app.layer-open #anim #cut * { animation-play-state: running !important; }
+/* «Экономия батареи»: только нужное — без облаков, кур, пчёл, дыма, брызг, ряби, качания пузырей */
+#app.eco #anim :is(.cloud, .leaves path, .snowfall circle, .hen, .bees circle, .ripples path, .smoke circle, .fsmoke circle, .spray, .tractor-drive, .dog-tail, .mill-blades, .fox-sneak, .bob, .slot-area, .slot-pin, .board-badge, .fish-badge),
+#app.eco .farmer, #app.eco .ln-dot, #app.eco .chest-btn { animation: none !important; }
+/* элементы с текстом внутри SVG не анимируем: сдвиг текста заставляет браузер заново раскладывать его каждый кадр.
+   Пузыри урожая стоят на месте (их проще нажать), «полный» пузырь подсвечен рамкой. */
+.ready .bob, #ready .full .bob, #dog .dog-ask, .dog-ask, .fish-badge.ready { animation: none !important; }
+/* товары фермы: две кнопки — ₽ и ⭐ */
+.good-row .g-btns { display: flex; flex-direction: column; gap: 4px; flex: none; }
+.good-row .g-btns .btn { min-width: 84px; padding: 5px 8px; font-size: 13px; }
+.good-row .g-star { background: #fff3d6; border-color: #e8a21a; color: #8a5a0c; }
+.sub2 { font-size: 12px; font-weight: 800; color: #8a6a52; margin: 8px 2px 4px; text-transform: uppercase; letter-spacing: .02em; }

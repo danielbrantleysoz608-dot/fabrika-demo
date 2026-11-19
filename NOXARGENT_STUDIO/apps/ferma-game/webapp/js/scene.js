@@ -236,10 +236,29 @@ function field(m, st) {
   }
   // огород построен — тап по грядкам открывает его карточку (или собирает урожай)
   const out = st.built?.garden ? `<g id="field" data-tap="bld" data-id="garden">${s}</g>` : `<g id="field">${s}</g>`;
-  return out + (cleared && st.built?.cabbage ? cabbageBeds(m) : '');
+  // грядки поровну: по два ряда — помидоры (сверху), морковь (середина), капуста (низ)
+  return out + (cleared && st.built?.carrot ? carrotBeds(m) : '') + (cleared && st.built?.cabbage ? cabbageBeds(m) : '');
 }
 
 // Капустная грядка — две нижние грядки огорода, рядом с помидорами
+function carrotBeds(m) {
+  let s = '';
+  for (let i = 2; i < 4; i++) {
+    const y0 = 428 + i * 22, t0 = (y0 - 420) / 140, t1 = (y0 + 14 - 420) / 140;
+    s += `<polygon points="${210 - t0 * 16},${y0} ${436 + t0 * 16},${y0} ${436 + t1 * 16},${y0 + 14} ${210 - t1 * 16},${y0 + 14}" fill="#5c3a21"/>`;
+    const n = 14, xl = 216 - t0 * 16, xr = 430 + t0 * 16;
+    for (let j = 0; j < n; j++) {
+      const x = xl + (j + .5) * (xr - xl) / n, y = y0 + 8;
+      if (m.season === 'winter') { s += `<ellipse cx="${x}" cy="${y}" rx="6" ry="3" fill="#fff"/>`; continue; }
+      if (m.season === 'early' || m.name === 'Апрель') continue;
+      const ripe = !['Май'].includes(m.name);
+      // ботва-«пёрышки» и оранжевый кончик корнеплода
+      s += `<path d="M${x} ${y} l-4 -8 M${x} ${y} l0 -10 M${x} ${y} l4 -8" stroke="#4fae3a" stroke-width="2" stroke-linecap="round"/>`;
+      if (ripe) s += `<path d="M${x - 3} ${y} h6 l-3 5z" fill="#f08a24" stroke="#3b2a1f" stroke-width="1"/>`;
+    }
+  }
+  return `<g id="carrot" data-tap="bld" data-id="carrot">${s}</g>`;
+}
 function cabbageBeds(m) {
   let s = '';
   for (let i = 4; i < 6; i++) {
@@ -543,6 +562,7 @@ const SLOTS = {
   greenhouse: { x: 92,  y: 462, area: 'M40 453 L53 432 H115 L126 453 V485 H40z' },
   garden:     { x: 323, y: 490, area: null },
   cabbage:    { x: 262, y: 534, area: 'M196 516 H452 L456 560 H190z' },
+  carrot:     { x: 382, y: 490, area: 'M201 472 H446 L450 514 H197z' },
   coop:       { x: 104, y: 560, area: 'M36 548 L104 514 L172 548 V602 H36z' },
   fence:      { x: 214, y: 618, area: 'M20 612 H236 V638 H20z' },
   omshanik:   { x: 300, y: 582, area: 'M262 600 Q262 568 300 566 Q338 568 340 600z' },
@@ -572,7 +592,7 @@ function slot(id, label, price, small = false) {
 }
 
 /* ---------- Значок уровня постройки ---------- */
-const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], cabbage: [432, 520], apiary: [262, 606], cow: [334, 384], stall: [350, 566],
+const LEVEL_POS = { coop: [40, 560], greenhouse: [46, 444], garden: [214, 432], cabbage: [432, 522], carrot: [434, 478], apiary: [262, 606], cow: [334, 384], stall: [350, 566],
   cheese: [140, 724], honeyfield: [262, 716], tractor: [176, 280], shop: [42, 228], brand: [192, 200], factory: [326, 232] };
 function levelTag([x, y], L, id) {
   return `<g class="lvl-badge" data-tap="bld" data-id="${id}"><rect x="${x - 13}" y="${y - 9}" width="26" height="17" rx="8.5" fill="#2f8a2f" stroke="#1f5e2a" stroke-width="2"/>
@@ -581,7 +601,7 @@ function levelTag([x, y], L, id) {
 
 /* ---------- Значки «готово к сбору» ---------- */
 
-const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [323, 444], cabbage: [268, 512], apiary: [232, 590], cow: [362, 360],
+const READY_POS = { coop: [196, 540], greenhouse: [150, 446], garden: [300, 436], cabbage: [334, 532], carrot: [366, 484], apiary: [232, 590], cow: [362, 360],
   cheese: [214, 704], honeyfield: [400, 716], tractor: [286, 250], shop: [128, 238], factory: [398, 206] };
 const READY_ICON = {
   coop: '<ellipse cx="0" cy="0" rx="5.5" ry="7" fill="#f6ead3" stroke="#3b2a1f" stroke-width="1.4"/>',
@@ -597,7 +617,7 @@ const READY_ICON = {
 };
 const kfmt = (a) => (a >= 1e9 ? (a / 1e9).toFixed(1) + 'B' : a >= 1e6 ? (a / 1e6).toFixed(1) + 'M' : a >= 1e4 ? Math.round(a / 1e3) + 'к' : a >= 1000 ? (a / 1e3).toFixed(1) + 'к' : a).toString().replace('.', ',');
 // Пузырь урожая: иконка продукта + число. Невидимая зона нажатия ≥ 44×44 px не качается вместе с пузырём.
-const READY_EMOJI = { cabbage: '🥬', coop: '🥚', greenhouse: '🥒', garden: '🍅', apiary: '🍯', cow: '🥛', cheese: '🧀', honeyfield: '🍯', tractor: '🌾', shop: '🛒', factory: '🏭' };
+const READY_EMOJI = { carrot: '🥕', cabbage: '🥬', coop: '🥚', greenhouse: '🥒', garden: '🍅', apiary: '🍯', cow: '🥛', cheese: '🧀', honeyfield: '🍯', tractor: '🌾', shop: '🛒', factory: '🏭' };
 function readyBadge(id, amount, fresh, full) {
   const txt = kfmt(amount);
   const w = 34 + String(txt).length * 7.5;
@@ -616,22 +636,67 @@ function readyBadge(id, amount, fresh, full) {
 
 // Слои: bg (меняется раз в месяц), obj (постройки/мусор/слоты — при изменении состояния),
 // ready (значки сбора — каждую секунду), fx (эффекты). Так анимации не перезапускаются на каждом тике.
+/* ---------- Два слоя: статичная ферма + анимационный слой поверх ----------
+   Всё, что постоянно двигается, после отрисовки переносится в отдельную SVG #anim (свой GPU-слой).
+   Тогда каждый кадр перерисовывается только маленький слой с анимацией, а не вся ферма — на слабых Android это главное. */
+const NS = 'http://www.w3.org/2000/svg';
+export const animOf = (svg) => (svg && svg.ownerDocument.getElementById('anim')) || svg;
+// #fence — вместе с курами (куры за забором, порядок слоёв сохраняется); .fish-wrap — значок рыбалки целиком с «+»
+const ANIM_SEL = '.cloud, .smoke, .bees, .hen, #fence, .mill-blades, .ripples, .spray, .fsmoke, .leaves, .snowfall, .tractor-drive, .fox-sneak, .slot-pin, .slot-area, .tap-ring, .board-badge, .fish-wrap, .dog-tail, .dog-ask, .hearts';
+function liftAnimated(svg, A, from, to) {
+  const dst = A.querySelector(to);
+  if (!dst || A === svg) return;
+  dst.textContent = '';
+  const V = svg.querySelector('#bg')?.getCTM?.();
+  if (!V) return;                                   // сцена ещё не на экране — анимации остаются на месте
+  const Vi = V.inverse();
+  for (const sel of from) {
+    for (const el of [...svg.querySelectorAll(`${sel} :is(${ANIM_SEL})`)]) {
+      if (!svg.contains(el)) continue;              // уже перенесён вместе с родителем
+      const P = el.parentNode.getCTM?.(); if (!P) continue;
+      const T = Vi.multiply(P);
+      const w = document.createElementNS(NS, 'g');
+      w.setAttribute('transform', `matrix(${T.a} ${T.b} ${T.c} ${T.d} ${T.e} ${T.f})`);
+      const tapEl = el.closest('[data-tap]');      // тап по анимированной части — как по постройке
+      if (tapEl) for (const a of tapEl.attributes) if (a.name.startsWith('data-')) w.setAttribute(a.name, a.value);
+      const owner = el.parentNode.closest('[id]'); // чья это анимация (сценки прячут постройку вместе с её дымом/брызгами)
+      if (owner && owner !== svg) w.setAttribute('data-owner', owner.id);
+      w.appendChild(el); dst.appendChild(w);
+    }
+  }
+}
+// фон локаций кэшируем: при возврате на локацию — мгновенно
+const BG_CACHE = new Map();
+function bgStrings(st, loc) {
+  const key = `${loc}|${st.month}|${st.house || 0}`;
+  if (BG_CACHE.has(key)) return BG_CACHE.get(key);
+  const m = monthOf(st.month), bg = background(m, loc);
+  let near = bg.near;
+  if (loc === 'home') {
+    near += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
+    near += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
+    near += house(m, st.house || 0) + barn(m);
+  } else near += LOC_NEAR[loc](m);
+  const out = { far: bg.far + (LOC_FAR[loc] ? LOC_FAR[loc](m) : ''), near };
+  if (BG_CACHE.size > 24) BG_CACHE.clear();
+  BG_CACHE.set(key, out);
+  return out;
+}
+// заранее готовим фон соседних локаций (листаешь ◀ ▶ — без задержки)
+export function prewarmBg(st, locs) { for (const l of locs) bgStrings(st, l); }
 export function renderScene(svg, st, catalog, layers = 'all') {
   const m = monthOf(st.month);
   const loc = st.loc || 'home';
-  if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="far"></g><g id="near"></g><g id="obj"></g><g id="ready"></g><g id="fx"></g>';
+  const A = animOf(svg);
+  if (!svg.querySelector('#bg')) svg.innerHTML = '<g id="bg"></g><g id="far"></g><g id="near"></g><g id="obj"></g>' + (A === svg ? '<g id="ready"></g><g id="fx"></g>' : '');
+  if (A !== svg && !A.querySelector('#ready')) A.innerHTML = '<g id="liftbg"></g><g id="liftobj"></g><g id="ready"></g><g id="fx"></g>';
   const bgKey = `${loc}|${st.month}|${st.house || 0}`; // фон: при смене локации, месяца и при ремонте дома
   if (svg.dataset.month !== bgKey) {
     svg.dataset.month = bgKey;
-    const bg = background(m, loc);
-    let s = bg.near;
-    if (loc === 'home') {
-      s += tree(8, 470, m.trees, .9) + tree(225, 404, m.trees) + tree(458, 520, m.trees, .8);
-      s += `<path d="M86 412 L106 412 L196 560 L258 642 L230 642 L170 560z" fill="${PAL[m.season].roadL}" opacity=".9"/>`;
-      s += house(m, st.house || 0) + barn(m);
-    } else s += LOC_NEAR[loc](m);
-    svg.querySelector('#bg').innerHTML = bg.far + (LOC_FAR[loc] ? LOC_FAR[loc](m) : '');
-    svg.querySelector('#near').innerHTML = s;
+    const bg = bgStrings(st, loc);
+    svg.querySelector('#bg').innerHTML = bg.far;
+    svg.querySelector('#near').innerHTML = bg.near;
+    liftAnimated(svg, A, ['#bg', '#near'], '#liftbg');
     layers = 'all';
   }
   const b = st.built;
@@ -654,13 +719,14 @@ export function renderScene(svg, st, catalog, layers = 'all') {
       if (st.fox) s += fox();
       if (st.dog) s += puppy(st.dog);
       for (const d of st.decor || []) if (DECOR_ART[d]) s += DECOR_ART[d](m);
+      s += equipArt(st, b);
       for (const w of st.workers || []) if (WORKER_SPOT[w]) s += workerFigure(w, ...WORKER_SPOT[w]);
       if (clean && st.canBuild) s += orderBoard(st) + creek(m);
       s += homeSigns(st.storyFlags || {});
     } else s += (loc === 'river' ? riverStory(m, st.storyFlags || {}) : '') + LOC_OBJ[loc](m, st) + (clean && st.canBuild ? orderBoard(st) : ''); // своя доска на каждой локации — заказы общие
     svg.querySelector('#far').innerHTML = '';
-    if (m.season === 'autumn') s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
-    if (m.season === 'winter') s += `<g class="snowfall">${Array.from({ length: 36 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
+    if (m.season === 'autumn' && !st.eco) s += `<g class="leaves">${[60, 160, 260, 360, 420].map((x, i) => `<path d="M${x} ${300 + i * 40} q8 -8 16 0 q-8 8 -16 0z" fill="${i % 2 ? '#e5933a' : '#f3c94a'}" stroke="#3b2a1f" stroke-width="1" style="animation-delay:${-i * 1.3}s"/>`).join('')}</g>`;
+    if (m.season === 'winter' && !st.eco) s += `<g class="snowfall">${Array.from({ length: 16 }, (_, i) => { const r = rng(i + 3); return `<circle cx="${r() * W}" cy="${r() * 700}" r="${1.5 + r() * 2}" fill="#fff" style="animation-delay:${-r() * 8}s"/>`; }).join('')}</g>`;
     if (!clean && loc === 'home') s += st.trash.filter(t => t.hp > 0).map(trashItem).join('');
     if (clean && st.canBuild) {
       for (const id of Object.keys(SLOTS)) {
@@ -673,6 +739,7 @@ export function renderScene(svg, st, catalog, layers = 'all') {
     }
     if (st.lv) for (const [id, L] of Object.entries(st.lv)) if (L > 0 && LEVEL_POS[id] && catalog[id].kind !== 'once' && (catalog[id].loc || 'home') === loc) s += levelTag(LEVEL_POS[id], L, id);
     svg.querySelector('#obj').innerHTML = s;
+    liftAnimated(svg, A, ['#obj'], '#liftobj');
   }
   let r = '';
   if (clean) for (const id of Object.keys(READY_POS)) {
@@ -680,8 +747,31 @@ export function renderScene(svg, st, catalog, layers = 'all') {
     const amt = Math.floor(st.stock[id] || 0);
     if (b[id] && amt > 0) r += readyBadge(id, amt, st.fresh?.[id], st.full?.[id]);
   }
-  const rl = svg.querySelector('#ready');
+  const rl = A.querySelector('#ready');
   if (rl.dataset.html !== r) { rl.innerHTML = r; rl.dataset.html = r; }
+}
+
+/* ---------- Оборудование из «Товаров фермы» — видно на ферме ---------- */
+function equipArt(st, b) {
+  const e = st.equip || {}; let s = '';
+  if (e.incubator && b.coop) s += `<g id="eq-incubator" pointer-events="none" transform="translate(186 522)">
+    <ellipse cx="0" cy="2" rx="15" ry="3" fill="#000" opacity=".15"/><rect x="-13" y="-22" width="26" height="22" rx="4" fill="#f1e6cf" ${OL}/>
+    <rect x="-8" y="-17" width="16" height="10" rx="2" fill="#ffd96b" stroke="#3b2a1f" stroke-width="1.2"/>
+    <ellipse cx="-3" cy="-12" rx="2.6" ry="3.2" fill="#fff8e6" stroke="#3b2a1f" stroke-width=".8"/><ellipse cx="3" cy="-12" rx="2.6" ry="3.2" fill="#fff8e6" stroke="#3b2a1f" stroke-width=".8"/>
+    <circle cx="8" cy="-3" r="1.6" fill="#e2403a"/></g>`;
+  if (e.ghheat && b.greenhouse) s += `<g id="eq-ghheat" pointer-events="none" transform="translate(160 480)">
+    <ellipse cx="0" cy="2" rx="12" ry="3" fill="#000" opacity=".15"/><rect x="-9" y="-24" width="18" height="24" rx="3" fill="#c4553e" ${OL}/>
+    <rect x="-5" y="-12" width="10" height="7" rx="2" fill="#ffb43a" stroke="#3b2a1f" stroke-width="1"/>
+    <path d="M-9 -16 H-22 V-30" fill="none" stroke="#8a8f96" stroke-width="3.5" stroke-linecap="round"/></g>`;
+  if (e.beebed && b.apiary) s += `<g id="eq-beebed" pointer-events="none" transform="translate(284 720)">
+    <ellipse cx="0" cy="2" rx="26" ry="3" fill="#000" opacity=".15"/><rect x="-24" y="-14" width="48" height="14" rx="2" fill="#f2c84b" ${OL}/>
+    <path d="M-26 -14 h52 v-4 h-52z" fill="#8a603f" ${OL}/><path d="M-12 -14 v14 M0 -14 v14 M12 -14 v14" stroke="#c99a2e" stroke-width="1.2"/>
+    <rect x="-4" y="-5" width="8" height="2" fill="#3b2a1f"/></g>`;
+  if (e.minitractor) s += `<g id="eq-tractor" pointer-events="none" transform="translate(428 418) scale(-.9 .9)">
+    <ellipse cx="0" cy="2" rx="18" ry="3" fill="#000" opacity=".15"/><rect x="-14" y="-16" width="20" height="10" rx="2" fill="#3fa34d" ${OL}/>
+    <rect x="-4" y="-27" width="11" height="12" fill="#bfe4ff" ${OL}/><rect x="-16" y="-20" width="4" height="8" fill="#5b6168"/>
+    <circle cx="5" cy="-5" r="7" fill="#3b2a1f"/><circle cx="5" cy="-5" r="3" fill="#f2c230"/><circle cx="-11" cy="-3" r="4.5" fill="#3b2a1f"/><circle cx="-11" cy="-3" r="1.8" fill="#f2c230"/></g>`;
+  return s;
 }
 
 /* ---------- Последствия решений (сюжет) — видно на ферме ---------- */
@@ -706,8 +796,8 @@ export const SPRINKLER_POS = [[246, 482, 0], [330, 482, -0.5], [414, 482, -1]];
 export const sprinklerOne = (x, y, d) => `<g transform="translate(${x} ${y}) scale(1.6)">
     <rect x="-1.6" y="-14" width="3.2" height="16" fill="#6c7a86" stroke="#2d3a44" stroke-width="1"/>
     <circle cy="-15" r="3.6" fill="#4a90d9" stroke="#2d3a44" stroke-width="1.2"/>
-    <g class="spray" style="animation-delay:${d}s">${[-60, -30, 0, 30, 60].map(a => `<path d="M0 -16 q${Math.sin(a * Math.PI / 180) * 16} -16 ${Math.sin(a * Math.PI / 180) * 30} -6" stroke="#9fd4ff" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="3 4"/>`).join('')}
-      ${[-26, -12, 12, 26].map((dx, i) => `<circle cx="${dx}" cy="${-8 - (i % 2) * 6}" r="1.8" fill="#bfe4ff"/>`).join('')}</g></g>`;
+    <g class="spray" style="animation-delay:${d}s">${[-50, 0, 50].map(a => `<path d="M0 -16 q${Math.sin(a * Math.PI / 180) * 16} -16 ${Math.sin(a * Math.PI / 180) * 30} -6" stroke="#9fd4ff" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="3 4"/>`).join('')}
+      ${[-20, 20].map((dx) => `<circle cx="${dx}" cy="-10" r="1.8" fill="#bfe4ff"/>`).join('')}</g></g>`;
 function sprinklers(m) {
   if (m.season === 'winter') return '';
   return `<g id="sprinklers" pointer-events="none">${SPRINKLER_POS.map(p => sprinklerOne(...p)).join('')}</g>`;
@@ -727,6 +817,15 @@ function homeSigns(sf) {
   }
   return s;
 }
+// дорога к заводу: от ворот прямо вниз по проходу между коровником и сыроварней,
+// через реку — свой прямой мостик, на южном берегу плавно уходит влево, к ферме деда (ничего не пересекает)
+export const FACTORY_ROUTE = [[-30, 552], [120, 548], [182, 540], [207, 518], [207, 440], [207, 312]];
+export const factoryRoad = () => `<g class="f-road">
+  <path d="M-30 552 L120 548 Q182 545 200 522 L200 300 L214 300 L214 522 Q194 556 120 558 L-30 562z" fill="#9a9488" stroke="#6f6a60" stroke-width="1.2"/>
+  <path d="M-30 557 L120 553 Q186 551 207 520 L207 304" fill="none" stroke="#f4f1e8" stroke-width="1.4" stroke-dasharray="6 6"/>
+  <g stroke="#3b2a1f" stroke-width="1.4"><rect x="195" y="438" width="24" height="80" fill="#b9844f"/>
+    ${[448, 458, 468, 478, 488, 498, 508].map(y => `<path d="M195 ${y} H219" stroke="#8b5a36" stroke-width="1.6"/>`).join('')}</g>
+  <path d="M193 434 V522 M221 434 V522" stroke="#7b5236" stroke-width="3.5" stroke-linecap="round"/></g>`;
 // корпус завода на горизонте «Реки и луга» (низ — y 306); clean — фильтры на трубе
 export const factoryArt = (clean) => `<g opacity=".93"><rect x="268" y="236" width="9" height="40" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
       <rect x="252" y="246" width="8" height="30" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
@@ -743,8 +842,7 @@ function riverStory(m, sf) {
   if (sf.factory === 'yes' || sf.factory === 'deal') {
     const clean = sf.factory === 'deal' || sf.cleanRiver, smoke = clean ? '#f4f6f8' : '#8d939a';
     s += `<g id="story-factory" pointer-events="none">
-      <path d="M304 440 L356 440 L268 306 L254 306z" fill="#9a9488" opacity=".85"/>
-      <path d="M330 440 L261 306" stroke="#f4f1e8" stroke-width="1.5" stroke-dasharray="6 6"/>
+      ${factoryRoad()}
       ${factoryArt(clean)}
       <g class="fsmoke">${[0, 1, 2, 3, 4].map(i => `<circle cx="272" cy="232" r="${7 + (i % 3) * 2}" fill="${smoke}" stroke="#5c6168" stroke-width=".8" style="animation-delay:${-i * 0.72}s"/>`).join('')}
         <circle cx="256" cy="242" r="5" fill="${smoke}" stroke="#5c6168" stroke-width=".8" style="animation-delay:-1.9s"/></g></g>`;
@@ -769,7 +867,7 @@ function fox() {
 
 // плавающий текст «+12 яиц» над точкой сцены
 export function floatText(svg, x, y, text, color = '#e8891a') {
-  const fx = svg.querySelector('#fx');
+  const fx = animOf(svg).querySelector('#fx');
   if (!fx) return;
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.setAttribute('class', 'float');
@@ -780,7 +878,7 @@ export function floatText(svg, x, y, text, color = '#e8891a') {
 }
 
 export function puff(svg, x, y) {
-  const fx = svg.querySelector('#fx');
+  const fx = animOf(svg).querySelector('#fx');
   if (!fx) return;
   const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   g.setAttribute('class', 'puff');
@@ -809,7 +907,7 @@ function riverNear(m) {
   s += tree(30, 330, m.trees, .8) + tree(250, 335, m.trees, .7);
   // река
   s += `<path d="M-30 440 C 110 410, 250 470, 490 438 L490 512 C 260 540, 110 478, -30 506z" fill="${w}" stroke="#3b2a1f" stroke-width="2"/>`;
-  s += `<g stroke="${wl}" stroke-width="3" stroke-linecap="round" fill="none" class="ripples">${[[40, 466], [150, 470], [230, 488], [330, 482], [410, 470]].map(([x, y]) => `<path d="M${x} ${y} q10 -5 20 0 q10 5 20 0"/>`).join('')}</g>`;
+  s += `<g stroke="${wl}" stroke-width="3" stroke-linecap="round" fill="none" class="ripples">${[[40, 466], [150, 470], [230, 488], [392, 488], [430, 462]].map(([x, y]) => `<path d="M${x} ${y} q10 -5 20 0 q10 5 20 0"/>`).join('')}</g>`;
   // мостик
   s += `<g ${OLt}><path d="M300 446 L360 446 L362 506 L298 506z" fill="#b9844f"/></g>
     <path d="M300 456 H360 M300 466 H360 M300 476 H360 M300 486 H360 M300 496 H360" stroke="#8b5a36" stroke-width="2"/>
@@ -984,7 +1082,7 @@ function agroObj(m, st) {
 
 // сдвиг/масштаб, чтобы фасады целиком влезали в экран телефона: [scale, tx, ty]
 const TF = { shop: [.887, 20.5, 53.3], cafe: [.93, 16.2, 33], elevator: [1, -16, 0] };
-const SHORT = { cabbage: 'Капуста', brand: 'Своя марка', tractor: 'Большие поля', honeyfield: 'Пасека-поле' };
+const SHORT = { carrot: 'Морковь', cabbage: 'Капуста', brand: 'Своя марка', tractor: 'Большие поля', honeyfield: 'Пасека-поле' };
 const LOC_NEAR = { river: riverNear, town: townNear, agro: agroNear };
 const LOC_FAR = { town: townFar };
 const LOC_OBJ = { river: riverObj, town: townObj, agro: agroObj };

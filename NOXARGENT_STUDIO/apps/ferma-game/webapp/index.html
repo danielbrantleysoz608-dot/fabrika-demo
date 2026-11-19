@@ -16,7 +16,11 @@
   <!-- Сцена фермы -->
   <!-- Ферму можно листать: шапка и нижние кнопки стоят на месте -->
   <div class="farm-scroll" id="farmScroll">
-    <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg"></svg>
+    <!-- Сцена = статичная ферма (#scene) + слой анимаций поверх (#anim, свой GPU-слой) -->
+    <div class="stage" id="stage">
+      <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="anim" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+    </div>
     <!-- Под фермой: листай вниз -->
     <section class="farm-info" id="farmInfo"></section>
     <div class="farm-spacer"></div>

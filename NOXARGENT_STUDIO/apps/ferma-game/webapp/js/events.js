@@ -414,8 +414,8 @@ export const EVENTS = [
     kicker: 'Погода', title: 'Надвигается <em>засуха</em>',
     text: 'Синоптики: два месяца без дождей. Огород не выдержит.',
     options: [
-      { icon: 'water', label: 'Поливалки', short: 'поставил поливалки', desc: (st, h) => `${h.fmt(h.mins(5))} — огород и капуста +10% навсегда, засуха не страшна`, can: (st, h) => need(st, h.mins(5)),
-        effect: (st, h) => { h.pay(h.mins(5), 'Поливалки на огород'); h.flag('sprinklers'); h.perm('garden', 1.1); h.perm('cabbage', 1.1); h.later('dry_again', 12); return 'Поливалки крутятся над грядками — урожай спасён!'; } },
+      { icon: 'water', label: 'Поливалки', short: 'поставил поливалки', desc: (st, h) => `${h.fmt(h.mins(5))} — огород, морковь и капуста +10% навсегда, засуха не страшна`, can: (st, h) => need(st, h.mins(5)),
+        effect: (st, h) => { h.pay(h.mins(5), 'Поливалки на огород'); h.flag('sprinklers'); h.perm('garden', 1.1); h.perm('cabbage', 1.1); h.perm('carrot', 1.1); h.later('dry_again', 12); return 'Поливалки крутятся над грядками — урожай спасён!'; } },
       { icon: 'dice', label: 'Ждать дождя', short: 'ждал дождя в засуху', desc: 'огород и капуста −40% на 2 месяца',
         effect: (st, h) => { h.temp('garden', 0.6, 2, '☀️', 'Засуха'); h.temp('cabbage', 0.6, 2, '☀️', 'Засуха'); h.later('dry_again', 12); return 'Дождь так и не пришёл.'; } },
     ],

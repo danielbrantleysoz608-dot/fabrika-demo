@@ -67,6 +67,8 @@ export const BUILDINGS = {
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Грядки на дедовом поле.' },
   cabbage:    { product: 'cabbage', lvl: 2, kind: 'prod', name: 'Капустная грядка', cost: 1400, inc: 70, unit: 'кочанов', price: 20, tier: 0, max: 10, requires: 'garden',
                 season: months(2, 7), seasonText: 'май – октябрь', desc: 'Две грядки капусты рядом с помидорами. Кочаны — в заказы кафе и дачникам.' },
+  carrot:     { product: 'carrot', lvl: 3, kind: 'prod', name: 'Морковная грядка', cost: 2200, inc: 100, unit: 'морковок', price: 15, tier: 0, max: 10, requires: 'garden',
+                season: months(2, 7), seasonText: 'май – октябрь', desc: 'Две грядки моркови между помидорами и капустой. Морковь — в заказы и на прилавок.' },
   fence:      { lvl: 2, kind: 'once', name: 'Забор', cost: 6000, tier: 0, desc: 'Сетка вокруг двора. Лиса не пройдёт.' },
   greenhouse: { product: 'cuke', lvl: 1, kind: 'prod', name: 'Теплица из окон деда', cost: 1000, inc: 66.2, unit: 'кг', price: 30, tier: 0, max: 10,
                 season: (m, st) => (m <= 8 ? 1 : st?.lv?.stove ? 1.5 : 0), seasonText: 'март – ноябрь, зимой — с печкой',
@@ -126,6 +128,7 @@ export const PRODUCTS = {
   egg:    { name: 'яйца',    emoji: '🥚', price: 12,    unit: 'шт' },
   veg:    { name: 'овощи',   emoji: '🍅', price: 25,    unit: 'кг' },
   cabbage: { name: 'капуста', emoji: '🥬', price: 20,    unit: 'шт' },
+  carrot:  { name: 'морковь', emoji: '🥕', price: 15,    unit: 'шт' },
   cuke:   { name: 'огурцы',  emoji: '🥒', price: 30,    unit: 'кг' },
   honey:  { name: 'мёд',     emoji: '🍯', price: 200,   unit: 'кг' },
   milk:   { name: 'молоко',  emoji: '🥛', price: 60,    unit: 'л' },
@@ -166,7 +169,7 @@ export const NEWBIE_MONTHS = 3;
 export const NEWBIE_BONUS = 1.5;
 // Бустеры (30 мин; если уже идёт — +30 мин): ⚡ огород и теплица растут вдвое быстрее, 🎁 весь урожай ×2
 export const BOOSTERS = {
-  grow:   { emoji: '⚡', name: 'Быстрый рост', min: 30, desc: 'Огород и теплица растут вдвое быстрее 30 минут.', ids: ['garden', 'greenhouse', 'cabbage'] },
+  grow:   { emoji: '⚡', name: 'Быстрый рост', min: 30, desc: 'Огород и теплица растут вдвое быстрее 30 минут.', ids: ['garden', 'greenhouse', 'cabbage', 'carrot'] },
   double: { emoji: '🎁', name: '×2 урожай',    min: 30, desc: 'Весь урожай фермы ×2 целых 30 минут.' },
 };
 // Сундучок за время в игре: каждые 10 минут активной игры (было действие за последние 5 минут)
@@ -206,6 +209,23 @@ export const FISH = [
   { id: 'catfish', name: 'Сом',    w: 3.2, min: 15, size: 1.5, rare: true },
   { id: 'chest',   name: 'Старый сундук деда', w: 0.8, min: 20, rare: true, chest: true },
 ];
+// Товары фермы — за ₽ или за ⭐. Расходники действуют 30 минут (купил ещё — +30 мин), оборудование — навсегда и видно на ферме.
+// Цена в ₽ — минуты дохода фермы: расходник 15–25 мин, оборудование 1–2 ч.
+const CROPS = ['garden', 'carrot', 'cabbage', 'greenhouse'];
+export const GOODS = {
+  fert:     { kind: 'supply', e: '🧪', name: 'Удобрение',          d: 'Огород, морковь, капуста и теплица +40% на 30 минут',           mins: 20, stars: 10, keys: CROPS, k: 1.4, needs: ['garden', 'greenhouse'] },
+  feed:     { kind: 'supply', e: '🌾', name: 'Корм для кур',       d: 'Курятник +50% на 30 минут',                                     mins: 15, stars: 8,  keys: ['coop'], k: 1.5, needs: ['coop'] },
+  beefeed:  { kind: 'supply', e: '🍯', name: 'Подкормка для пчёл', d: 'Пасека и пасека-поле +50% на 30 минут',                          mins: 18, stars: 8,  keys: ['apiary', 'honeyfield'], k: 1.5, needs: ['apiary'] },
+  vitamins: { kind: 'supply', e: '💊', name: 'Витамины для коров', d: 'Корова, коровник и сыроварня +50% на 30 минут',                  mins: 18, stars: 8,  keys: ['cow', 'cowshed', 'cheese'], k: 1.5, needs: ['cow', 'cowshed'] },
+  kit:      { kind: 'supply', e: '🧺', name: 'Набор фермера',      d: 'Всё сразу: грядки, куры, пчёлы и коровы +30% на 30 минут',       mins: 25, stars: 15, keys: [...CROPS, 'coop', 'apiary', 'honeyfield', 'cow', 'cowshed', 'cheese'], k: 1.3, needs: [] },
+  sprinklers: { kind: 'equip', e: '💦', name: 'Поливалки',         d: 'Огород, морковь и капуста +15% навсегда. Крутятся над грядками.', mins: 60, stars: 35, keys: ['garden', 'carrot', 'cabbage'], k: 1.15, needs: ['garden'] },
+  incubator:  { kind: 'equip', e: '🐣', name: 'Инкубатор',         d: 'Курятник +20% навсегда. Стоит у курятника.',                     mins: 75, stars: 45, keys: ['coop'], k: 1.2, needs: ['coop'] },
+  ghheat:     { kind: 'equip', e: '🔥', name: 'Подогрев теплицы',  d: 'Теплица +20% навсегда. Печка-котёл рядом с теплицей.',           mins: 70, stars: 40, keys: ['greenhouse'], k: 1.2, needs: ['greenhouse'] },
+  beebed:     { kind: 'equip', e: '🐝', name: 'Улей-лежак',        d: 'Пасека +20% навсегда. Длинный улей рядом с пасекой.',            mins: 90, stars: 50, keys: ['apiary', 'honeyfield'], k: 1.2, needs: ['apiary'] },
+  minitractor:{ kind: 'equip', e: '🚜', name: 'Мини-трактор',      d: 'Все грядки и теплица +10% навсегда. Стоит у амбара.',            mins: 120, stars: 75, keys: CROPS, k: 1.1, needs: ['garden'] },
+};
+export const SUPPLY_MIN = 30;
+export const FISH_REWARD_K = 0.7;               // награда за улов (карась…сундук) — −30% ко всем, пропорционально
 export const FISH_BITE_MS = 600;               // окно поклёвки на простой удочке
 export const DOG_PET_MS = 4 * 3600000;         // погладить — раз в 4 часа
 export const DOG_BOOST_MS = 30 * 60000;        // бонус держится 30 минут
