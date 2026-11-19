@@ -74,7 +74,7 @@ function visit(st, now, r, trace, log) {
   // доска заказов: сдаём готовые, «зависшие» дольше 40 минут — отклоняем
   for (const { o, i } of E.activeOrders(st)) {
     if (E.orderDone(o)) E.deliverOrder(st, i, now);
-    else if (now - o.at > 40 * MIN) E.declineOrder(st, i, now);
+    else if (now - o.at > 40 * MIN && E.orderStalled(st, o)) E.declineOrder(st, i, now); // висит из-за сезона — отказ без штрафа
   }
   hireWorkers(st, now, trace, log);
   shop(st, now, trace, log);
@@ -85,7 +85,8 @@ function visit(st, now, r, trace, log) {
     let pick = -1, best = -Infinity;
     for (const i of opts) {
       const c = structuredClone(st); E.choose(c, i);
-      const v = E.capital(c) + E.totalRate(c) * 15 - (c.debt ? c.debt * 0.05 : 0);
+      // «честный» игрок (STRAT=honest) сначала смотрит на доверие покупателей, потом на деньги
+      const v = E.capital(c) + E.totalRate(c) * 15 - (c.debt ? c.debt * 0.05 : 0) + (process.env.STRAT === 'honest' ? (c.trust - st.trust) * 1e15 : 0);
       if (v > best) { best = v; pick = i; }
     }
     E.choose(st, pick);
@@ -189,4 +190,22 @@ if (arg === 'payback') {
     console.log(BUILDINGS[id].name.padEnd(22), row.map(x => String(x).padStart(6)).join(''));
   }
   console.log('\nПрибавка за уровень, ₽/мин (огород):', Array.from({ length: 10 }, (_, L) => Math.round(E.baseIncome('garden', L + 1) - E.baseIncome('garden', L))).join(' → '));
+}
+
+// node tools/sim.mjs story [seed] [months]   (STRAT=honest — игрок, который бережёт доверие) — 30 месяцев: какие события выпали (без повторов), что выбрано, как менялось доверие
+if (arg === 'story') {
+  const seed = +process.argv[3] || 1, months = +process.argv[4] || 30;
+  const { st } = play(seed, 'active', { until: 1e18, maxDays: (months + 1) * 15 / 1440 });
+  const { EVENT_BY_ID } = await import('../webapp/js/events.js');
+  const strip = (t) => String(typeof t === 'function' ? t(st) : t).replace(/<[^>]+>/g, '');
+  console.log(`Ферма #${seed}: ${st.month} месяцев, капитал ${E.fmt(E.capital(st))}, доверие ${E.trustOf(st)} 🤝\n`);
+  console.log('Мес.'.padEnd(5), 'Событие'.padEnd(36), '🤝'.padStart(4), ' Решение → последствия');
+  for (const d of st.decisions) {
+    const e = EVENT_BY_ID[d.ev];
+    console.log(String(d.m + 1).padEnd(5), ((e.follow ? '↳ ' : '') + strip(e.title)).slice(0, 36).padEnd(36), String(d.trust).padStart(4), ' ' + d.opt + (d.sum ? ' → ' + d.sum : ''));
+  }
+  const ids = st.decisions.map(d => d.ev).filter(id => id !== 'quiet');
+  console.log(`\nСобытий: ${st.decisions.length}, повторов: ${ids.length - new Set(ids).size}, продолжений сюжета: ${st.decisions.filter(d => EVENT_BY_ID[d.ev].follow).length}`);
+  console.log('Флаги сюжета:', Object.entries(st.storyFlags).map(([k, v]) => (v === true ? k : `${k}=${v}`)).join(', '));
+  console.log('Навсегда:', Object.entries(st.perm).map(([k, v]) => E.effectText(k, v)).join(', ') || '—');
 }

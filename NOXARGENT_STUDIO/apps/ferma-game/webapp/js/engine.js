@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -43,6 +43,10 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     ach: {}, achNew: [],                     // открытки этой фермы + очередь «показать поздравление»
     paid: { coins: 0 },                      // задел: монеты за Telegram Stars (не идут в рейтинг)
     usedEvents: [], event: null, report: null,
+    trust: TRUST.start, orderStreak: 0,      // доверие покупателей 🤝 и серия заказов без отказов
+    storyFlags: {}, storyQueue: [],          // сюжет: решения в событиях и продолжения ({id, at: месяц})
+    perm: {}, effects: [],                   // постоянные множители ({sales: 1.15}) и временные ({key, k, until, icon, label})
+    decisions: [],                           // лента решений для «Тетрадь → История»
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
     ledger: [], taps: 0, offline: 0,
     daily: null, login: null, tzOff: 0,
@@ -91,7 +95,7 @@ export function globalMult(st, withMods = true) {
   if (st.paid?.samovar) k *= 1.03;          // «Дедов самовар» (за звёзды)
   if ((st.month || 0) < NEWBIE_MONTHS) k *= NEWBIE_BONUS; // первые 3 месяца — доход ×1.5
   if (withMods) {
-    k *= st.mods.sales ?? 1;
+    k *= effMod(st, 'sales') * trustMult(st);  // события и решения + доверие покупателей
     if (st.dog?.boostUntil > (st.lastTick || 0)) k *= 1 + DOG_BONUS; // погладили щенка: +10% на 30 мин
     if (isHappyHour(st.lastTick || Date.now())) k *= 1 + HAPPY_HOUR.bonus; // счастливый час 18–19 МСК
     if (st.flags.contract) k *= 1.3;
@@ -106,7 +110,35 @@ export const seasonMult = (st, id, m = st.month) => {
 // бонус работников к постройке (птичница, пасечник, доярка)
 export const workerMult = (st, id) => { let k = 1; for (const w of WORKER_ORDER) if (hired(st, w) && WORKERS[w].bonus?.[id]) k *= 1 + WORKERS[w].bonus[id] * (1 + 0.6 * (wLv(st, w) - 1)); return k; };
 // текущая скорость, ₽/мин
-export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * boostMult(st, id) * (st.mods[id] ?? 1) * globalMult(st);
+export const rate = (st, id) => baseIncome(id, level(st, id)) * seasonMult(st, id) * workerMult(st, id) * boostMult(st, id) * effMod(st, id) * globalMult(st);
+
+/* ---------- Эффекты решений и доверие ---------- */
+// множитель по ключу (sales или id постройки): на этот месяц (mods) × навсегда (perm) × временные (effects, до месяца until)
+export function effMod(st, key) {
+  let k = (st.mods?.[key] ?? 1) * (st.perm?.[key] ?? 1);
+  for (const e of st.effects || []) if (e.key === key && e.until > st.month) k *= e.k;
+  return k;
+}
+// действующие временные эффекты (для панели): сколько месяцев осталось, включая текущий
+export const activeEffects = (st) => (st.effects || []).filter(e => e.until > st.month).map(e => ({ ...e, months: e.until - st.month }));
+// доверие 0…100 → цена продажи: 0 → −20%, 50 → как есть, 100 → +30%
+export const trustOf = (st) => Math.round(st.trust ?? TRUST.start);
+export function trustMult(st) { const t = st.trust ?? TRUST.start; return t < 50 ? 0.8 + 0.2 * t / 50 : 1 + 0.3 * (t - 50) / 50; }
+export function addTrust(st, n) {
+  const before = st.trust ?? TRUST.start;
+  st.trust = Math.max(0, Math.min(100, before + n));
+  return st.trust - before;
+}
+// изменение доверия с дневным пределом (свежий сбор / перестоявший урожай)
+function trustDaily(st, key, n, cap, now) {
+  const day = dayKey(st, now);
+  const t = st.trustDay && st.trustDay.day === day ? st.trustDay : (st.trustDay = { day });
+  const used = t[key] || 0;
+  const add = cap > 0 ? Math.min(n, cap - used) : Math.max(n, cap - used);
+  if (cap > 0 ? add <= 0 : add >= 0) return 0;
+  t[key] = used + add;
+  return addTrust(st, add);
+}
 
 /* ---------- Счастливый час и бустеры ---------- */
 const mskHour = (ms) => new Date(ms + 3 * 3600000).getUTCHours();
@@ -182,6 +214,10 @@ export function collect(st, id, auto = false) {
   const amt = ready(st, id);
   lastFresh = 0; lastReserved = { units: 0, value: 0 };
   if (amt <= 0 || st.phase === 'clean' || unitsReady(st, id) < 1) return 0; // собирается только созревшее (пузырь над постройкой)
+  // доверие: собрал до переполнения пузыря — урожай свежий; пузырь был полон — урожай перестоял
+  const now = st.lastTick || Date.now();
+  if ((st.acc[id] || 0) >= storageCap(st, id) * 0.995) trustDaily(st, 'spoil', TRUST.spoil, TRUST.spoilDay, now);
+  else if (!auto) trustDaily(st, 'fresh', TRUST.fresh, TRUST.freshDay, now);
   const fresh = Math.floor(Math.min(amt, rate(st, id) * FRESH_MIN) * FRESH_BONUS);
   st.acc[id] -= amt;
   // часть урожая, нужная для заказов на доске, откладывается в амбар — остальное продаётся на прилавке
@@ -441,7 +477,7 @@ export const spotOpen = (st, spot) => (st.tier || 0) >= FISH_SPOTS[spot].tier &&
 // сколько ждать до следующего заброса (мс), 0 — можно рыбачить
 export const fishWait = (st, spot, now = Date.now()) => Math.max(0, (st.fishAt?.[spot] || 0) + FISH_SPOTS[spot].cd * 60000 - now);
 export const biteWindow = (st) => Math.round(FISH_BITE_MS * (1 + 0.25 * level(st, 'rod')));
-export const fishValue = (st, f, spot) => nice(perMin(st) * f.min * FISH_SPOTS[spot].k);
+export const fishValue = (st, f, spot) => nice(perMin(st) * f.min * FISH_SPOTS[spot].k * (st.storyFlags?.riverDirty ? 0.6 : 1)); // река помутнела — рыба мельче
 // закинуть удочку: попытка тратится сразу (сорвалась — ждать снова)
 export function castRod(st, spot, now = Date.now()) {
   if (!spotOpen(st, spot)) return spot === 'river' ? 'пруд — в локации «Река и луг» (после 1 млн)' : 'сначала уборка';
@@ -505,12 +541,13 @@ function logCapital(st, now = Date.now(), realMs = 0) {
   const me = Math.max(0, ratingCapital(st));
   const t = now / 60000;
   const f = 0.975 + 0.125 * Math.sin(2 * Math.PI * t / 47 + (st.seed % 7));
-  const target = Math.max(START_MONEY * 0.9, me * f);
+  const nb = (st.storyFlags?.nbBoostUntil || 0) > st.month ? 1.15 : 1; // завод ушёл к соседу — он рванул вперёд
+  const target = Math.max(START_MONEY * 0.9, me * f * nb);
   const dt = Math.min(realMs / 60000, 24 * 60);
   const k = 1 - Math.exp(-dt / NB_TAU_MIN);
   const prev = st.nbVal || START_MONEY * 0.9;
   // за офлайн сосед «доигрывает» до своей цели сразу; онлайн — плавно догоняет
-  st.nbVal = Math.max(prev, Math.min(prev + (target - prev) * k, me * 1.1)); // не беднеет и не уходит выше 110% тебя
+  st.nbVal = Math.max(prev, Math.min(prev + (target - prev) * k, me * 1.1 * nb)); // не беднеет и не уходит выше 110% тебя
 }
 export const neighborCap = (st) => Math.round(Math.max(st.nbVal || 0, START_MONEY * 0.9));
 // перегнал соседа / отстал: возвращает событие один раз при смене лидера
@@ -555,17 +592,20 @@ export function makeOrder(st, now, big = false) {
     const need = 1 + (r() < 0.4 ? 1 : 0);
     return { client: 'cafe', ukha: true, name: 'Кафе «У трассы» — уха', emoji: '🍲', big: false, items: [{ p: 'fish', need, have: 0 }],
       // награда ≈9 мин дохода за рыбу
-      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), xp: 12 + need * 6, at: now };
+      reward: nice(itemPrice(st, 'fish') * need * 1.1 * (1 + 0.2 * level(st, 'market'))), xp: 12 + need * 6, at: now }; // уха — без срока: рыбалка по желанию
   }
-  const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 } : CLIENTS[Math.floor(r() * CLIENTS.length)];
-  const k = Math.min(ps.length, big ? 2 : (r() < 0.45 ? 2 : 1));
+  const tr = st.trust ?? TRUST.start;
+  const premium = !big && tr >= TRUST.high && r() < 0.5, small = !big && tr < TRUST.low;
+  const client = big ? { id: 'big', name: 'Большой заказ дня', emoji: '🚚', mult: 1.8 }
+    : premium ? PREMIUM_CLIENTS[Math.floor(r() * PREMIUM_CLIENTS.length)] : small ? SMALL_CLIENT : CLIENTS[Math.floor(r() * CLIENTS.length)];
+  const k = Math.min(ps.length, big ? 2 : small ? 1 : (r() < 0.45 ? 2 : 1));
   const chosen = [];
   while (chosen.length < k) { const p = ps[Math.floor(r() * ps.length)]; if (!chosen.includes(p)) chosen.push(p); }
   // объём — сколько ферма произведёт этого продукта за t минут после появления заказа (обычный 3–10 мин, большой 20–30);
   // копится только новое производство (it.avail), старый запас амбара разом не засчитывается.
   // Награда — минуты дохода всей фермы: обычный 3–8 мин (больше объём — больше награда), большой — 15–20 мин.
   const newbie = (st.month || 0) < NEWBIE_MONTHS;
-  const t = big ? rndRange(r, 20, 30) : newbie ? rndRange(r, 1.5, 3) : rndRange(r, 3, 10);  // новичкам — 1,5–3 мин
+  const t = big ? rndRange(r, 20, 30) : newbie ? rndRange(r, 1.5, 3) : small ? rndRange(r, 2, 4) : rndRange(r, 3, 10);  // новичкам — 1,5–3 мин, при низком доверии — мелкие
   const items = (newbie && !big ? chosen.slice(0, 1) : chosen).map(p => ({ p, need: Math.max(newbie ? 2 : 3, Math.round(can[p] * t)), have: 0, avail: 0 }));
   const value = items.reduce((a, it) => a + it.need * itemPrice(st, it.p), 0);
   const rewMin = big ? 15 + (t - 20) / 2 : newbie ? 2 + t / 2 : 3 + (t - 3) / 7 * 5;
@@ -574,6 +614,8 @@ export function makeOrder(st, now, big = false) {
     client: client.id, name: client.name, emoji: client.emoji, big, items,
     reward: nice(Math.max(perMin(st) * rewMin * mult, value * 1.25)),
     xp: big ? Math.round(XP.big * t / 25) : Math.round(XP.order[0] + (t - 3) / 7 * (XP.order[1] - XP.order[0])), at: now,
+    // срок сдачи — по времени в игре (st.playMs), чтобы ночью заказы не «сгорали»; у большого заказа срок — конец дня
+    ...(big ? {} : { dueAt: (st.playMs || 0) + Math.max(ORDER_DUE.min, t * ORDER_DUE.k + ORDER_DUE.add) * 60000 }),
   };
 }
 // сколько продукции для заказа ферма произвела с момента его появления
@@ -582,9 +624,32 @@ function accrueOrders(st, dt) {
   const can = producible(st);
   for (const { o } of act) for (const it of o.items) if (it.avail !== undefined && can[it.p]) it.avail = Math.min(it.need, it.avail + can[it.p] * dt / 60000);
 }
+// сколько минут игры осталось до срока заказа (null — без срока)
+export const orderLeft = (st, o) => (o && o.dueAt !== undefined ? o.dueAt - (st.playMs || 0) : null);
+// просроченные заказы уходят с доски: отложенное продаём, доверие падает
+// заказ сейчас не выполнить: нужный продукт не производится (не сезон, постройка стоит)
+export function orderStalled(st, o, can = producible(st)) {
+  return !!o && !o.wait && o.items.some(it => it.have < it.need && !can[it.p] && it.p !== 'fish');
+}
+function expireOrders(st, now) {
+  const can = producible(st);
+  (st.orders || []).forEach((o, i) => {
+    if (!o || o.wait || o.dueAt === undefined || orderDone(o)) return;
+    // нужный продукт сейчас не производится (не сезон, постройка стоит) — срок на паузе, это не вина игрока
+    if (orderStalled(st, o, can)) { o.dueAt = Math.max(o.dueAt, (st.playMs || 0) + 5 * 60000); return; }
+    if ((st.playMs || 0) < o.dueAt) return;
+    const back = o.items.reduce((a, it) => a + it.have * itemPrice(st, it.p), 0);
+    st.money += back; st.monthIncome += back;
+    addTrust(st, TRUST.expired); st.orderStreak = 0;
+    addHistory(st, { m: st.month, t: `⌛ Заказ «${o.name}» просрочен: ${TRUST.expired} 🤝` });
+    (st.expiredNew ||= []).push(o.name);
+    st.orders[i] = { wait: true, readyAt: now + ORDER_DECLINE_MIN * 60000 };
+  });
+}
 function refillOrders(st, now) {
   if (st.phase === 'clean') return;
   if (!st.orders) st.orders = [];
+  expireOrders(st, now);
   for (let i = 0; i < ORDER_SLOTS; i++) {
     const o = st.orders[i];
     if (o && !o.wait) continue;
@@ -629,7 +694,10 @@ export function deliverOrder(st, i, now = Date.now()) {
   if (!orderDone(o)) return null;
   st.money += o.reward; st.monthIncome += o.reward;
   addXp(st, o.xp);
-  addHistory(st, { m: st.month, t: `${o.emoji} Заказ «${o.name}» выполнен: +${fmt(o.reward)}, +${o.xp} ⭐.` });
+  // доверие: сдан вовремя +1, каждые 5 заказов подряд без отказов — ещё +2
+  st.orderStreak = (st.orderStreak || 0) + 1;
+  o.trust = trustDaily(st, 'order', TRUST.order + (st.orderStreak % TRUST.streak === 0 ? TRUST.streakBonus : 0), TRUST.orderDay, now);
+  addHistory(st, { m: st.month, t: `${o.emoji} Заказ «${o.name}» выполнен: +${fmt(o.reward)}, +${o.xp} ⭐${o.trust > 0 ? `, +${+o.trust.toFixed(1)} 🤝` : ''}.` });
   if (i === 'big') st.big.done = true;
   else { const r = rng(now >>> 0); st.orders[i] = { wait: true, readyAt: now + rndRange(r, ORDER_REFILL_MIN[0], ORDER_REFILL_MIN[1]) * 60000 }; }
   dailyProgress(st, 'order', 1);
@@ -642,6 +710,8 @@ export function declineOrder(st, i, now = Date.now()) {
   // отложенное в амбар продаём по обычной цене
   const back = o.items.reduce((a, it) => a + it.have * itemPrice(st, it.p), 0);
   st.money += back; st.monthIncome += back;
+  // отказ — покупатели запоминают; но если заказ сейчас не выполнить (не сезон) — без штрафа
+  if (!orderStalled(st, o)) { addTrust(st, TRUST.decline); st.orderStreak = 0; }
   if (i === 'big') st.big.done = true;
   else st.orders[i] = { wait: true, readyAt: now + ORDER_DECLINE_MIN * 60000 };
   return back;
@@ -788,7 +858,15 @@ export function skipMonth(st) {
   return null;
 }
 
-function helpers(st, log) {
+// подпись ключа эффекта в ленте решений: «+15% продаж», «пасека −20%»
+const KEY_NAME = { sales: 'продаж' };
+const KEY_SHORT = { garden: 'огород', cabbage: 'капуста', greenhouse: 'теплица', apiary: 'пасека', honeyfield: 'пасека-поле', coop: 'курятник', cow: 'корова', cowshed: 'коровник', mill: 'мельница', cheese: 'сыроварня' };
+export function effectText(key, k, months = 0) {
+  const pct = Math.round((k - 1) * 100), sign = pct > 0 ? '+' : '−', v = `${sign}${Math.abs(pct)}%`;
+  const name = KEY_NAME[key] ? `${v} ${KEY_NAME[key]}` : `${(KEY_SHORT[key] || BUILDINGS[key]?.name || key).toLowerCase()} ${v}`;
+  return months ? `${name} на ${months} мес.` : name;
+}
+function helpers(st, log, chg = []) {
   const r = rng(st.seed ^ (st.month * 2654435761));
   const S = monthScale(st);
   const addMod = (bucket, key, v) => { bucket[key] = (bucket[key] ?? 1) * v; };
@@ -796,9 +874,20 @@ function helpers(st, log) {
     fmt, S,
     amt: (k) => nice(S * k),
     mins: (n) => nice(perMin(st) * n),   // цена события: n минут дохода фермы
-    pay: (sum, label) => { st.money -= sum; log.push({ label, amount: -sum }); },
-    gain: (sum, label) => { st.money += sum; log.push({ label, amount: sum }); },
-    mod: (key, v) => addMod(st.mods, key, v),
+    pay: (sum, label) => { st.money -= sum; log.push({ label, amount: -sum }); chg.push(`−${fmt(sum)}`); },
+    gain: (sum, label) => { st.money += sum; log.push({ label, amount: sum }); chg.push(`+${fmt(sum)}`); },
+    // доверие покупателей
+    trust: (n) => { const d = addTrust(st, n); if (d) chg.push(`${d > 0 ? '+' : '−'}${Math.abs(Math.round(d))} 🤝`); },
+    // навсегда: perm('sales', 1.15) = продажи +15%
+    perm: (key, v) => { st.perm[key] = (st.perm[key] ?? 1) * v; chg.push(effectText(key, v)); },
+    // на n месяцев (включая текущий), значок с таймером на панели
+    temp: (key, v, months, icon = '📅', label = '') => { st.effects.push({ key, k: v, until: st.month + months, icon, label }); chg.push(effectText(key, v, months)); },
+    flag: (name, v = true) => { st.storyFlags[name] = v; },
+    has: (name) => st.storyFlags[name],
+    // продолжение сюжета через n месяцев
+    later: (id, n) => { st.storyQueue.push({ id, at: st.month + n }); },
+    note: (t) => chg.push(t),
+    mod: (key, v) => { addMod(st.mods, key, v); chg.push(effectText(key, v) + ' в этом месяце'); },
     modAll: (v) => PRODUCERS.forEach(id => addMod(st.mods, id, v)),
     next: (key, v) => addMod(st.nextMods, key, v),
     chance: (p) => r() < p,
@@ -809,13 +898,22 @@ function helpers(st, log) {
     buildingsValue: () => buildingsValue(st),
   };
 }
-export const resolveText = (v, st) => (typeof v === 'function' ? v(st, helpers(st, [])) : v);
+export const resolveText = (v, st) => (typeof v === 'function' ? v(st, helpers(st, [], [])) : v);
 
-const eventKey = (e, st) => (e.once ? e.id : `${e.id}@${yearOf(st.month + 1)}`);
+// каждое событие игрок видит один раз (кроме запасного «Тихий месяц»)
+const eventKey = (e) => e.id;
+const fits = (st, e) => !st.usedEvents.includes(e.id) && (!e.cond || e.cond(st));
+// продолжение сюжета, которому пришёл срок (раньше случайных событий)
+export function dueStory(st) {
+  for (const q of st.storyQueue || []) { const e = EVENT_BY_ID[q.id]; if (e && q.at <= st.month + 1 && fits(st, e)) return e; }
+  return null;
+}
 export function pickEvent(st) {
+  const story = dueStory(st);
+  if (story) return story;
   const r = rng(st.seed + (st.month + 1) * 7919);
   const nm = (st.month + 1) % 12;
-  const pool = EVENTS.filter(e => e.months.includes(nm) && (e.repeat || !st.usedEvents.includes(eventKey(e, st))) && (!e.cond || e.cond(st)));
+  const pool = EVENTS.filter(e => !e.follow && e.months.includes(nm) && (e.repeat || fits(st, e)) && (!e.cond || e.cond(st)));
   const total = pool.reduce((a, e) => a + e.weight, 0);
   let x = r() * total;
   for (const e of pool) { if ((x -= e.weight) <= 0) return e; }
@@ -827,7 +925,7 @@ export function pickEvent(st) {
 export function endMonth(st) {
   if (!monthReady(st)) return null;
   const e = pickEvent(st);
-  st.eventKey = eventKey(e, st);
+  st.eventKey = eventKey(e);
   const report = closeMonth(st);
   report.after = Math.round(st.money);
   report.capital = capital(st);
@@ -839,7 +937,7 @@ export function endMonth(st) {
 }
 export function optionState(st, e, i) {
   const o = e.options[i];
-  return { why: o.can ? o.can(st, helpers(st, [])) : null, desc: resolveText(o.desc, st), label: o.label, icon: o.icon };
+  return { why: o.can ? o.can(st, helpers(st, [])) : null, desc: resolveText(o.desc, st), label: resolveText(o.label, st), icon: o.icon };
 }
 export const allBlocked = (st, e) => e.options.every((o) => o.can && o.can(st, helpers(st, [])));
 const PASS = { label: 'Не по карману', effect: () => 'Денег не хватило ни на один вариант.' };
@@ -850,15 +948,20 @@ export function choose(st, i) {
   const e = EVENT_BY_ID[st.event];
   const o = i === -1 && allBlocked(st, e) ? PASS : e.options[i];
   if (!o || (o.can && o.can(st, helpers(st, [])))) return null;
-  const log = [];
-  const text = o.effect(st, helpers(st, log)); // событие действует на новый (уже начавшийся) месяц
-  st.usedEvents.push(st.eventKey || e.id);
+  const title = stripTags(resolveText(e.title, st)), label = resolveText(o.label, st);
+  const log = [], chg = [];
+  const trust0 = st.trust ?? TRUST.start;
+  const text = o.effect(st, helpers(st, log, chg)); // событие действует на новый (уже начавшийся) месяц
+  if (!e.repeat && !st.usedEvents.includes(e.id)) st.usedEvents.push(e.id);
+  st.storyQueue = (st.storyQueue || []).filter(q => q.id !== e.id);
   delete st.eventKey;
-  // помним события только этого года (и разовые) — иначе список растёт бесконечно
-  const y = yearOf(st.month);
-  st.usedEvents = st.usedEvents.filter(k => !k.includes('@') || +k.split('@')[1] >= y);
-  addHistory(st, { m: st.month, t: `${stripTags(e.title)}: ${o.label.toLowerCase()}. ${text}` });
-  const result = { title: stripTags(e.title), choice: o.label, text, log, month: st.month };
+  // лента решений: «Июль: пустил завод → +15% продаж, −10 🤝»
+  const what = o.short || `${title.replace(/!$/, '')}: ${label.toLowerCase()}`;
+  const sum = chg.join(', ');
+  addHistory(st, { m: st.month, t: sum ? `${what} → ${sum}` : `${what}. ${text}`, d: 1 });
+  (st.decisions ||= []).push({ m: st.month, ev: e.id, opt: label, sum, trust: Math.round(st.trust ?? TRUST.start) });
+  if (st.decisions.length > 200) st.decisions.shift();
+  const result = { title, choice: label, text, log, chg, trust: Math.round((st.trust ?? TRUST.start) - trust0), month: st.month };
   st.event = null;
   st.phase = 'play';
   checkGoals(st);
@@ -878,6 +981,15 @@ function closeMonth(st) {
     if (income < c.min) { costs.push({ label: 'Штраф кафе', amount: c.fine }); notes.push('Кафе недовольно: выручка меньше нормы.'); }
     if (--c.left <= 0) { delete st.flags.contract; notes.push('Контракт с кафе закончился.'); }
   }
+  // аренда от завода (договорились: фильтры + аренда каждый месяц)
+  if (st.storyFlags?.factoryRent && income > 0) {
+    const rent = nice(income * 0.08);
+    st.money += rent; notes.push(`🏭 Завод заплатил аренду: +${fmt(rent)}`);
+  }
+  if (st.storyFlags?.solarSell && income > 0) {
+    const sun = nice(income * 0.04);
+    st.money += sun; notes.push(`☀️ Излишки электричества проданы в сеть: +${fmt(sun)}`);
+  }
   const expense = costs.reduce((a, c) => a + c.amount, 0);
   st.money -= expense;
   if (m % 12 === 9 && level(st, 'apiary') > 1 && !level(st, 'omshanik') && !hired(st, 'beekeeper')) {
@@ -892,6 +1004,7 @@ function closeMonth(st) {
   st.monthMs = 0;
   st.monthIncome = 0;
   st.mods = st.nextMods; st.nextMods = {};
+  st.effects = (st.effects || []).filter(e => e.until > st.month);
   if (st.month === 12) grantAch(st, 'alive');
   return report;
 }
@@ -916,5 +1029,10 @@ export function tasks(st) {
 
 export function migrate(save) {
   if (!save || typeof save !== 'object' || save.v !== SCHEMA_VERSION) return null;
+  // новые поля для старых сохранений (прогресс не трогаем)
+  save.trust ??= TRUST.start; save.orderStreak ??= 0;
+  save.storyFlags ??= {}; save.storyQueue ??= []; save.perm ??= {}; save.effects ??= []; save.decisions ??= [];
+  // раньше события повторялись каждый год («id@год») — теперь каждое один раз
+  save.usedEvents = [...new Set((save.usedEvents || []).map(k => String(k).split('@')[0]))];
   return save;
 }

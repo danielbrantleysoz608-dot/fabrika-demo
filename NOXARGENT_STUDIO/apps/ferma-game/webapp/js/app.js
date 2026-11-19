@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, BOOSTERS, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
+  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, WORKERS, WORKER_ORDER, BOOSTERS, TRUST, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
@@ -63,7 +63,7 @@ function view() {
     full[id] = stock[id] > 0 && (st.acc[id] || 0) >= E.storageCap(st, id) * 0.98; // склад полон — пузырь мигает
   }
   return {
-    month: st.month, loc: st.loc || 'home', house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags,
+    month: st.month, loc: st.loc || 'home', house: st.house || 0, built, lv: st.lv, tier: st.tier, hens: hens(), hives: hives(), flags: st.flags, storyFlags: st.storyFlags || {},
     clean: E.cleanLevel(st), fieldClear: E.fieldClear(st), stock, fresh, full,
     trash: st.trash.map(t => ({ ...TRASH_DEF[t.id], hp: t.hp, maxHp: TRASH_DEF[t.id].hp })),
     fox: st.phase === 'event' && st.event === 'fox',
@@ -348,6 +348,7 @@ setInterval(() => {
   fishBadges();
   chestTick();
   happyHint();
+  expiredNotes();
   hud();
   afterGain();
   submitScore(st, profile); // сам ограничивает частоту: не чаще раза в 30 с
@@ -457,11 +458,12 @@ function orderCard({ o, i }) {
   const items = o.items.map(it => `<div class="oi"><span class="oe">${PRODUCTS[it.p].emoji}</span><span class="on">${n(Math.min(it.have, it.need))}/${n(it.need)}</span>
     <div class="ob"><i style="width:${Math.round(100 * Math.min(1, it.have / it.need))}%"></i></div></div>`).join('');
   return `<div class="ocard ${o.big ? 'big' : ''} ${done ? 'done' : ''}">
-    <div class="oh"><span class="oc">${o.emoji}</span><b>${o.name}</b>${o.big ? '<em>до конца дня</em>' : ''}</div>
+    <div class="oh"><span class="oc">${o.emoji}</span><b>${o.name}</b>${o.big ? '<em>до конца дня</em>' : (() => { const l = E.orderLeft(st, o); return l === null || done ? '' : `<em class="${l < 5 * 60000 ? 'hot' : ''}">⏳ ${Math.max(1, Math.ceil(l / 60000))} мин</em>`; })()}</div>
     <div class="ois">${items}</div>
     <div class="or"><span>Награда:</span><b>${short(o.reward)}</b><span class="ox">+${o.xp} ⭐</span></div>
     <div class="row"><button class="btn primary wide" data-act="deliver" data-id="${i}" ${done ? '' : 'data-lock="Ещё не всё собрано — тапай по постройкам"'}>${done ? 'Сдать заказ' : 'Собираем…'}</button>
-      <button class="btn wide ghost-dark" data-act="decline" data-id="${i}">Отказаться</button></div></div>`;
+      <button class="btn wide ghost-dark" data-act="decline" data-id="${i}">Отказаться <small>${E.orderStalled(st, o) ? 'без штрафа' : TRUST.decline + ' 🤝'}</small></button></div>
+    ${E.orderStalled(st, o) ? '<p class="note">⏸ Сейчас не сезон для этого продукта — срок стоит, отказ без штрафа.</p>' : ''}</div>`;
 }
 function openBoard() {
   const list = [];
@@ -470,7 +472,7 @@ function openBoard() {
     else list.push(`<div class="ocard wait"><div class="oh"><span class="oc">⏳</span><b>Новый заказ</b></div><p class="note">появится через ${mmss(Math.max(0, (o?.readyAt || 0) - Date.now()))}</p></div>`);
   });
   if (st.big && !st.big.done) list.push(orderCard({ o: st.big, i: 'big' }));
-  sheet('📋 Заказы', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Отказался — новый заказ через 10 минут.</p>${list.join('')}`, 'board');
+  sheet('📋 Заказы', `<p class="note">Заказчики платят <b>дороже прилавка</b> и дают ⭐ опыт. Нужный урожай откладывается в амбар сам, когда собираешь его с построек. Сдал вовремя — <b>+1 🤝</b>, отказался — ${TRUST.decline} 🤝, просрочил (⏳) — ${TRUST.expired} 🤝. Срок идёт, только пока ты в игре.</p>${list.join('')}`, 'board');
 }
 function showLevelUp(lvl) {
   const ids = E.unlockedAt(lvl).filter(id => BUILDINGS[id].tier <= st.tier);
@@ -568,11 +570,11 @@ const ACTIONS = {
     const o = E.deliverOrder(st, key);
     if (!o) return;
     notify('success'); sfx.fresh();
-    toast(`${o.emoji} Заказ сдан: +${short(o.reward)}, +${o.xp} ⭐`);
+    toast(`${o.emoji} Заказ сдан: +${short(o.reward)}, +${o.xp} ⭐${o.trust > 0 ? `, +${+o.trust.toFixed(1)} 🤝` : ''}`);
     render(); persist(true); openBoard();
     setTimeout(afterGain, 400);
   },
-  decline: (id) => { const back = E.declineOrder(st, id === 'big' ? 'big' : +id); toast(`Отказались. ${back ? 'Отложенное продали за ' + short(back) + '. ' : ''}Новый заказ — через 10 минут`); render(); persist(true); openBoard(); },
+  decline: (id) => { const key = id === 'big' ? 'big' : +id, free = E.orderStalled(st, key === 'big' ? st.big : st.orders[key]); const back = E.declineOrder(st, key); toast(`Отказались${free ? ' (без штрафа)' : `: ${TRUST.decline} 🤝`}. ${back ? 'Отложенное продали за ' + short(back) + '. ' : ''}Новый заказ — через 10 минут`); render(); persist(true); openBoard(); },
   buildNow: () => openBuild(),
   house: () => openHouse(),
   letter: (id) => showLetter(+id),
@@ -843,7 +845,7 @@ function openBook(tab = 'tasks') {
       <p class="note">В конце месяца: корм, свет и налоги — 10% от собранного${st.debt ? ', проценты по кредиту — 5% от долга' : ''}${WORKER_ORDER.some(w => E.hired(st, w)) ? ', зарплаты работникам: ' + WORKER_ORDER.filter(w => E.hired(st, w)).map(w => `${WORKERS[w].role.toLowerCase()} ≈ ${short(E.wageEstimate(st, w))}`).join(', ') : ''}.</p>
       ${st.debt ? `<div class="debt">Долг банку: <b>${fmt(st.debt)}</b> · 5% в месяц<button class="btn primary go" data-act="repay">Вернуть долг</button></div>` : ''}`;
   }
-  if (tab === 'story') body = `<ul class="todo story">${[...st.history].reverse().slice(0, 80).map(h => `<li><span class="m">${monthOf(h.m).name}${yearOf(h.m) > 1 ? ' г.' + yearOf(h.m) : ''}</span>${h.t}</li>`).join('')}</ul>`;
+  if (tab === 'story') body = `<ul class="todo story">${[...st.history].reverse().slice(0, 80).map(h => `<li${h.d ? ' class="dec"' : ''}><span class="m">${monthOf(h.m).name}${yearOf(h.m) > 1 ? ' г.' + yearOf(h.m) : ''}</span>${h.d ? '🧭 ' : ''}${h.t}</li>`).join('')}</ul>`;
   if (tab === 'cards') body = albumGrid();
   sheet('Тетрадь фермера', `<div class="tabs">${tabs.map(([k, l]) => `<button data-act="tab" data-id="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>${body}`, 'book');
 }
@@ -861,7 +863,7 @@ function nextMonth() {
 }
 function announceEvent() {
   const e = EVENT_BY_ID[st.event];
-  important(`Наступил <b>${monthOf(st.month).name.toLowerCase()}</b>! А на ферме — «${e.title.replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
+  important(`Наступил <b>${monthOf(st.month).name.toLowerCase()}</b>! А на ферме — «${E.resolveText(e.title, st).replace(/<[^>]+>/g, '')}».<br>Выбирай с умом: от этого зависит весь месяц.`, 'worried', showEvent);
 }
 function askSkip() {
   const cost = E.skipCost(st), left = E.monthLeft(st), lack = Math.max(0, cost - st.money);
@@ -886,8 +888,8 @@ function showEvent() {
   const opts = e.options.map((_, i) => E.optionState(st, e, i));
   const blocked = E.allBlocked(st, e);
   const nm = monthOf(st.month);
-  openLayer(`<div class="ev-title"><div class="kicker">${nm.name.toUpperCase()}${yearOf(st.month) > 1 ? ' · ГОД ' + yearOf(st.month) : ''} · ${e.kicker.toUpperCase()}</div>
-      <h2>${e.title}</h2><p>${E.resolveText(e.text, st)}</p></div>
+  openLayer(`<div class="ev-title"><div class="kicker">${nm.name.toUpperCase()}${yearOf(st.month) > 1 ? ' · ГОД ' + yearOf(st.month) : ''} · ${e.kicker.toUpperCase()}${e.follow ? ' · ПРОДОЛЖЕНИЕ' : ''}</div>
+      <h2>${E.resolveText(e.title, st)}</h2><p>${E.resolveText(e.text, st)}</p></div>
     <div class="ev-opts">${opts.map((o, i) => `<button class="opt ${o.why ? 'off' : ''}" data-act="opt" data-id="${i}">${ICONS[o.icon] || ''}<b>${o.label}</b><span>${o.desc}</span>${o.why ? `<em>${cap1(o.why)}</em>` : ''}</button>`).join('')}</div>
     ${blocked ? '<button class="btn wide pass" data-act="opt" data-id="-1">Не по карману — пропустить</button>' : ''}`, 'event-wrap', false);
   layer.dataset.kind = 'event';
@@ -907,7 +909,9 @@ function showEventResult(r) {
   openLayer(`<div class="report">
       <div class="kicker">${monthOf(r.month).name.toUpperCase()} · ВЫБОР СДЕЛАН</div><h2>${r.title}</h2>
       <div class="ev-res"><b>${r.choice}.</b> ${r.text}</div>
+      ${r.chg?.length ? `<div class="ev-chg">${r.chg.map(c => `<span class="${/^(\+|🏆|🥈)/.test(c) ? 'up' : /^−/.test(c) || / −\d/.test(c) ? 'down' : ''}">${c}</span>`).join('')}</div>` : ''}
       ${log ? `<ul class="lines">${log}</ul>` : ''}
+      <div class="total sm"><span>Доверие покупателей</span><b>🤝 ${E.trustOf(st)}</b></div>
       <div class="total sm"><span>В кармане</span><b>${short(st.money)}</b></div>
       <button class="btn primary big" data-act="evDone">Дальше</button></div>`, 'screen dim', false);
   layer.dataset.kind = 'evres';
@@ -1218,6 +1222,11 @@ function fxBar(show) {
   if (hh.on) chips.push(`<span class="fx hh" data-short="🔥 +${pct}% · ${mm(hh.left)}">🔥 Счастливый час +${pct}% · ещё ${mm(hh.left)}</span>`);
   for (const k of ['grow', 'double']) { const l = E.boostLeft(st, k, now); if (l > 0) chips.push(`<span class="fx bs" title="${BOOSTERS[k].name}">${BOOSTERS[k].emoji} ${mmss(l)}</span>`); }
   if ((st.month || 0) < NEWBIE_MONTHS && st.phase === 'play') chips.push(`<span class="fx nb">🌱 ×1,5</span>`);
+  // временные последствия решений: значок, % и сколько осталось (месяцы → минуты игры)
+  for (const e of E.activeEffects(st)) {
+    const pct = Math.round((e.k - 1) * 100), left = (e.months - 1) * MONTH_MS + Math.max(0, MONTH_MS - st.monthMs);
+    chips.push(`<span class="fx ${pct >= 0 ? 'ev' : 'evbad'}" title="${e.label}">${e.icon} ${pct >= 0 ? '+' : '−'}${Math.abs(pct)}% · ${mm(left)}</span>`);
+  }
   const html = show && chips.length ? chips.join('') : '';
   el.hidden = !html;
   if (el.dataset.html !== html) {
@@ -1264,12 +1273,42 @@ fastTap($('#chestBtn'), () => {
   afterGain();
 });
 
+/* ================= Доверие покупателей 🤝 ================= */
+function openTrust() {
+  const t = E.trustOf(st), k = E.trustMult(st), pct = Math.round((k - 1) * 100);
+  const lvl = t >= TRUST.high ? 'Высокое — приходят ресторан и кафе-пекарня с выгодными заказами'
+    : t < TRUST.low ? 'Низкое — заказывают только по мелочи (баба Нина)' : 'Обычное — кафе, дачники и магазин';
+  const last = (st.decisions || []).slice(-5).reverse().map(d => `<li><span class="m">${monthOf(d.m).name}</span>${d.sum ? d.opt + ' → ' + d.sum : d.opt}</li>`).join('');
+  sheet('🤝 Доверие покупателей', `
+    <div class="trust-big ${t >= TRUST.high ? 'hi' : t < TRUST.low ? 'lo' : ''}"><b>${t}</b><span>из 100</span><div class="tb"><i style="width:${t}%"></i></div></div>
+    <p class="note">Цена продажи сейчас: <b>${pct >= 0 ? '+' : '−'}${Math.abs(pct)}%</b> (от −20% при 0 до +30% при 100).<br>${lvl}.</p>
+    <div class="sub">Растёт</div><ul class="todo"><li>✅ заказ сдан вовремя: +1, каждые 5 подряд без отказов — ещё +2 (от заказов до +6 в день)</li><li>🌿 свежий урожай — собран до того, как пузырь полон (до +2 в день)</li><li>🤝 честные решения в событиях</li></ul>
+    <div class="sub">Падает</div><ul class="todo"><li>✋ отказ от заказа: −3</li><li>⌛ заказ просрочен: −4</li><li>🥀 урожай перестоял — пузырь полон (до −1,5 в день)</li><li>💸 нечестные решения: завысить цены, продать подпорченное, приукрасить</li></ul>
+    ${last ? `<div class="sub">Последние решения</div><ul class="todo story">${last}</ul>` : ''}
+    <button class="btn primary big" data-act="close">Понятно</button>`, 'trust');
+}
+fastTap($('#trustPill'), () => { if (!st) return; haptic(); sfx.click(); openTrust(); });
+// просроченные заказы — сообщаем один раз
+function expiredNotes() {
+  if (!st.expiredNew?.length) return;
+  const names = st.expiredNew.splice(0);
+  toast(`⌛ Заказ «${names[0]}» просрочен: ${TRUST.expired} 🤝`);
+  sfx.error?.();
+  if (layer.dataset.kind === 'board' && !layer.hidden) openBoard();
+}
+
 /* ================= Сосед-соперник ================= */
 const NB_TEASE = ['Петрович через забор: «Что, сосед, отстаём? Мои куры несутся быстрее!»', 'Петрович машет из-за забора: «Догоняй, внучок!»',
   'Сосед купил новый трактор и хвастается на всю улицу…', 'Петрович: «У меня огурцы — во! А у тебя?»'];
 function rivalBar(show) {
   const bar = $('#rivalBar');
   bar.hidden = !show;
+  $('#rvRow').hidden = !show;
+  if (show) { // доверие покупателей 🤝 — рядом с соседом
+    const t = E.trustOf(st), p = $('#trustPill');
+    $('#trustVal').textContent = t;
+    p.classList.toggle('hi', t >= TRUST.high); p.classList.toggle('lo', t < TRUST.low);
+  }
   if (!show) return;
   const me = E.ratingCapital(st), nb = E.neighborCap(st), ahead = me >= nb;
   $('#rvMe').textContent = short(Math.max(0, me), '');
@@ -1632,6 +1671,8 @@ function openRules() {
     <p><b>11. Работники.</b> «👷 Работники» в «Стройке» и в разделе «Моя ферма»: помощник сам собирает урожай, водитель сдаёт заказы. Зарплата — раз в месяц.</p>
     <p><b>12. Цели.</b> Цель открывается, когда есть и капитал, и уровень фермы ⭐ (10 млн — ур. 22, 100 млн — ур. 50). Опыт — за заказы, ремонт дома, рыбалку и задания дня. Пока копишь опыт, трать деньги на работников, удочку, дом деда и украшения.</p>
     <p><b>13. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
+    <p><b>14. Доверие покупателей 🤝</b> (значок рядом с соседом, 0–100, старт 50). Растёт: заказы сданы вовремя, серия заказов без отказов, свежий урожай (собран до того, как пузырь полон), честные решения. Падает: отказ от заказа, просроченный заказ (⏳ на карточке), перестоявший урожай, нечестные решения — задрать цены, продать подпорченное, приукрасить. Влияет на цену продажи: от −20% (0 🤝) до +30% (100 🤝). При высоком доверии приходят ресторан и кафе-пекарня с выгодными заказами, при низком — только мелкие.</p>
+    <p><b>15. Решения с последствиями.</b> Каждое событие бывает один раз, а выбор влияет на следующие: пустишь завод — река помутнеет, откажешь — завод уйдёт к соседу. Всё построенное появляется на ферме (поливалки, панели, дорога, завод), временные эффекты — значком с таймером сверху. Лента решений — «Тетрадь → История».</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>
   </div><button class="btn primary big" data-act="close">Понятно!</button>`, 'rules');
 }
@@ -1705,7 +1746,7 @@ async function boot() {
   if (saved) profile = { album: {}, introSeen: false, ...saved, game: E.migrate(saved.game) };
   st = profile.game || E.newGame();
   st.tzOff = new Date().getTimezoneOffset();
-  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile, act: (n, id) => ACTIONS[n](id, document.createElement('b')), open: { board: openBoard, building: openBuilding, fishing: openFishing, house: openHouse, chest: () => { st.chest = { ms: 0, ready: true }; chestTick(); $('#chestBtn').click(); } } };
+  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile, act: (n, id) => ACTIONS[n](id, document.createElement('b')), open: { board: openBoard, building: openBuilding, fishing: openFishing, house: openHouse, trust: () => openTrust(), event: (id) => { st.phase = 'event'; st.event = id; showEvent(); }, chest: () => { st.chest = { ms: 0, ready: true }; chestTick(); $('#chestBtn').click(); } } };
   render();
   say('Привет! Я помогу с фермой.', 'wink');
   if (await subscribed()) showSplash(); else showSubGate();

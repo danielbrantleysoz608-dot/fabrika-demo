@@ -714,3 +714,39 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .chest-btn span { font-size: 28px; line-height: 1; }
 .chest-btn small { font-size: 9.5px; font-weight: 900; color: var(--brown); }
 .chest-dlg h3, .chest-dlg p { text-align: center; }
+/* ===== Доверие покупателей 🤝 ===== */
+.rvrow { display: flex; gap: 6px; align-items: stretch; }
+.rvrow[hidden] { display: none; }
+.rvrow .bar.rival { flex: 1; min-width: 0; }
+.trust-pill { flex: none; pointer-events: auto; height: 24px; padding: 0 8px; border-radius: 10px; border: 2.5px solid var(--line); background: var(--cream);
+  box-shadow: 0 2px 0 rgba(59,42,31,.25); display: flex; align-items: center; gap: 3px; font-weight: 900; font-size: 13px; color: var(--brown); }
+.trust-pill span { font-size: 13px; line-height: 1; }
+.trust-pill.hi { background: #e3f6dc; border-color: #2f7a35; color: #2f7a35; }
+.trust-pill.lo { background: #fde2dc; border-color: #b8432f; color: #b8432f; }
+.trust-big { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; margin: 2px 0 8px; }
+.trust-big b { font-size: 40px; font-weight: 900; color: var(--brown); line-height: 1; }
+.trust-big span { font-weight: 800; color: #8a6a52; }
+.trust-big .tb { flex-basis: 100%; height: 10px; border-radius: 5px; background: #f1e3cc; border: 2px solid var(--line); overflow: hidden; }
+.trust-big .tb i { display: block; height: 100%; background: #e0a62a; }
+.trust-big.hi b { color: #2f7a35; } .trust-big.hi .tb i { background: #3fae4f; }
+.trust-big.lo b { color: #b8432f; } .trust-big.lo .tb i { background: #d8573f; }
+.fx.ev { background: #fff4d6; border-color: #c8901a; color: #8a5a0c; }
+.fx.evbad { background: #fde2dc; border-color: #b8432f; color: #9a3322; }
+.ev-chg { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; justify-content: center; }
+.ev-chg span { background: #f4ead6; border: 2px solid var(--line); border-radius: 10px; padding: 2px 8px; font-weight: 800; font-size: 13px; color: var(--brown); }
+.ev-chg span.up { background: #e3f6dc; border-color: #2f7a35; color: #2f7a35; }
+.ev-chg span.down { background: #fde2dc; border-color: #b8432f; color: #9a3322; }
+.ocard .oh em.hot { color: #c0392b; }
+.btn small { font-size: 11px; opacity: .85; white-space: nowrap; }
+.story li.dec { background: #fff6dc; border-radius: 8px; }
+/* поливалки и дым завода */
+.spray { animation: spray 1.4s ease-in-out infinite; transform-origin: 0 -16px; }
+@keyframes spray { 0% { opacity: .2; transform: scale(.7) rotate(-8deg); } 50% { opacity: 1; transform: scale(1) rotate(8deg); } 100% { opacity: .2; transform: scale(.7) rotate(-8deg); } }
+.fsmoke circle { animation: fsmoke 3.6s ease-in infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes fsmoke { 0% { transform: translate(0, 6px) scale(.6); opacity: 0; } 20% { opacity: .95; } 70% { opacity: .8; } 100% { transform: translate(14px, -30px) scale(1.6); opacity: 0; } }
+/* события с 3 вариантами: третий — во всю ширину, картинка слева; колонки не шире экрана */
+.ev-opts { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.ev-opts .opt { min-width: 0; overflow-wrap: anywhere; }
+.ev-opts .opt:nth-child(3):last-child { grid-column: 1 / -1; display: grid; grid-template-columns: 70px 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 12px; }
+.ev-opts .opt:nth-child(3):last-child svg { width: 64px; height: 48px; grid-row: 1 / span 3; }
+.ev-opts .opt:nth-child(3):last-child b { font-size: 18px; }
