@@ -693,6 +693,8 @@ function highway(m) {
     <path d="M-10 664 H${W + 10}" stroke="#fff" stroke-width="3.5" stroke-dasharray="20 16"/></g>`;
 }
 // солнечные панели на правом скате крыши дома деда
+export const solarCell = (i) => `<rect x="${16 + i * 19}" y="4" width="17" height="15" fill="#2d4f86" stroke="#13233f" stroke-width="1.4"/>
+    <path d="M${16 + i * 19} 11.5 h17 M${24.5 + i * 19} 4 v15" stroke="#5f86c4" stroke-width=".9"/>`;
 function solarRoof() {
   const cells = [0, 1, 2, 3].map(i => `<rect x="${16 + i * 19}" y="4" width="17" height="15" fill="#2d4f86" stroke="#13233f" stroke-width="1.4"/>
     <path d="M${16 + i * 19} 11.5 h17 M${24.5 + i * 19} 4 v15" stroke="#5f86c4" stroke-width=".9"/>`).join('');
@@ -700,14 +702,15 @@ function solarRoof() {
     <path d="M18 6 l12 0" stroke="#bcd4ff" stroke-width="1.6" opacity=".8"/></g>`;
 }
 // поливалки на огороде: стойка, головка и брызги
-function sprinklers(m) {
-  if (m.season === 'winter') return '';
-  const one = (x, y, d) => `<g transform="translate(${x} ${y}) scale(1.6)">
+export const SPRINKLER_POS = [[246, 482, 0], [330, 482, -0.5], [414, 482, -1]];
+export const sprinklerOne = (x, y, d) => `<g transform="translate(${x} ${y}) scale(1.6)">
     <rect x="-1.6" y="-14" width="3.2" height="16" fill="#6c7a86" stroke="#2d3a44" stroke-width="1"/>
     <circle cy="-15" r="3.6" fill="#4a90d9" stroke="#2d3a44" stroke-width="1.2"/>
     <g class="spray" style="animation-delay:${d}s">${[-60, -30, 0, 30, 60].map(a => `<path d="M0 -16 q${Math.sin(a * Math.PI / 180) * 16} -16 ${Math.sin(a * Math.PI / 180) * 30} -6" stroke="#9fd4ff" stroke-width="2" fill="none" stroke-linecap="round" stroke-dasharray="3 4"/>`).join('')}
       ${[-26, -12, 12, 26].map((dx, i) => `<circle cx="${dx}" cy="${-8 - (i % 2) * 6}" r="1.8" fill="#bfe4ff"/>`).join('')}</g></g>`;
-  return `<g id="sprinklers" pointer-events="none">${one(246, 482, 0)}${one(330, 482, -0.5)}${one(414, 482, -1)}</g>`;
+function sprinklers(m) {
+  if (m.season === 'winter') return '';
+  return `<g id="sprinklers" pointer-events="none">${SPRINKLER_POS.map(p => sprinklerOne(...p)).join('')}</g>`;
 }
 // указатели у дороги: трасса, экскурсии, эко-значок
 function homeSigns(sf) {
@@ -724,6 +727,12 @@ function homeSigns(sf) {
   }
   return s;
 }
+// корпус завода на горизонте «Реки и луга» (низ — y 306); clean — фильтры на трубе
+export const factoryArt = (clean) => `<g opacity=".93"><rect x="268" y="236" width="9" height="40" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
+      <rect x="252" y="246" width="8" height="30" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
+      ${clean ? '<rect x="266" y="240" width="13" height="5" fill="#4fae54" stroke="#3b2a1f" stroke-width="1"/>' : ''}
+      <path d="M206 306 V276 L224 266 V276 L242 266 V276 L260 266 V276 L278 266 V276 L296 266 V306z" fill="#b7c0c8" stroke="#3b2a1f" stroke-width="1.6"/>
+      ${[0, 1, 2, 3].map(i => `<rect x="${212 + i * 20}" y="286" width="9" height="7" fill="#ffd96b" stroke="#3b2a1f" stroke-width=".8"/>`).join('')}</g>`;
 // «Река и луг»: завод на горизонте с дымом и дорогой от моста, табличка жителей, мутная вода
 function riverStory(m, sf) {
   let s = '';
@@ -736,11 +745,7 @@ function riverStory(m, sf) {
     s += `<g id="story-factory" pointer-events="none">
       <path d="M304 440 L356 440 L268 306 L254 306z" fill="#9a9488" opacity=".85"/>
       <path d="M330 440 L261 306" stroke="#f4f1e8" stroke-width="1.5" stroke-dasharray="6 6"/>
-      <g opacity=".93"><rect x="268" y="236" width="9" height="40" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
-      <rect x="252" y="246" width="8" height="30" fill="#9aa3ad" stroke="#3b2a1f" stroke-width="1.4"/>
-      ${clean ? '<rect x="266" y="240" width="13" height="5" fill="#4fae54" stroke="#3b2a1f" stroke-width="1"/>' : ''}
-      <path d="M206 306 V276 L224 266 V276 L242 266 V276 L260 266 V276 L278 266 V276 L296 266 V306z" fill="#b7c0c8" stroke="#3b2a1f" stroke-width="1.6"/>
-      ${[0, 1, 2, 3].map(i => `<rect x="${212 + i * 20}" y="286" width="9" height="7" fill="#ffd96b" stroke="#3b2a1f" stroke-width=".8"/>`).join('')}</g>
+      ${factoryArt(clean)}
       <g class="fsmoke">${[0, 1, 2, 3, 4].map(i => `<circle cx="272" cy="232" r="${7 + (i % 3) * 2}" fill="${smoke}" stroke="#5c6168" stroke-width=".8" style="animation-delay:${-i * 0.72}s"/>`).join('')}
         <circle cx="256" cy="242" r="5" fill="${smoke}" stroke="#5c6168" stroke-width=".8" style="animation-delay:-1.9s"/></g></g>`;
   }

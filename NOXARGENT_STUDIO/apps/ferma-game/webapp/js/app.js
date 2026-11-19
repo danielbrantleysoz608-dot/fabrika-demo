@@ -6,6 +6,7 @@ import {
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS } from './scene.js';
+import { playCutscene, quickEffect, sceneFor } from './cutscene.js';
 import { farmerSVG } from './farmer.js';
 import { workerPortrait } from './workers-art.js';
 import { ICONS, POSTCARD_ART } from './icons.js';
@@ -21,7 +22,7 @@ const $ = (s) => document.querySelector(s);
 const svg = $('#scene');
 const fmt = E.fmt;
 // Настройки игрока (хранятся в браузере)
-const prefs = (() => { try { return { haptics: true, hints: true, ...JSON.parse(localStorage.getItem('ferma-prefs') || '{}') }; } catch { return { haptics: true, hints: true }; } })();
+const prefs = (() => { try { return { haptics: true, hints: true, scenes: true, ...JSON.parse(localStorage.getItem('ferma-prefs') || '{}') }; } catch { return { haptics: true, hints: true, scenes: true }; } })();
 const savePrefs = () => { try { localStorage.setItem('ferma-prefs', JSON.stringify(prefs)); } catch { /* */ } };
 const haptic = (t = 'light') => prefs.haptics && tg?.HapticFeedback?.impactOccurred?.(t);
 const notify = (t) => prefs.haptics && tg?.HapticFeedback?.notificationOccurred?.(t);
@@ -615,7 +616,7 @@ const ACTIONS = {
     if (id === 'sound') sfx.toggle();
     else if (id === 'music') music.enable(!sfx.settings.music);
     else { prefs[id] = !prefs[id]; savePrefs(); }
-    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : id === 'music' ? `Музыка: ${sfx.settings.music ? 'вкл' : 'выкл'}` : id === 'sound' ? `Звуки: ${sfx.muted ? 'выкл' : 'вкл'}` : 'Сохранено');
+    toast(id === 'hints' ? `Подсказки фермера: ${prefs.hints ? 'вкл' : 'выкл'}` : id === 'scenes' ? `Сценки: ${prefs.scenes ? 'вкл' : 'выкл'}` : id === 'music' ? `Музыка: ${sfx.settings.music ? 'вкл' : 'выкл'}` : id === 'sound' ? `Звуки: ${sfx.muted ? 'выкл' : 'вкл'}` : 'Сохранено');
     if (el?.dataset.from === 'book') openBook('tasks'); else openSettings();
   },
   saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
@@ -894,14 +895,30 @@ function showEvent() {
     ${blocked ? '<button class="btn wide pass" data-act="opt" data-id="-1">Не по карману — пропустить</button>' : ''}`, 'event-wrap', false);
   layer.dataset.kind = 'event';
 }
+let pendingQuick = null;
 function pickOption(i) {
   const e = EVENT_BY_ID[st.event];
   if (i >= 0) { const o = E.optionState(st, e, i); if (o.why) { haptic('rigid'); sfx.error(); return toast(cap1(o.why)); } }
   const res = E.choose(st, i);
   if (!res) return;
   haptic('medium');
+  // сценка после важного решения: результат выбора уже сохранён — закроют игру посередине, ничего не потеряется
+  const key = i >= 0 ? sceneFor(st, e.id, i) : null;
+  const seen = (profile.scenesSeen ||= []);
+  const full = key && prefs.scenes !== false && !seen.includes(key);
+  if (full) seen.push(key);                 // полностью — один раз
   persist(true);
   submitScore(st, profile, true);
+  if (full) {
+    closeLayer();
+    const cap = (res.chg || []).map(c => `<span>${c}</span>`).join('') || `<span>${res.text}</span>`;
+    return playCutscene({
+      key, svg, app: $('#app'), caption: `<b>${res.choice}</b><div>${cap}</div>`,
+      setLoc: (l) => { const p = st.loc || 'home'; if (p !== l) { st.loc = l; render(); } return p; },
+      onDone: () => { render(); showEventResult(res); },
+    });
+  }
+  if (key) pendingQuick = { key, text: res.chg?.[0] }; // повтор или сценки выключены — короткая анимация на карте
   showEventResult(res);
 }
 function showEventResult(r) {
@@ -935,6 +952,7 @@ function afterReport() {
 }
 function afterEvent() {
   closeLayer(); render();
+  if (pendingQuick) { const q = pendingQuick; pendingQuick = null; setTimeout(() => quickEffect({ ...q, svg, st, floatText, puff }), 300); }
   const r = st.report;
   const m = monthOf(st.month);
   const note = r?.notes.find(t => t.includes('омшаник'));
@@ -1648,6 +1666,7 @@ function openSettings() {
       <li><span>🔊 Звуки<small>вжух, монетки, молоток, фанфары</small></span>${sw('sound', !sfx.muted)}</li>
       <li><span>📳 Вибрация<small>в Telegram на телефоне</small></span>${sw('haptics', prefs.haptics)}</li>
       <li><span>🧑‍🌾 Подсказки фермера<small>${prefs.hints ? 'вкл — важное фермер расскажет по центру экрана' : 'выкл — тапни по фермеру, и он подскажет'}</small></span>${sw('hints', prefs.hints)}</li>
+      <li><span>🎬 Сценки после решений<small>${prefs.scenes !== false ? 'вкл — короткий мультик 3–6 секунд, один раз' : 'выкл — только итог выбора'}</small></span>${sw('scenes', prefs.scenes !== false)}</li>
       <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
     </ul>
     ${tgUser ? '' : `<div class="r-name"><input id="setName" maxlength="24" placeholder="Твоё имя" value="${(playerName() || '').replace(/"/g, '&quot;')}"><button class="btn primary" data-act="saveName">ОК</button></div>`}
@@ -1746,7 +1765,7 @@ async function boot() {
   if (saved) profile = { album: {}, introSeen: false, ...saved, game: E.migrate(saved.game) };
   st = profile.game || E.newGame();
   st.tzOff = new Date().getTimezoneOffset();
-  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile, act: (n, id) => ACTIONS[n](id, document.createElement('b')), open: { board: openBoard, building: openBuilding, fishing: openFishing, house: openHouse, trust: () => openTrust(), event: (id) => { st.phase = 'event'; st.event = id; showEvent(); }, chest: () => { st.chest = { ms: 0, ready: true }; chestTick(); $('#chestBtn').click(); } } };
+  if (location.hash === '#dev') window.__ferma = { E, music, sfx, st: () => st, set: (v) => { st = v; profile.game = v; enterGame(); }, render, profile: () => profile, act: (n, id) => ACTIONS[n](id, document.createElement('b')), open: { board: openBoard, building: openBuilding, fishing: openFishing, house: openHouse, trust: () => openTrust(), cut: (key, cap = '<b>Проверка</b><div><span>+15% продаж</span><span>−10 🤝</span></div>') => playCutscene({ key, svg, app: $('#app'), caption: cap, setLoc: (l) => { const p = st.loc || 'home'; if (p !== l) { st.loc = l; render(); } return p; }, onDone: () => { window.__cutDone = true; } }), event: (id) => { st.phase = 'event'; st.event = id; showEvent(); }, chest: () => { st.chest = { ms: 0, ready: true }; chestTick(); $('#chestBtn').click(); } } };
   render();
   say('Привет! Я помогу с фермой.', 'wink');
   if (await subscribed()) showSplash(); else showSubGate();

@@ -750,3 +750,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ev-opts .opt:nth-child(3):last-child { grid-column: 1 / -1; display: grid; grid-template-columns: 70px 1fr; column-gap: 8px; align-items: center; text-align: left; padding: 8px 12px; }
 .ev-opts .opt:nth-child(3):last-child svg { width: 64px; height: 48px; grid-row: 1 / span 3; }
 .ev-opts .opt:nth-child(3):last-child b { font-size: 18px; }
+/* ===== Сценки после решений ===== */
+#app.cut .hud, #app.cut .dock, #app.cut .helper, #app.cut #chestBtn, #app.cut #scene #ready { opacity: 0; pointer-events: none; transition: opacity .35s; }
+#app.cut .farm-scroll { overflow: hidden; }
+.cutui { position: absolute; inset: 0; z-index: 70; display: flex; flex-direction: column; justify-content: flex-end; align-items: center;
+  padding: 0 16px calc(18px + var(--safe-bot)); gap: 10px; background: linear-gradient(transparent 70%, rgba(30,20,10,.35)); touch-action: manipulation; }
+.cut-cap { max-width: 340px; background: var(--cream); border: 3px solid var(--line); border-radius: 16px; padding: 10px 14px; text-align: center;
+  box-shadow: 0 4px 0 rgba(59,42,31,.3); animation: pop .4s backwards; }
+.cut-cap b { display: block; font-size: 18px; font-weight: 900; color: #b5582e; margin-bottom: 6px; }
+.cut-cap div { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; }
+.cut-cap span { background: #f4ead6; border: 2px solid var(--line); border-radius: 10px; padding: 2px 8px; font-weight: 800; font-size: 13px; color: var(--brown); }
+.cut-hint { font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); }
+.cut-skip { min-width: 180px; font-size: 15px; }
+.cut-cap { position: absolute; left: 16px; right: 16px; top: calc(64px + var(--safe-top)); margin: 0 auto; }
