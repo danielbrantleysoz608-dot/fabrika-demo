@@ -13,18 +13,8 @@ def bg(c1, c2):
 <stop offset="0" stop-color="{c1}"/><stop offset="1" stop-color="{c2}"/></radialGradient></defs>
 <rect width="1080" height="1080" fill="url(#bg)"/>'''
 
-def body():
-    s = f'''
-<path d="M395,780 L685,780 L700,880 L380,880 Z" fill="{SKIN}" stroke="{INK}" stroke-width="{SW}"/>
-<path d="M120,1500 L150,1000 C165,905 230,870 330,858 C390,852 420,850 440,852 Q540,905 640,852 C660,850 690,852 750,858 C850,870 915,905 930,1000 L960,1500 Z"
- fill="{SHIRT}" stroke="{INK}" stroke-width="{SW}" stroke-linejoin="round"/>
-<path d="M440,852 Q540,905 640,852" fill="none" stroke="{INK}" stroke-width="{SW}"/>
-<path d="M262,880 C238,960 232,1050 244,1130" fill="none" stroke="{INK}" stroke-width="{SW-1}" stroke-linecap="round"/>
-<path d="M818,880 C842,960 848,1050 836,1130" fill="none" stroke="{INK}" stroke-width="{SW-1}" stroke-linecap="round"/>
-<path d="M300,960 Q290,1000 300,1040" fill="none" stroke="#d9c26a" stroke-width="4" stroke-linecap="round"/>
-<path d="M780,960 Q790,1000 780,1040" fill="none" stroke="#d9c26a" stroke-width="4" stroke-linecap="round"/>
-'''
-    # аниме-девочка на футболке
+def girl():
+    s = ''
     s += f'''
 <g stroke="{INK}" stroke-width="4" stroke-linejoin="round">
 <path d="M418,930 L455,975 L425,995 Z" fill="#7ebbd7"/><path d="M662,930 L625,975 L655,995 Z" fill="#7ebbd7"/>
@@ -37,6 +27,20 @@ def body():
 <path d="M530,1110 Q540,1118 550,1110" fill="none" stroke="#c8638f" stroke-width="4" stroke-linecap="round"/>
 <path d="M395,1050 l8,-18 l8,18 l-8,18 Z" fill="#f2c94c"/><path d="M680,1050 l7,-15 l7,15 l-7,15 Z" fill="#f2c94c"/>
 '''
+    return s
+
+def body():
+    s = f'''
+<path d="M395,780 L685,780 L700,880 L380,880 Z" fill="{SKIN}" stroke="{INK}" stroke-width="{SW}"/>
+<path d="M120,1500 L150,1000 C165,905 230,870 330,858 C390,852 420,850 440,852 Q540,905 640,852 C660,850 690,852 750,858 C850,870 915,905 930,1000 L960,1500 Z"
+ fill="{SHIRT}" stroke="{INK}" stroke-width="{SW}" stroke-linejoin="round"/>
+<path d="M440,852 Q540,905 640,852" fill="none" stroke="{INK}" stroke-width="{SW}"/>
+<path d="M262,880 C238,960 232,1050 244,1130" fill="none" stroke="{INK}" stroke-width="{SW-1}" stroke-linecap="round"/>
+<path d="M818,880 C842,960 848,1050 836,1130" fill="none" stroke="{INK}" stroke-width="{SW-1}" stroke-linecap="round"/>
+<path d="M300,960 Q290,1000 300,1040" fill="none" stroke="#d9c26a" stroke-width="4" stroke-linecap="round"/>
+<path d="M780,960 Q790,1000 780,1040" fill="none" stroke="#d9c26a" stroke-width="4" stroke-linecap="round"/>
+'''
+    s += girl()
     # пятно
     s += f'''<g transform="translate(730,1005) scale(.85)">
 <path d="M-32,6 C-40,-18 -10,-30 10,-22 C34,-14 38,10 22,22 C8,32 -24,28 -32,6 Z" fill="{STAIN}"/>
