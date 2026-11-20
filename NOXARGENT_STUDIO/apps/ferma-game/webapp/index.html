@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Ферма деда</title>
+  <meta name="theme-color" content="#55b0f1">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;800;900&family=Marck+Script&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- Сцена фермы -->
+  <!-- Ферму можно листать: шапка и нижние кнопки стоят на месте -->
+  <div class="farm-scroll" id="farmScroll">
+    <!-- Сцена = статичная ферма (#scene) + слой анимаций поверх (#anim, свой GPU-слой) -->
+    <div class="stage" id="stage">
+      <svg id="scene" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg"></svg>
+      <svg id="anim" viewBox="0 0 460 890" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+    </div>
+    <!-- Под фермой: листай вниз -->
+    <section class="farm-info" id="farmInfo"></section>
+    <div class="farm-spacer"></div>
+  </div>
+
+  <!-- Шапка-счётчики как в серии -->
+  <header class="hud">
+    <div class="chips">
+      <div class="chip"><span class="lbl" id="monthLbl">МЕСЯЦ</span><span class="val month"><i id="seasonIcon"></i><b id="monthName">Март</b></span></div>
+      <div class="chip"><span class="lbl">ДЕНЬГИ</span><span class="val money" id="money">10 000 ₽</span></div>
+      <div class="chip"><span class="lbl">КУРЫ</span><span class="val"><i class="ic-hen"></i><b id="hudHens">0</b></span></div>
+      <div class="chip"><span class="lbl">УЛЬИ</span><span class="val"><i class="ic-hive"></i><b id="hudHives">0</b></span></div>
+    </div>
+    <div class="bar goal">
+      <span class="bar-lbl" id="goalLbl">ДО МИЛЛИОНА</span>
+      <span class="track"><span class="fill" id="goalFill"></span><i></i><i></i><i></i></span>
+      <span class="bar-num" id="goalNum">10 000 / 1 000 000 ₽</span>
+    </div>
+    <div class="rvrow" id="rvRow" hidden>
+    <div class="bar rival" id="rivalBar" hidden>
+      <span class="rv-me">Ты — <b id="rvMe">0</b></span>
+      <span class="track"><span class="fill" id="rvFill"></span></span>
+      <span class="rv-nb">Сосед — <b id="rvNb">0</b></span>
+    </div>
+    <!-- Доверие покупателей 🤝: тап — что это и как поднять -->
+    <button class="trust-pill" id="trustPill" aria-label="Доверие покупателей"><span>🤝</span><b id="trustVal">50</b></button>
+    </div>
+    <div class="fxbar" id="fxBar" hidden></div>
+    <div class="bar clean" id="cleanBar">
+      <span class="bar-lbl">ЧИСТОТА</span>
+      <span class="track"><span class="fill" id="cleanFill"></span><i></i><i></i><i></i></span>
+      <span class="bar-num" id="cleanNum">0%</span>
+    </div>
+    <!-- Быстрые кнопки -->
+    <div class="quick" id="quick"></div>
+  </header>
+
+  <!-- Помощник -->
+  <div class="helper" id="helper">
+    <div class="farmer" id="farmer"></div>
+    <div class="bubble" id="bubble"></div>
+  </div>
+
+  <!-- «Собрать всё»: весь урожай текущей локации одним тапом (раз в 2 минуты; с помощником Ваней — без ожидания и со всех локаций) -->
+  <button class="collect-btn" id="collectAll" hidden aria-label="Собрать всё"><i class="cb-ring"></i><span>🧺</span><small>Собрать всё</small><b class="cb-badge" hidden></b></button>
+
+  <!-- Сундучок за время в игре (появляется каждые 10 минут активной игры) -->
+  <button class="chest-btn" id="chestBtn" hidden aria-label="Сундучок за время в игре"><span>🎁</span><small>Сундучок!</small></button>
+
+  <!-- Нижняя панель -->
+  <nav class="dock">
+    <button class="btn side" id="btnBuild"><i class="ic-hammer"></i><span>Стройка</span></button>
+    <button class="btn primary" id="btnNext"><span class="month-bar" id="monthBar"></span><span id="nextLbl">Следующий месяц</span></button>
+    <button class="btn side" id="btnBook"><i class="ic-book"></i><span>Тетрадь</span></button>
+  </nav>
+
+  <!-- Оверлеи: заставка, шторки, событие, итоги, концовка -->
+  <div id="layer" hidden></div>
+
+  <div class="toast" id="toast" hidden></div>
+</div>
+<script src="config.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

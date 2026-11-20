@@ -1,0 +1,10 @@
+bot/.env
+bot/data/
+bot/.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.env
+!.env.example
+*.sqlite3
+*.sqlite3-*
