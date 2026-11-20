@@ -106,11 +106,16 @@ export const netNow = (st) => totalRate(st) * (1 - costShare(st));
 
 /* ---------- Доработки: по SUB.max мелких улучшений на каждом уровне постройки ---------- */
 // каждая: +SUB.gain к доходу постройки за SUB.price цены следующего уровня
-export const SUB = { max: 3, gain: 0.1, price: 0.25 };
+// после цели 10 млн (st.tier ≥ late.fromTier) — 5 доработок помельче: +5% за 10% цены (в сумме +25% за ½ цены уровня),
+// чтобы в долгой игре покупка была чаще: по sim раз в 30–38 минут активной игры
+export const SUB = { max: 3, gain: 0.1, price: 0.25, late: { fromTier: 2, max: 5, gain: 0.05, price: 0.1 } };
+export const subCfg = (st) => ((st.tier || 0) >= SUB.late.fromTier ? SUB.late : SUB);
+export const subMax = (st) => subCfg(st).max;
+export const subPct = (st) => Math.round(subCfg(st).gain * 100);
 export const subDone = (st, id) => st.sub?.[id] || 0;
-export const subLeft = (st, id) => (BUILDINGS[id]?.kind === 'prod' && level(st, id) > 0 ? Math.max(0, SUB.max - subDone(st, id)) : 0);
-export const subPrice = (st, id) => Math.round(costAt(BUILDINGS[id], level(st, id)) * locK(st, id) * SUB.price);
-export const subInc = (st, id) => (incOf(st, id, level(st, id)) - (st.subInc?.[id] || 0)) * SUB.gain; // +10% дохода уровня (без прошлых доработок), ₽/мин
+export const subLeft = (st, id) => (BUILDINGS[id]?.kind === 'prod' && level(st, id) > 0 ? Math.max(0, subMax(st) - subDone(st, id)) : 0);
+export const subPrice = (st, id) => Math.round(costAt(BUILDINGS[id], level(st, id)) * locK(st, id) * subCfg(st).price);
+export const subInc = (st, id) => (incOf(st, id, level(st, id)) - (st.subInc?.[id] || 0)) * subCfg(st).gain; // +10% (после 10 млн +5%) дохода уровня (без прошлых доработок), ₽/мин
 export const subPayback = (st, id) => { const d = realGain(st, id, subInc(st, id)); return d > 0 ? subPrice(st, id) / d : Infinity; };
 export function canSub(st, id) {
   if (st.phase === 'clean') return 'сначала уборка';
@@ -129,7 +134,7 @@ export function buySub(st, id) {
   st.subN = (st.subN || 0) + 1;               // вложено в ферму — в капитал
   dailyProgress(st, 'build', 1);
   addXp(st, XP.sub);
-  addHistory(st, { m: st.month, t: `🔧 ${BUILDINGS[id].name}: доработка ${st.sub[id]}/${SUB.max} (+10% дохода, ${fmt(p)}).` });
+  addHistory(st, { m: st.month, t: `🔧 ${BUILDINGS[id].name}: доработка ${st.sub[id]}/${subMax(st)} (+${subPct(st)}% дохода, ${fmt(p)}).` });
   checkGoals(st);
   return null;
 }
