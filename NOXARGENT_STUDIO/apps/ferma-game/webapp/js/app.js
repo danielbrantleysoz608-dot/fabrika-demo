@@ -132,6 +132,8 @@ function hud() {
   $('#seasonIcon').className = 'ic-' + SEASON_ICON[m.season];
   $('#money').textContent = short(st.money);
   $('#money').classList.toggle('neg', st.money < 0);
+  { const lbl = $('#money').previousElementSibling; // «ДЕНЬГИ» → «ДОЛГ 516 МЛН», пока долг не погашен
+    if (lbl) { const d = st.debt; lbl.textContent = d > 0 ? `долг ${d >= 1e9 ? (d / 1e9).toFixed(1).replace('.', ',') + ' млрд' : d >= 1e6 ? Math.round(d / 1e6) + ' млн' : d >= 1e3 ? Math.round(d / 1e3) + ' тыс' : Math.round(d)}` : 'ДЕНЬГИ'; lbl.classList.toggle('debt-lbl', st.debt > 0); } }
   fitText($('#money'));
   $('#hudHens').textContent = hens();
   $('#hudHives').textContent = hives();
@@ -253,7 +255,7 @@ function hint() {
   if (L('greenhouse') && !L('stove') && m >= 7) return say('Зимой теплица встанет. <b>Печка</b> — и огурцы в мороз втридорога!');
   if (E.monthReady(st)) return say('Месяц прошёл! Жми <b>«Следующий месяц»</b>.', 'happy');
   if (!E.canRepair(st)) return say(`Хватает на ремонт дома деда (${E.nextRepair(st).name.toLowerCase()})! <b>Тапни по дому</b> — там и письма деда.`, 'happy');
-  if (st.debt) return say(`Долг банку ${short(st.debt)}. Проценты капают — верни в Тетради → Расходы.`);
+  if (st.debt) return say(st.debtAuto > 0 ? `Долг ${short(st.debt)} — не хватило на зарплаты. Гасится сам: 30% каждого сбора. Тетрадь → Расходы.` : `Долг банку ${short(st.debt)}. Проценты капают — верни в Тетради → Расходы.`);
   say(`До цели — <b>${short(Math.max(0, E.goal(st) - E.ratingCapital(st)))}</b>. Улучшай постройки — тапни по любой!`, 'happy');
 }
 
@@ -613,6 +615,7 @@ layer.addEventListener('click', (e) => {
 });
 
 const ACTIONS = {
+  sub: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } doSub(id); },
   buy: (id, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } doBuy(id); },
   buyAnyway: (id) => doBuy(id, true),
   backToBuild: () => openBuild(),
@@ -808,8 +811,8 @@ function card(id) {
     const waiting = w && w.months > 0;
     const nowTag = waiting
       ? `<span class="tag wait">🌱 ${seasonLine(w, L > 0)}</span>`
-      : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id))}/мин` : `≈ ${short(E.incOf(st, id, 1) * k)}/мин`}</span>`;
-    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.incOf(st, id, 1) * k)}/мин в сезон</span>` : ''}${L < max ? `<span class="tag inc">${L ? `+${short(next)}/мин за уровень` : ''}</span>`.replace('<span class="tag inc"></span>', '') : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
+      : `<span class="tag inc">${L ? `сейчас ${short(E.rate(st, id) * (1 - E.costShare(st)))}/мин чистыми` : `≈ ${short(E.realGain(st, id, E.incOf(st, id, 1)))}/мин чистыми`}</span>`;
+    stats = `${nowTag}${waiting && !L ? `<span class="tag inc">≈ ${short(E.incOf(st, id, 1) * k * (1 - E.costShare(st)))}/мин чистыми в сезон</span>` : ''}${L < max && L ? `<span class="tag inc">+${short(E.realGain(st, id, next / k))}/мин за уровень</span>` : ''}${L < max ? `<span class="tag">окупится за ${payText(E.paybackMin(st, id))}</span>` : ''}<span class="tag">${b.seasonText}</span>`;
   } else if (b.kind === 'gear') {
     stats = `<span class="tag inc">окно поклёвки ${(E.biteWindow(st) / 1000).toFixed(2).replace('.', ',')} с${L < max ? ` → ${(0.6 * (1 + 0.25 * (L + 1))).toFixed(2).replace('.', ',')} с` : ''}</span><span class="tag">редкая рыба ×${1 + 0.5 * L}${L < max ? ` → ×${1 + 0.5 * (L + 1)}` : ''}</span>`;
   } else if (b.kind === 'boost') {
@@ -819,12 +822,21 @@ function card(id) {
   const label = L >= max ? (b.kind === 'once' ? '✔ Построено' : '✔ Максимум')
     : lock && !lock.startsWith('не хватает') ? cap1(lock)
       : `${L ? `Улучшить до ур. ${L + 1}` : 'Построить'} · ${short(price)}`;
-  return `<div class="card ${L >= max ? 'done' : ''} ${lock && L < max ? 'lock' : ''}" id="card-${id}">
+  return `<div class="card ${L >= max && !E.subLeft(st, id) ? 'done' : ''} ${lock && L < max ? 'lock' : ''}" id="card-${id}">
     <h3>${b.name}</h3><div class="price">${L >= max ? '' : short(price)}</div>
     ${b.loc && b.loc !== 'home' ? `<div class="loc-tag">📍 ${LOC_BY_ID[b.loc].name}</div>` : ''}
-    <p>${b.desc}</p>${lvl}<div class="tags">${stats}</div>
+    <p>${b.desc}</p>${lvl}<div class="tags">${stats}</div>${subRow(id)}
     ${L >= max ? `<div class="tag ok">${label}</div>` : `<button class="btn primary go" data-act="buy" data-id="${id}" ${lock ? `data-lock="${cap1(lock)}"` : ''}>${label}</button>`}
   </div>`;
+}
+// доработки: 3 мелких улучшения на каждом уровне (+10% дохода за ¼ цены уровня)
+function subRow(id) {
+  if (BUILDINGS[id].kind !== 'prod' || !E.level(st, id)) return '';
+  const done = E.subDone(st, id), left = E.subLeft(st, id), why = E.canSub(st, id);
+  const dots = Array.from({ length: E.SUB.max }, (_, i) => `<i class="${i < done ? 'on' : ''}"></i>`).join('');
+  if (!left) return `<div class="subs"><span class="sub-dots">${dots}</span><span class="sub-txt">🔧 Доработки уровня сделаны — дальше новый уровень</span></div>`;
+  return `<div class="subs"><span class="sub-dots">${dots}</span><span class="sub-txt">🔧 Доработка ${done + 1}/${E.SUB.max}: +10% дохода (+${short(E.realGain(st, id, E.subInc(st, id)))}/мин), окупится за ${payText(E.subPayback(st, id))}</span>
+    <button class="btn sub-btn" data-act="sub" data-id="${id}" ${why ? `data-lock="${cap1(why)}"` : ''}>${short(E.subPrice(st, id))}</button></div>`;
 }
 
 function openBuild(focus, keep = false) {
@@ -839,7 +851,7 @@ function openBuild(focus, keep = false) {
   const nr = E.nextRepair(st);
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
-  sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b>${st.tier >= 1 ? ` · чистыми ≈ <b>${short(E.netRate(st))}/мин</b>` : ''}</div>
+  sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b>${st.debt ? ` · долг ${short(st.debt)}` : ''} · доход чистыми <b>${short(E.netNow(st))}/мин</b></div>
     ${st.tier >= 1 && E.farmLevel(st) < goalLevel(st.tier) ? fairCard() : ''}${houseCard}${workersCard()}${goodsCard()}${decorCard()}${open.map(card).join('')}${st.tier >= 1 && E.farmLevel(st) >= goalLevel(st.tier) ? fairCard() : ''}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
@@ -864,6 +876,16 @@ function openBuilding(id) {
     <button class="btn wide" data-act="close">Закрыть</button>`, 'building');
 }
 
+function doSub(id) {
+  const err = E.buySub(st, id);
+  if (err) return toast(err);
+  notify('success'); sfx.build();
+  render(); persist(true);
+  const p = SLOT_POS[id] || READY_POSITIONS[id];
+  if (p) { const [x, y] = Array.isArray(p) ? p : [p.x, p.y]; floatText(svg, x, y - 10, `🔧 +10%`, '#2f8a2f'); }
+  if (layer.dataset.kind === 'building') openBuilding(id);
+  else if (layer.dataset.kind === 'build') reopenKeepScroll(() => openBuild(null, true), '#card-' + id);
+}
 function doBuy(id, sure = false) {
   const firstTime = !E.level(st, id);
   // сезонная постройка вне сезона — предупреждаем перед покупкой
@@ -924,11 +946,11 @@ function openBook(tab = 'tasks') {
   }
   if (tab === 'costs') {
     const rows = [...st.ledger].reverse().map(l => `<tr><td>${monthOf(l.m).name}${yearOf(l.m) > 1 ? ` <small>г.${yearOf(l.m)}</small>` : ''}</td><td class="plus">+${short(l.income, '')}</td><td class="minus">−${short(l.expense, '')}${l.wages ? `<small>зарплаты ${short(l.wages, '')}</small>` : ''}</td><td><b>${short(l.money, '')}</b></td></tr>`).join('');
-    body = `<div class="money-line">Этот месяц: собрано <b>${short(st.monthIncome)}</b> · доход ${short(E.totalRate(st))}/мин</div>
+    body = `<div class="money-line">Этот месяц: собрано <b>${short(st.monthIncome)}</b> · доход чистыми ${short(E.netNow(st))}/мин</div>
       <table class="ledger"><thead><tr><th>Месяц</th><th>Доход</th><th>Расход</th><th>В кармане</th></tr></thead>
       <tbody>${rows || '<tr><td colspan="4" class="empty">Первые итоги — в конце месяца</td></tr>'}</tbody></table>
-      <p class="note">В конце месяца: корм, свет и налоги — 10% от собранного${st.debt ? ', проценты по кредиту — 5% от долга' : ''}${WORKER_ORDER.some(w => E.hired(st, w)) ? ', зарплаты работникам: ' + WORKER_ORDER.filter(w => E.hired(st, w)).map(w => `${WORKERS[w].role.toLowerCase()} ≈ ${short(E.wageEstimate(st, w))}`).join(', ') : ''}.</p>
-      ${st.debt ? `<div class="debt">Долг банку: <b>${fmt(st.debt)}</b> · 5% в месяц<button class="btn primary go" data-act="repay">Вернуть долг</button></div>` : ''}`;
+      <p class="note">В конце месяца: корм, свет и налоги — 15% от собранного${st.debt > (st.debtAuto || 0) ? ', проценты по кредиту — 5% от долга' : ''}${WORKER_ORDER.some(w => E.hired(st, w)) ? ', зарплаты работникам: ' + WORKER_ORDER.filter(w => E.hired(st, w)).map(w => `${WORKERS[w].role.toLowerCase()} ≈ ${short(E.wageEstimate(st, w))}`).join(', ') : ''}.</p>
+      ${st.debt ? `<div class="debt">Долг: <b>${fmt(st.debt)}</b> · ${st.debtAuto > 0 ? `${st.debtAuto >= st.debt ? 'без процентов, ' : ''}гасится сам: 30% каждого сбора` : '5% в месяц'}<button class="btn primary go" data-act="repay">Вернуть сразу</button></div>` : ''}`;
   }
   if (tab === 'story') body = `<ul class="todo story">${[...st.history].reverse().slice(0, 80).map(h => `<li${h.d ? ' class="dec"' : ''}><span class="m">${monthOf(h.m).name}${yearOf(h.m) > 1 ? ' г.' + yearOf(h.m) : ''}</span>${h.d ? '🧭 ' : ''}${h.t}</li>`).join('')}</ul>`;
   if (tab === 'cards') body = albumGrid();
@@ -1099,7 +1121,7 @@ function farmInfo() {
   const html = `<div class="fi-card">
       <div class="fi-head"><span class="fi-title">Моя ферма</span><span class="fi-sub">Год ${yearOf(st.month)} · ${monthOf(st.month).name}</span></div>
       <div class="fi-stats">
-        <div><span>Доход</span><b>${short(E.totalRate(st))}/мин</b></div>
+        <div><span>Доход чистыми</span><b>${short(E.netNow(st))}/мин</b></div>
         <div><span>Капитал</span><b>${short(E.ratingCapital(st))}</b></div>
         <div><span>Постройки</span><b>${built} · ур. ${levels}</b></div>
         <div><span>Открытки</span><b>${cards}/${ACHIEVEMENT_ORDER.length}</b></div>
@@ -1306,8 +1328,8 @@ function goodsCard() {
     <button class="btn primary go" data-act="goods">Открыть товары</button></div>`;
 }
 function openGoods() {
-  sheet('🌱 Товары фермы', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход <b>${short(E.totalRate(st))}/мин</b></div>
-    ${goodsRows()}<p class="note">Цена в ₽ растёт вместе с доходом фермы (расходник — 15–25 минут дохода, оборудование — 1–2 часа). За ⭐ — в Telegram.</p>`, 'goods');
+  sheet('🌱 Товары фермы', `<div class="money-line">В кармане: <b>${short(st.money)}</b> · доход чистыми <b>${short(E.netNow(st))}/мин</b></div>
+    ${goodsRows()}<p class="note">Цена в ₽ — от дохода тех построек, на которые товар действует: расходник — половина прибавки за 30 минут, оборудование окупается за несколько часов. За ⭐ — в Telegram.</p>`, 'goods');
 }
 function decorCard() {
   const n = E.decorCount(st), next = DECOR.find(d => !E.hasDecor(st, d.id) && d.tier <= st.tier);
@@ -1489,7 +1511,11 @@ function rivalBar(show) {
 let lastTease = Date.now();
 function neighborTick() {
   const ev = E.neighborCheck(st);
-  if (ev?.type === 'ahead') {
+  if (ev?.type === 'ahead' && ev.again) {
+    notify('success');
+    say('Снова обогнали <b>соседа Петровича</b>! Награду за эту цель он уже отдал — следующая будет на новой цели.', 'happy', 6000);
+    render(); persist(true);
+  } else if (ev?.type === 'ahead') {
     notify('success'); sfx.fanfare();
     floatText(svg, 230, 330, `+${short(ev.prize)} за обгон!`, '#2f8a2f');
     say(`Мы <b>обогнали соседа Петровича</b>! Награда — <b>+${short(ev.prize)}</b> и +20 ⭐. Он аж шапку уронил!`, 'happy', 7000);
@@ -1847,8 +1873,8 @@ function openRules() {
     <p><b>10. Локации.</b> «🗺 Карта», стрелки ◀ ▶ или свайп. На 1 млн открывается «Река и луг» (пруд — раз в 15 минут, рыба дороже), дальше — Райцентр и Агрохолдинг.</p>
     <p><b>11. Работники.</b> «👷 Работники» в «Стройке» и в разделе «Моя ферма»: помощник сам собирает урожай, водитель сдаёт заказы. Зарплата — раз в месяц.</p>
     <p><b>12. Цели и уровень ⭐.</b> Цель открывается, когда есть и капитал, и уровень фермы. Опыт — за сбор урожая, заказы, стройку, рыбалку, задания дня, решения в событиях и ярмарку в райцентре (Стройка, раз в 3 часа, за ₽). Капитал уже набран, а уровня не хватает дольше 15 минут — опыт ×2. Тапни по ⭐ сверху — там всё написано.</p>
-    <p><b>13. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда.</p>
-    <p><b>14. Большое хозяйство.</b> С «Реки и луга» каждая постройка и каждый уровень стоят около 35 минут дохода «чистыми» — новое открытие примерно раз в полчаса игры. Чем больше ферма, тем больше содержание (видно в итогах месяца), а новые постройки окупаются всё дольше — путь к миллиардам долгий.</p>
+    <p><b>13. Сосед Петрович.</b> Полоска сверху: «Ты — … · Сосед — …». Обгонишь — награда (одна на каждую цель: 1 млн, 10 млн…).</p>
+    <p><b>14. Цены и доработки.</b> У каждой постройки своя цена, каждый следующий уровень дороже в 1,6–2 раза, а доход растёт медленнее — путь к миллиардам долгий. На каждом уровне есть 3 доработки 🔧: +10% дохода постройки за четверть цены уровня. Расходы месяца: корм, свет и налоги — 15%, зарплаты всех работников — около 4%. Не хватило денег на расходы — берётся долг без процентов и гасится сам из дохода. Доход и окупаемость на экране — уже «чистыми», после расходов.</p>
     <p><b>15. Доверие покупателей 🤝</b> (значок рядом с соседом, 0–100, старт 50). Растёт: заказы сданы вовремя, серия заказов без отказов, свежий урожай (собран до того, как пузырь полон), честные решения. Падает: отказ от заказа, просроченный заказ (⏳ на карточке), перестоявший урожай, нечестные решения — задрать цены, продать подпорченное, приукрасить. Влияет на цену продажи: от −20% (0 🤝) до +30% (100 🤝). При высоком доверии приходят ресторан и кафе-пекарня с выгодными заказами, при низком — только мелкие.</p>
     <p><b>16. Решения с последствиями.</b> Каждое событие бывает один раз, а выбор влияет на следующие: пустишь завод — река помутнеет, откажешь — завод уйдёт к соседу. Всё построенное появляется на ферме (поливалки, панели, дорога, завод), временные эффекты — значком с таймером сверху. Лента решений — «Тетрадь → История».</p>
     <p>Ферму можно листать пальцем вверх-вниз — внизу луг, там появятся новые постройки.</p>

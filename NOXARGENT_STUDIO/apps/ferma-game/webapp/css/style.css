@@ -821,3 +821,13 @@ button { font: inherit; color: inherit; cursor: pointer; }
 /* сундучок — над кнопкой «Собрать всё» */
 .chest-btn { bottom: calc(172px + var(--safe-bot)); }
 #app.cut .collect-btn { opacity: 0; pointer-events: none; }
+
+/* ===== Доработки (3 на уровень) ===== */
+.card .subs { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; background: #f6efe0; border: 2px dashed #d9c6a2; border-radius: 10px; padding: 6px 8px; }
+.sub-dots { display: flex; gap: 3px; }
+.sub-dots i { width: 10px; height: 10px; border-radius: 50%; background: #eadcc0; border: 1.5px solid #c9b48e; }
+.sub-dots i.on { background: #6fae66; border-color: #3f7a3a; }
+.sub-txt { font-size: 12px; font-weight: 700; color: #6b5444; line-height: 1.3; min-width: 0; }
+.btn.sub-btn { min-height: 38px; padding: 4px 10px; font-size: 14px; white-space: nowrap; }
+.btn.sub-btn[data-lock] { background: #cfc4ad; border-color: #a49579; box-shadow: 0 3px 0 #a49579; color: #fff; }
+.debt-lbl { color: #d8392d !important; white-space: nowrap; }

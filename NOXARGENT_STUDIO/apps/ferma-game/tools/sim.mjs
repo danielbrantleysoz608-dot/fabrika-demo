@@ -22,25 +22,31 @@ function shop(st, now, trace, log) {
   // или оно заметно выгоднее (×1.3) лучшего из доступного
   for (let guard = 0; guard < 80; guard++) {
     let best = null, bestV = 0, bestAff = null, bestAffV = 0;
-    for (const id of BUILD_ORDER) {
-      const why = E.canBuy(st, id);
+    // кандидаты: уровни построек и доработки ('sub:id')
+    const cands = [...BUILD_ORDER, ...(E.buySub ? BUILD_ORDER.filter(id => E.subLeft(st, id) > 0).map(id => 'sub:' + id) : [])];
+    for (const id of cands) {
+      const sub = id.startsWith('sub:'), bid = sub ? id.slice(4) : id;
+      const why = sub ? E.canSub(st, bid) : E.canBuy(st, id);
       if (why && !why.startsWith('не хватает')) continue;
-      const v = E.buyValue(st, id) / E.priceOf(st, id);
+      const v = sub ? E.subValue(st, bid) / E.subPrice(st, bid) : E.buyValue(st, id) / E.priceOf(st, id);
       if (v > bestV) { bestV = v; best = id; }
       if (!why && v > bestAffV) { bestAffV = v; bestAff = id; }
     }
+    const price = (id) => (id.startsWith('sub:') ? E.subPrice(st, id.slice(4)) : E.priceOf(st, id));
+    const can = (id) => (id.startsWith('sub:') ? E.canSub(st, id.slice(4)) : E.canBuy(st, id));
+    const doBuy = (id) => (id.startsWith('sub:') ? E.buySub(st, id.slice(4)) : E.buy(st, id));
     // ремонт дома деда — тоже кандидат (+3% ко всему доходу)
     const rv = E.repairValue(st);
     if (rv > bestV && !E.canRepair(st)) { E.repairHouse(st); if (trace) log.push(`${fmtT(now).padStart(12)}  Дом деда → этап ${st.house}`); continue; }
     if (!best) break;
     let pick = best;
-    if (E.canBuy(st, best)) {
-      const wait = (E.priceOf(st, best) - st.money) / Math.max(1, E.totalRate(st));
+    if (can(best)) {
+      const wait = (price(best) - st.money) / Math.max(1, E.totalRate(st));
       if (wait < 3 || !bestAff || bestV > 1.3 * bestAffV) break; // копим на заметно более выгодное
       pick = bestAff;
     }
-    if (E.buy(st, pick)) break;
-    if (trace) log.push(`${fmtT(now).padStart(12)}  ${BUILDINGS[pick].name} → ур.${st.lv[pick]}  (капитал ${E.fmt(E.capital(st))})`);
+    if (doBuy(pick)) break;
+    if (trace) log.push(`${fmtT(now).padStart(12)}  ${pick.startsWith('sub:') ? BUILDINGS[pick.slice(4)].name + ' → доработка' : BUILDINGS[pick].name + ' → ур.' + st.lv[pick]}  (капитал ${E.fmt(E.capital(st))})`);
   }
 }
 
@@ -77,7 +83,7 @@ function visit(st, now, r, trace, log) {
     else if (now - o.at > 40 * MIN && E.orderStalled(st, o)) E.declineOrder(st, i, now); // висит из-за сезона — отказ без штрафа
   }
   // ярмарка в райцентре: капитал уже есть, а уровня нет — едем сразу (раньше построек); иначе — если денег вдвое больше цены
-  if (E.buyFair && st.tier >= 1 && E.fairLeft(st, now) <= 0 && st.money >= E.fairPrice(st) * (E.catchUp(st) ? 1 : 2)) E.buyFair(st, now);
+  if (E.buyFair && st.tier >= 1 && E.fairLeft(st, now) <= 0 && E.catchUp(st) && st.money >= E.fairPrice(st)) E.buyFair(st, now); // ярмарка — только когда капитал есть, а уровня не хватает (как делает обычный игрок)
   hireWorkers(st, now, trace, log);
   shop(st, now, trace, log);
   if (E.monthReady(st)) {
