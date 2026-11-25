@@ -27,6 +27,7 @@ class Config:
     require_sub: bool = True
     chat_id: str = "@predstav_chat"  # чат фермеров (обязательно вступить); пусто — только канал
     chat_url: str = "https://t.me/predstav_chat"
+    bot_username: str = "ferma_deda_bot"  # имя бота для ссылок в игре (известно до связи с Telegram)
 
 
 def load() -> Config:
@@ -51,4 +52,5 @@ def load() -> Config:
         require_sub=os.getenv("REQUIRE_SUB", "1") == "1",  # обязательная подписка на канал и чат; выключить — REQUIRE_SUB=0 в .env
         chat_id=os.getenv("CHAT_ID", "@predstav_chat"),
         chat_url=os.getenv("CHAT_URL", "https://t.me/predstav_chat"),
+        bot_username=os.getenv("BOT_USERNAME", "ferma_deda_bot").lstrip("@"),
     )

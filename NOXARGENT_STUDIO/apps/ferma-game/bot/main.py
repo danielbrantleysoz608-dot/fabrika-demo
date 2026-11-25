@@ -97,20 +97,14 @@ async def run(web_only: bool) -> None:
     from shop import init_awards
     await init_awards(db)
     bot = None
-    username = ""
+    username = CFG.bot_username
     if not web_only:
         if not CFG.bot_token or not CFG.webapp_url.startswith("https://"):
             raise SystemExit("Нужны BOT_TOKEN и WEBAPP_URL (https://…) в .env")
+        # Здесь — только то, что не ходит в сеть. Связь с Telegram — в фоне (bot_main), чтобы игра открывалась,
+        # даже если после перезагрузки сервера Telegram ещё недоступен.
         bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
         tgnet.HEALTH.setup(bot, CFG.admin_id)  # долгие сбои связи — одно сообщение хозяйке в час
-        me = await tgnet.net_retry(bot.get_me, what="запуск")
-        username = me.username or ""
-        # кнопка меню рядом с полем ввода — тоже открывает игру
-        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/")))
-        await bot.set_my_commands([BotCommand(command="start", description="Играть в «Ферму деда»"),
-                                   BotCommand(command="myid", description="Мой Telegram id"),
-                                   BotCommand(command="help", description="Как играть"),
-                                   BotCommand(command="paysupport", description="Вопросы по оплате")])
         # модерация чата фермеров (группа); всё игровое — в роутере private (только личка)
         mod = moderation.ModDB(db)
         await mod.init()
@@ -120,11 +114,6 @@ async def run(web_only: bool) -> None:
         await CAP.init()
         dp.include_router(captcha_mod.make_router(CAP, mod))
         dp.include_router(moderation.make_router(mod, CFG.chat_id, CFG.admin_id))
-        if CFG.chat_id:  # подсказки команд модерации — видят только админы чата
-            try:
-                await bot.set_my_commands(moderation.ADMIN_COMMANDS, scope=BotCommandScopeChatAdministrators(chat_id=CFG.chat_id))
-            except Exception as e:  # noqa: BLE001 — бот ещё не в чате
-                log.warning("подсказки команд для чата: %s", e)
         private.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))
         global SUB
         SUB = subscription.SubChecker(bot, subscription.default_needs(CFG.channel_id, CFG.channel_url, CFG.chat_id, CFG.chat_url),
@@ -139,8 +128,8 @@ async def run(web_only: bool) -> None:
             await message.answer("Жми «Играть» 👇", reply_markup=play_keyboard())
         private.include_router(fallback)
         dp.include_router(private)
-        log.info("Бот @%s запущен%s", username, " (ТЕСТОВЫЕ ЦЕНЫ: всё по 1 ⭐)" if CFG.test_prices else "")
 
+    # 1) сначала игра: веб-сервер поднимается сразу, без Telegram
     app = make_app(CFG, db, username, shop=shop, bot=bot,
                    sub=SUB or subscription.SubChecker(None, CFG.channel_id, False))
     runner = web.AppRunner(app)
@@ -151,7 +140,7 @@ async def run(web_only: bool) -> None:
     cap_task = asyncio.create_task(CAP.run(bot)) if bot and CAP else None
     try:
         if bot:
-            await dp.start_polling(bot)
+            await bot_main(bot)   # 2) потом бот — с повторами, пока Telegram не ответит
         else:
             await asyncio.Event().wait()
     finally:
@@ -163,6 +152,41 @@ async def run(web_only: bool) -> None:
         if bot:
             await bot.session.close()
 
+
+async def bot_setup(bot: Bot) -> str:
+    """Первое обращение к Telegram: имя бота, кнопка меню, подсказки команд. Сеть — с повторами (tgnet)."""
+    me = await tgnet.net_retry(bot.get_me, what="запуск бота")
+    for what, call in [
+        ("кнопка меню", lambda: bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/")))),
+        ("команды", lambda: bot.set_my_commands([BotCommand(command="start", description="Играть в «Ферму деда»"),
+                                                 BotCommand(command="myid", description="Мой Telegram id"),
+                                                 BotCommand(command="help", description="Как играть"),
+                                                 BotCommand(command="paysupport", description="Вопросы по оплате")])),
+        ("команды модерации", lambda: bot.set_my_commands(moderation.ADMIN_COMMANDS, scope=BotCommandScopeChatAdministrators(chat_id=CFG.chat_id))
+         if CFG.chat_id else asyncio.sleep(0)),
+    ]:
+        try:
+            await tgnet.net_retry(call, what=what)
+        except Exception as e:  # noqa: BLE001 — не критично (бот ещё не в чате и т.п.), игра и бот работают
+            log.warning("%s: %s", what, e)
+    return me.username or ""
+
+
+async def bot_main(bot: Bot) -> None:
+    """Бот подключается к Telegram, пока не получится (пауза растёт до 5 минут); игра всё это время открыта."""
+    pause = 10
+    while True:
+        try:
+            username = await bot_setup(bot)
+            break
+        except Exception as e:  # noqa: BLE001
+            log.warning("Telegram недоступен при запуске бота (%s) — повтор через %s с; игра работает", e, pause)
+            await asyncio.sleep(pause)
+            pause = min(pause * 2, 300)
+    if CAP and username:
+        CAP.game_bot = username
+    log.info("Бот @%s запущен%s", username, " (ТЕСТОВЫЕ ЦЕНЫ: всё по 1 ⭐)" if CFG.test_prices else "")
+    await dp.start_polling(bot)  # дальше сетевые сбои aiogram переживает сам (переподключается)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")

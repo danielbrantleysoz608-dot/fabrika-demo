@@ -125,6 +125,7 @@ WantedBy=timers.target
 UNIT
 systemctl daemon-reload
 systemctl enable -q --now ferma-backup.timer
+bash "$APP/deploy/autostart.sh"   # автозапуск после перезагрузки + сторож раз в 5 минут
 
 say "7/7 nginx + HTTPS для $DOMAIN"
 cat > /etc/nginx/sites-available/ferma <<NGX
