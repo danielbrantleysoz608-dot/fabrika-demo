@@ -19,6 +19,7 @@ from db import DB
 from shop import ShopDB, make_router, weekly_loop
 import captcha as captcha_mod
 import moderation
+import tgnet
 import sub as subscription
 from web import make_app
 
@@ -101,7 +102,8 @@ async def run(web_only: bool) -> None:
         if not CFG.bot_token or not CFG.webapp_url.startswith("https://"):
             raise SystemExit("Нужны BOT_TOKEN и WEBAPP_URL (https://…) в .env")
         bot = Bot(CFG.bot_token, default=DefaultBotProperties(parse_mode="HTML"))
-        me = await bot.get_me()
+        tgnet.HEALTH.setup(bot, CFG.admin_id)  # долгие сбои связи — одно сообщение хозяйке в час
+        me = await tgnet.net_retry(bot.get_me, what="запуск")
         username = me.username or ""
         # кнопка меню рядом с полем ввода — тоже открывает игру
         await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/")))

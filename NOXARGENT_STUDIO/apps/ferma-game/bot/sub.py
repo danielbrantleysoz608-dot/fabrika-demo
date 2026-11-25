@@ -2,7 +2,8 @@
 
 Бот должен быть администратором и канала, и чата (права не нужны — только статус админа).
 - Проверяем при входе (/start, открытие игры) и не чаще раза в 6 часов, пока подписка есть.
-- Если Telegram не ответил или бот ещё не админ — НЕ блокируем игрока (пускаем) и один раз пишем владельцу.
+- Сетевой сбой (ClientOSError, таймаут, SSL) — 3 попытки с паузой; не вышло — пускаем игрока, владельцу НЕ пишем
+  (о сбоях дольше 10 минут — одно сообщение, см. tgnet.py). Бот не админ (так ответил Telegram) — пускаем и один раз пишем владельцу.
 - Владельцу (ADMIN_ID) проверка не нужна. Прогресс при отписке не трогаем — просто снова просим подписаться.
 """
 from __future__ import annotations
@@ -14,6 +15,8 @@ from dataclasses import dataclass
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiohttp import web
+
+from tgnet import is_network_error, is_rights_error, net_retry
 
 log = logging.getLogger("ferma.sub")
 OK_STATUSES = {"creator", "administrator", "member", "restricted"}
@@ -51,15 +54,25 @@ class SubChecker:
         if hit and not fresh and time.time() - hit[1] < (CACHE_OK if hit[0] else CACHE_NO):
             return hit[0]
         try:
-            m = await self.bot.get_chat_member(chat_id=need.chat, user_id=uid)
+            # сетевой сбой (ClientOSError, таймаут, SSL) — 3 попытки с паузой; ответ Telegram — сразу
+            m = await net_retry(lambda: self.bot.get_chat_member(chat_id=need.chat, user_id=uid), what=f"подписка {need.chat}")
             ok = m.status in OK_STATUSES and getattr(m, "is_member", True) is not False
-        except Exception as e:  # noqa: BLE001 — сбой Telegram или бот не админ: не блокируем
+        except Exception as e:  # noqa: BLE001 — не блокируем игрока
+            if is_network_error(e):
+                # связь с Telegram: хозяйке не пишем (о долгих сбоях — одно сообщение в tgnet.HEALTH), не кэшируем
+                log.warning("проверка %s: сетевой сбой после повторов: %s", need.chat, e)
+                return True
             log.warning("проверка %s не работает: %s", need.chat, e)
-            if need.key not in self.warned and self.admin_id:
-                self.warned.add(need.key)
+            key = need.key + (":rights" if is_rights_error(e) else ":api")
+            if key not in self.warned and self.admin_id:
+                self.warned.add(key)
+                text = (f"⚠️ Не могу проверить подписку на {need.chat}: Telegram отвечает, что бот там не администратор.\n"
+                        "Сделайте бота администратором (права не нужны). Пока игроков пускаю без этой проверки."
+                        if is_rights_error(e) else
+                        f"⚠️ Не могу проверить подписку на {need.chat}: Telegram ответил «{str(e)[:200]}».\n"
+                        "Проверьте CHANNEL_ID / CHAT_ID в .env. Пока игроков пускаю без этой проверки.")
                 try:
-                    await self.bot.send_message(self.admin_id, f"⚠️ Не могу проверить подписку на {need.chat}: {e}\n"
-                                                               "Сделайте бота администратором (права не нужны). Пока игроков пускаю без этой проверки.")
+                    await self.bot.send_message(self.admin_id, text)
                 except Exception:  # noqa: BLE001
                     pass
             return True

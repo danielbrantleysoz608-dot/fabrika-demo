@@ -24,6 +24,7 @@ import time
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType, MessageEntityType
 from aiogram.filters import Command, CommandObject
+from tgnet import is_network_error, is_rights_error
 from aiogram.types import BotCommand, ChatMemberUpdated, ChatPermissions, Message, User
 
 log = logging.getLogger("ferma.mod")
@@ -261,8 +262,10 @@ def make_router(mod: ModDB, chat_target: str, owner_id: int = 0) -> Router:
                 try:
                     await fn(message, command)
                 except Exception as e:  # noqa: BLE001
-                    s = str(e).lower()
-                    if "not enough rights" in s or "rights" in s or "administrator" in s or "can't" in s or "cant" in s:
+                    if is_network_error(e):  # связь с Telegram, не права
+                        log.warning("модерация: сетевой сбой: %s", e)
+                        await say(message, "📡 Telegram не ответил — повторите команду через минуту.", ttl=15)
+                    elif is_rights_error(e) or "can't" in str(e).lower():
                         await no_rights(message, e)
                     else:
                         log.exception("модерация: %s", e)
@@ -411,7 +414,10 @@ def make_router(mod: ModDB, chat_target: str, owner_id: int = 0) -> Router:
         try:
             await message.delete()
         except Exception as e:  # noqa: BLE001
-            await no_rights(message, e)
+            if is_rights_error(e):
+                await no_rights(message, e)
+            else:
+                log.warning("антиспам: не удалил: %s", e)
             return
         await mod.log(message.chat.id, None, u.id, "antispam", (message.text or message.caption or "")[:200])
         left = int((NEWBIE_S - (time.time() - j)) // 3600) + 1

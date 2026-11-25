@@ -27,6 +27,7 @@ from collections import deque
 
 from aiogram import Bot, F, Router
 from aiogram.enums import ChatType
+from tgnet import is_network_error, is_rights_error, net_retry
 from aiogram.types import (CallbackQuery, ChatMemberUpdated, ChatPermissions, InlineKeyboardButton, InlineKeyboardMarkup,
                            Message, User)
 
@@ -170,10 +171,10 @@ class Captcha:
         if not msg_id:
             return
         try:
-            await bot.delete_message(chat_id, msg_id)
+            await net_retry(lambda: bot.delete_message(chat_id, msg_id), what="удаление")
         except Exception as e:  # noqa: BLE001
             log.info("не удалил %s/%s: %s", chat_id, msg_id, e)
-            if "rights" in str(e).lower() or "can't be deleted" in str(e).lower():
+            if is_rights_error(e):
                 await self.need_rights(bot, chat_id, {"delete"})
 
     async def need_rights(self, bot: Bot, chat_id: int, missing: set[str], title: str = "") -> None:
@@ -194,8 +195,8 @@ class Captcha:
         if not self.chat_target:
             return set()
         try:
-            me = await bot.get_me()
-            m = await bot.get_chat_member(self.chat_target, me.id)
+            me = await net_retry(bot.get_me)
+            m = await net_retry(lambda: bot.get_chat_member(self.chat_target, me.id))
         except Exception as e:  # noqa: BLE001
             log.warning("права в чате: %s", e)
             return set()
@@ -211,6 +212,7 @@ class Captcha:
 
     async def _kick(self, bot: Bot, chat_id: int, user_id: int, reason: str, raid: bool = False) -> str:
         """Выгнать: бан + сразу разбан (можно зайти снова). 3 кика подряд — бан на сутки."""
+        """Сетевой сбой после повторов — исключение наверх (проверка остаётся, таймер попробует снова)."""
         now = int(self.clock())
         self.kicked[(chat_id, user_id)] = now
         row = await self._one("SELECT kicks FROM captcha_streak WHERE chat_id=? AND user_id=?", (chat_id, user_id))
@@ -218,13 +220,15 @@ class Captcha:
         long_ban = kicks >= KICK_STREAK_BAN
         try:
             if long_ban:
-                await bot.ban_chat_member(chat_id, user_id, until_date=now + STREAK_BAN_S)
+                await net_retry(lambda: bot.ban_chat_member(chat_id, user_id, until_date=now + STREAK_BAN_S), what="бан")
             else:
-                await bot.ban_chat_member(chat_id, user_id, until_date=now + 60)
-                await bot.unban_chat_member(chat_id, user_id, only_if_banned=True)
+                await net_retry(lambda: bot.ban_chat_member(chat_id, user_id, until_date=now + 60), what="кик")
+                await net_retry(lambda: bot.unban_chat_member(chat_id, user_id, only_if_banned=True), what="разбан")
         except Exception as e:  # noqa: BLE001
             log.warning("кик %s: %s", user_id, e)
-            if "rights" in str(e).lower():
+            if is_network_error(e):
+                raise
+            if is_rights_error(e):
                 await self.need_rights(bot, chat_id, {"restrict"})
         await self.db.conn.execute("INSERT INTO captcha_streak(chat_id,user_id,kicks,updated_at) VALUES(?,?,?,?) "
                                    "ON CONFLICT(chat_id,user_id) DO UPDATE SET kicks=excluded.kicks, updated_at=excluded.updated_at",
@@ -254,7 +258,7 @@ class Captcha:
             for k in [k for k, t in self.recent.items() if t < now - 60]:
                 self.recent.pop(k, None)
         try:
-            m = await bot.get_chat_member(chat_id, user.id)
+            m = await net_retry(lambda: bot.get_chat_member(chat_id, user.id))
             if m.status in ADMIN_STATUSES:
                 return "skip"
         except Exception:  # noqa: BLE001
@@ -268,20 +272,26 @@ class Captcha:
             self.raid_until[chat_id] = now + RAID_S
             await self._raid_alert(bot, chat_id, title, len(q))
         if self.raid_until.get(chat_id, 0) > now:
-            await self._kick(bot, chat_id, user.id, "рейд: вход закрыт", raid=True)
+            try:
+                await self._kick(bot, chat_id, user.id, "рейд: вход закрыт", raid=True)
+            except Exception as e:  # noqa: BLE001 — сеть: пропускаем, рейд-бот всё равно без прав не напишет
+                log.warning("рейд-кик не вышел: %s", e)
             await self._delete(bot, chat_id, self.join_msgs.pop(key, None))
             return "raid"
         # сразу запрещаем писать
         try:
-            await bot.restrict_chat_member(chat_id, user.id, NO_PERMS)
+            await net_retry(lambda: bot.restrict_chat_member(chat_id, user.id, NO_PERMS), what="ограничение новичка")
         except Exception as e:  # noqa: BLE001
             log.warning("restrict %s: %s", user.id, e)
-            await self.need_rights(bot, chat_id, {"restrict"}, title)
+            if is_network_error(e):
+                return "neterror"  # связь: хозяйке не пишем
+            if is_rights_error(e):
+                await self.need_rights(bot, chat_id, {"restrict"}, title)
             return "norights"
         text, kb, token = challenge(user.id, user.full_name or user.username or "")
         sent = None
         try:
-            sent = await bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True)
+            sent = await net_retry(lambda: bot.send_message(chat_id, text, reply_markup=kb, disable_web_page_preview=True), what="капча")
         except Exception as e:  # noqa: BLE001
             log.warning("капча не отправилась: %s", e)
         await self.db.conn.execute(
@@ -341,21 +351,31 @@ class Captcha:
             await cq.answer("Проверка уже закончилась")
             return "gone"
         if token == p["token"]:
-            await self._pass(bot, p)
+            try:
+                await self._pass(bot, p)
+            except Exception:  # noqa: BLE001 — сеть: права вернуть не удалось, просим нажать ещё раз
+                await cq.answer("Связь с Telegram барахлит — нажми ещё раз через пару секунд 🙏", show_alert=True)
+                return "neterror"
             await cq.answer("Добро пожаловать! 🌾")
             return "pass"
         tries = p["tries"] + 1
         if tries >= TRIES:
             await cq.answer("Не получилось 🙁 Можно зайти снова и попробовать ещё раз")
+            try:
+                await self._kick(bot, chat_id, uid, "две ошибки")
+            except Exception:  # noqa: BLE001 — сеть: выгонит таймер (проверка остаётся с истёкшим сроком)
+                await self.db.conn.execute("UPDATE captcha_pending SET deadline=0 WHERE chat_id=? AND user_id=?", (chat_id, uid))
+                await self.db.conn.commit()
+                return "kick"
             await self._finish(bot, p)
-            await self._kick(bot, chat_id, uid, "две ошибки")
             return "kick"
         text, kb, new_token = challenge(uid, p["name"], retry=True)
         await self.db.conn.execute("UPDATE captcha_pending SET token=?, tries=?, deadline=MAX(deadline, ?) WHERE chat_id=? AND user_id=?",
                                    (new_token, tries, int(self.clock()) + RETRY_MIN_S, chat_id, uid))
         await self.db.conn.commit()
         try:
-            await bot.edit_message_text(text, chat_id=chat_id, message_id=p["msg_id"], reply_markup=kb, disable_web_page_preview=True)
+            await net_retry(lambda: bot.edit_message_text(text, chat_id=chat_id, message_id=p["msg_id"], reply_markup=kb,
+                                                          disable_web_page_preview=True), what="новая картинка")
         except Exception as e:  # noqa: BLE001
             log.warning("капча не обновилась: %s", e)
         await cq.answer("Не то 🙈 Ещё одна попытка")
@@ -364,18 +384,21 @@ class Captcha:
     async def _pass(self, bot: Bot, p) -> None:
         chat_id, uid = p["chat_id"], p["user_id"]
         try:
-            chat = await bot.get_chat(chat_id)
+            chat = await net_retry(lambda: bot.get_chat(chat_id))
             perms = chat.permissions or DEFAULT_PERMS
         except Exception:  # noqa: BLE001
             perms = DEFAULT_PERMS
         try:
             if p["muted_until"] and p["muted_until"] > self.clock():  # мут от админа до входа — остаётся
-                await bot.restrict_chat_member(chat_id, uid, ChatPermissions(can_send_messages=False), until_date=p["muted_until"])
+                await net_retry(lambda: bot.restrict_chat_member(chat_id, uid, ChatPermissions(can_send_messages=False), until_date=p["muted_until"]))
             else:
-                await bot.restrict_chat_member(chat_id, uid, perms)
+                await net_retry(lambda: bot.restrict_chat_member(chat_id, uid, perms), what="снятие ограничений")
         except Exception as e:  # noqa: BLE001
             log.warning("не снял ограничения %s: %s", uid, e)
-            await self.need_rights(bot, chat_id, {"restrict"})
+            if is_network_error(e):
+                raise  # проверка остаётся, человек нажмёт ещё раз
+            if is_rights_error(e):
+                await self.need_rights(bot, chat_id, {"restrict"})
         await self._finish(bot, p)
         await self.db.conn.execute("DELETE FROM captcha_streak WHERE chat_id=? AND user_id=?", (chat_id, uid))
         await self._log(chat_id, uid, "pass")
@@ -395,8 +418,12 @@ class Captcha:
         async with self.db.conn.execute("SELECT * FROM captcha_pending WHERE deadline<=?", (now,)) as c:
             expired = await c.fetchall()
         for p in expired:
+            try:
+                await self._kick(bot, p["chat_id"], p["user_id"], "нет ответа 3 минуты")
+            except Exception as e:  # noqa: BLE001 — сеть: проверка остаётся, попробуем на следующем тике
+                log.warning("таймаут-кик отложен: %s", e)
+                continue
             await self._finish(bot, p)
-            await self._kick(bot, p["chat_id"], p["user_id"], "нет ответа 3 минуты")
         async with self.db.conn.execute("SELECT chat_id, msg_id FROM captcha_cleanup WHERE delete_at<=?", (now,)) as c:
             old = await c.fetchall()
         for chat_id, msg_id in old:
