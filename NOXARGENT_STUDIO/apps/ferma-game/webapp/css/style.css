@@ -831,3 +831,9 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn.sub-btn { min-height: 38px; padding: 4px 10px; font-size: 14px; white-space: nowrap; }
 .btn.sub-btn[data-lock] { background: #cfc4ad; border-color: #a49579; box-shadow: 0 3px 0 #a49579; color: #fff; }
 .debt-lbl { color: #d8392d !important; white-space: nowrap; }
+
+/* обучение: карточка Курятника первой и подсвечена */
+.card.tut-hl { border-color: #f2b632; box-shadow: 0 0 0 4px rgba(242,182,50,.45), 0 4px 0 rgba(59,42,31,.2); animation: tutGlow 1.6s ease-in-out infinite; }
+@keyframes tutGlow { 50% { box-shadow: 0 0 0 8px rgba(242,182,50,.2), 0 4px 0 rgba(59,42,31,.2); } }
+/* подсказка фермера не замирает вместе с игрой: облачко всегда видно (пауза игры не останавливает его появление) */
+#app.paused #coach, #app.paused #coach .coach-dim, #app.paused #coach .coach-bubble { animation-play-state: running !important; }

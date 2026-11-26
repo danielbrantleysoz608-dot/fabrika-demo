@@ -72,7 +72,7 @@ async def start(message: Message) -> None:
 @private.message(Command("help"))
 async def help_(message: Message) -> None:
     await message.answer(
-        "Тапай по постройкам — собирай урожай, выполняй заказы и копи опыт ⭐.\n"
+        "Тапай по постройкам — собирай урожай, выполняй заказы и копи опыт 🎖.\n"
         "Месяц длится 15 минут, потом — событие с выбором.\n"
         "Каждое воскресенье в 20:00 (МСК) — итоги рейтинга недели и приз лучшему фермеру.\n\n"
         "Прогресс сохраняется сам. Вопросы по оплате — /paysupport", reply_markup=play_keyboard())

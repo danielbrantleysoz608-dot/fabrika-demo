@@ -6,6 +6,8 @@ export const SCRAP_BONUS = 6_000;           // награда за уборку:
 export const MONTH_MS = 15 * 60 * 1000;     // 1 игровой месяц = 15 минут реального времени
 export const OFFLINE_CAP_MS = 2 * 60 * 60 * 1000; // офлайн копим максимум 2 часа
 export const STORAGE_MIN = 120;             // склад постройки вмещает 2 часа производства
+// постройки после 1 млн: уровни 1–3 окупаются за 1,5–3 ч, начиная с уровня STEEP.from+1 (4-го) каждый дороже ещё в k раз
+export const STEEP = { from: 3, k: 2.5 };
 export const LEVEL_COST_MULT = 2.0;         // цена каждого следующего уровня ×1.6
 export const INC_GROWTH = 1.3;             // прибавка дохода за каждый следующий уровень ×1.37 (не падает!)
 // Итог: окупаемость уровня растёт плавно — ×1.6/1.37 ≈ ×1.17 за уровень (≈12–15 мин на 1-м, ≈1 ч на 10-м).
@@ -99,25 +101,25 @@ export const BUILDINGS = {
   cow:        { product: 'milk', lvl: 4, kind: 'prod', name: 'Корова', cost: 10800, inc: 375, unit: 'л молока', price: 60, tier: 0, max: 10,
                 season: (m) => (m >= 9 ? 0.8 : 1), seasonText: 'круглый год', desc: 'Корова — дорогое удовольствие, но молоко каждый день. Каждый уровень — ещё корова.' },
   // --- Река и луг (после 1 млн) ---
-  honeyfield: { loc: 'river', product: 'honey', kind: 'prod', name: 'Пасека-поле', cost: 2600000, inc: 600, costMult: 1.7, incGrowth: 1.35, unit: 'кг мёда', price: 200, tier: 1, max: 10,
+  honeyfield: { loc: 'river', product: 'honey', kind: 'prod', steep: true, name: 'Пасека-поле', cost: 2600000, inc: 45000, costMult: 1.6, incGrowth: 1.45, unit: 'кг мёда', price: 200, tier: 1, max: 10,
                 season: months(2, 6), seasonText: 'май – сентябрь', desc: 'Луг медоносов у реки и сотня ульев.' },
-  cowshed:    { loc: 'river', product: 'milk', kind: 'prod', name: 'Коровник', cost: 3000000, inc: 400, costMult: 1.7, incGrowth: 1.35, unit: 'л молока', price: 60, tier: 1, max: 10,
+  cowshed:    { loc: 'river', product: 'milk', kind: 'prod', steep: true, name: 'Коровник', cost: 3000000, inc: 18000, costMult: 1.6, incGrowth: 1.45, unit: 'л молока', price: 60, tier: 1, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Большой коровник у заливного луга. Молоко — для сыра и заказов.' },
-  cheese:     { loc: 'river', product: 'cheese', kind: 'prod', name: 'Сыроварня', cost: 3900000, inc: 530, costMult: 1.7, incGrowth: 1.35, unit: 'кг сыра', price: 900, tier: 1, max: 10, requires: 'cowshed',
+  cheese:     { loc: 'river', product: 'cheese', kind: 'prod', steep: true, name: 'Сыроварня', cost: 3900000, inc: 29000, costMult: 1.6, incGrowth: 1.45, unit: 'кг сыра', price: 900, tier: 1, max: 10, requires: 'cowshed',
                 season: always, seasonText: 'круглый год', desc: 'Сыр из своего молока — самый дорогой товар для заказов.' },
-  mill:       { loc: 'river', product: 'flour', kind: 'prod', name: 'Мельница', cost: 3400000, inc: 470, costMult: 1.7, incGrowth: 1.35, unit: 'мешков муки', price: 300, tier: 1, max: 10,
+  mill:       { loc: 'river', product: 'flour', kind: 'prod', steep: true, name: 'Мельница', cost: 3400000, inc: 28500, costMult: 1.6, incGrowth: 1.45, unit: 'мешков муки', price: 300, tier: 1, max: 10,
                 season: (m) => (m >= 9 ? 0.5 : 1), seasonText: 'круглый год, зимой река мелеет', desc: 'Ветряк на холме у реки мелет муку.' },
   // --- Райцентр (после 10 млн) ---
-  shop:       { loc: 'town', product: 'goods', costMult: 1.7, incGrowth: 1.35, kind: 'prod', name: 'Магазин «Ферма деда»', cost: 24000000, inc: 1200, unit: 'чеков', price: 1500, tier: 2, max: 10,
+  shop:       { loc: 'town', product: 'goods', costMult: 1.6, incGrowth: 1.45, kind: 'prod', steep: true, name: 'Магазин «Ферма деда»', cost: 24000000, inc: 132000, unit: 'чеков', price: 1500, tier: 2, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Своя лавка в райцентре — всё с нашей фермы.' },
-  cafe:       { loc: 'town', product: 'pie', costMult: 1.7, incGrowth: 1.35, kind: 'prod', name: 'Кафе', cost: 35000000, inc: 1800, unit: 'пирогов', price: 800, tier: 2, max: 10,
+  cafe:       { loc: 'town', product: 'pie', costMult: 1.6, incGrowth: 1.45, kind: 'prod', steep: true, name: 'Кафе', cost: 35000000, inc: 192000, unit: 'пирогов', price: 800, tier: 2, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Пироги с нашим сыром, мёдом и молоком.' },
   market:     { loc: 'town', kind: 'orders', name: 'Рынок', cost: 28000000, orderBoost: 0.2, costMult: 2, tier: 2, max: 10,
                 desc: 'Место на рынке райцентра: все заказы платят на 20% дороже за уровень.' },
   // --- Агрохолдинг (после 100 млн) ---
-  tractor:    { loc: 'agro', product: 'grain', costMult: 1.7, incGrowth: 1.35, kind: 'prod', name: 'Большие поля', cost: 120000000, inc: 5000, unit: 'т зерна', price: 15000, tier: 3, max: 10,
+  tractor:    { loc: 'agro', product: 'grain', costMult: 1.6, incGrowth: 1.45, kind: 'prod', steep: true, name: 'Большие поля', cost: 120000000, inc: 1070000, unit: 'т зерна', price: 15000, tier: 3, max: 10,
                 season: months(2, 7), seasonText: 'май – октябрь', desc: 'Гектары полей и свой трактор.' },
-  elevator:   { loc: 'agro', product: 'grain', costMult: 1.7, incGrowth: 1.35, kind: 'prod', name: 'Элеватор', cost: 190000000, inc: 8000, unit: 'т зерна', price: 15000, tier: 3, max: 10,
+  elevator:   { loc: 'agro', product: 'grain', costMult: 1.6, incGrowth: 1.45, kind: 'prod', steep: true, name: 'Элеватор', cost: 190000000, inc: 840000, unit: 'т зерна', price: 15000, tier: 3, max: 10,
                 season: always, seasonText: 'круглый год', desc: 'Хранит зерно и продаёт его круглый год.' },
   brand:      { loc: 'agro', kind: 'boost', name: 'Своя марка «Ферма деда»', cost: 300000000, boost: 0.25, costMult: 2.2, tier: 3, max: 10,
                 desc: 'Наша марка на полках страны. +25% ко всему доходу за уровень.' },
@@ -243,18 +245,19 @@ export const GOODS = {
 };
 export const SUPPLY_MIN = 30;
 export const FISH_REWARD_K = 0.7;               // награда за улов (карась…сундук) — −30% ко всем, пропорционально
-export const FISH_BITE_MS = 600;               // окно поклёвки на простой удочке
+export const FISH_BITE_MS = 900;               // окно подсечки на простой удочке (0,9 с)
+export const FISH_MISS_CD_MIN = 5;             // сорвалась — следующий заброс через 5 минут (удачный улов — по FISH_SPOTS.cd)
 export const DOG_PET_MS = 4 * 3600000;         // погладить — раз в 4 часа
 export const DOG_BOOST_MS = 30 * 60000;        // бонус держится 30 минут
 export const DOG_BONUS = 0.1;                  // +10% к доходу
 export const ORDER_REFILL_MIN = [2, 5];     // новый заказ после выполнения — через 2–5 мин
 export const ORDER_DECLINE_MIN = 10;        // после отказа — через 10 мин
-// Уровень фермы: опыт (⭐) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n
+// Уровень фермы: опыт (🎖) за заказы, постройки и ремонт. Сколько всего опыта нужно для уровня n
 export const xpForLevel = (n) => (n <= 1 ? 0 : Math.round(30 * (n - 1) ** 1.7));
-// Опыт ⭐: сбор урожая (+1 за сбор руками), заказы, большой заказ дня, стройка (6–15), рыбалка, задания дня, выбор в событии, ярмарка.
+// Опыт 🎖: сбор урожая (+1 за сбор руками), заказы, большой заказ дня, стройка (6–15), рыбалка, задания дня, выбор в событии, ярмарка.
 export const XP = { build: [5, 15], sub: 3, repair: 60, order: [18, 45], big: 160, daily: 20, login: 10, collect: 1, collectEvery: 2, story: 10, fish: 3 };
 export const CATCHUP_AFTER_MS = 15 * 60000; // «догоняющий» ×2 — если уровня не хватает дольше 15 минут после набора капитала
-// «Ярмарка в райцентре» (Стройка): раз в 2 часа — деньги (≈45 минут дохода) в опыт ⭐ (целый нынешний уровень)
+// «Ярмарка в райцентре» (Стройка): раз в 2 часа — деньги (≈45 минут дохода) в опыт 🎖 (целый нынешний уровень)
 export const FAIR = { mins: 45, everyMs: 3 * 3600000, share: 1 }; // ярмарка = целый уровень опыта, раз в 3 часа
 // Цель открывается, когда есть И капитал, И уровень фермы («нас в районе должны знать»).
 // Опыт — из игры (сбор, заказы, стройка, рыбалка, задания, события) и с ярмарки за ₽. За Stars — нельзя.

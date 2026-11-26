@@ -48,6 +48,8 @@ function ensureEl() {
 
 function finishTyping() {
   clearInterval(typing); typing = null;
+  if (!el || !current) return;
+  el.classList.remove('show'); // анимация появления больше не нужна — облачко точно видно целиком
   el.querySelector('.coach-text').innerHTML = current.html;
   el.querySelector('.coach-hint').textContent = 'тап — закрыть';
 }
@@ -64,6 +66,7 @@ function open(item) {
   hooks.onPause();
   const tk = tokens(item.html);
   let i = 0;
+  const started = Date.now(), maxMs = tk.length * 28 + 1000;
   clearInterval(typing);
   typing = setInterval(() => {
     // теги и сущности добавляем без задержки, буквы — по одной
@@ -71,9 +74,13 @@ function open(item) {
     while (i < tk.length && (tk[i][0] === '<' || tk[i][0] === '&')) chunk += tk[i++];
     if (i < tk.length) chunk += tk[i++];
     text.innerHTML = tk.slice(0, i).join('');
-    if (i >= tk.length) finishTyping();
+    if (i >= tk.length || Date.now() - started > maxMs) finishTyping(); // таймер тормозили (фон) — допечатываем сразу
   }, 28);
 }
+
+// Свернули Telegram посреди печати (таймеры и анимации там замирают) — при сворачивании и при возврате
+// сразу показываем весь текст, чтобы облачко не осталось пустым или недопечатанным.
+document.addEventListener('visibilitychange', () => { if (current && typing) finishTyping(); else if (el) el.classList.remove('show'); });
 
 export function close() {
   if (!current) return;
