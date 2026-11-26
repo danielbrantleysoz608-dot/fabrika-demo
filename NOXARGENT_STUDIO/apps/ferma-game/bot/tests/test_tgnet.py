@@ -148,20 +148,3 @@ def test_classify():
     bad = TelegramBadRequest(method=GetChatMember(chat_id=1, user_id=1), message="Bad Request: member list is inaccessible")
     assert tgnet.is_rights_error(bad) and not tgnet.is_network_error(bad)
     assert not tgnet.is_rights_error(aiohttp.ClientOSError(1, SSL_ERR))
-
-
-async def test_captcha_network_error_no_rights_message(tmp_path):
-    import captcha
-    from db import DB
-    db = DB(tmp_path / "t.sqlite3")
-    await db.open()
-    cap = captcha.Captcha(db, "@predstav_chat", OWNER)
-    await cap.init()
-    s = Flaky(fails=99)
-    bot = Bot("123456:TEST", session=s)
-    r = await cap.on_join(bot, -100777, User(id=50, is_bot=False, first_name="Новичок"), "Чат")
-    assert r == "neterror" and not s.dms()
-    s2 = Flaky(fails=99, err="rights")
-    r = await cap.on_join(Bot("123456:TEST", session=s2), -100777, User(id=51, is_bot=False, first_name="Б"), "Чат")
-    assert r == "norights" and any("Блокировка пользователей" in t for t in s2.dms())
-    await db.close()

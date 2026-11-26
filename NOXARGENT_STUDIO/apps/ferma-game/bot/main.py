@@ -17,7 +17,6 @@ from aiohttp import web
 import config
 from db import DB
 from shop import ShopDB, make_router, weekly_loop
-import captcha as captcha_mod
 import moderation
 import tgnet
 import sub as subscription
@@ -47,13 +46,12 @@ def play_keyboard() -> InlineKeyboardMarkup:
 
 
 SUB: subscription.SubChecker | None = None
-CAP: captcha_mod.Captcha | None = None
 DBH: DB | None = None
 
 
 @private.message(Command("stats"))
 async def stats(message: Message) -> None:
-    """Сводка для хозяйки (ADMIN_ID): игроки и проверка на робота в чате за сутки."""
+    """Сводка для хозяйки (ADMIN_ID)."""
     if not CFG.admin_id or not message.from_user or message.from_user.id != CFG.admin_id:
         await message.answer("Жми «Играть» 👇", reply_markup=play_keyboard())
         return
@@ -61,13 +59,6 @@ async def stats(message: Message) -> None:
     if DBH:
         s = await DBH.stats()
         lines.append(f"Игроков в базе: <b>{s['users']}</b>")
-    if CAP:
-        c = await CAP.stats(24)
-        lines += ["", "🤖 <b>Проверка на робота в чате, за сутки</b>",
-                  f"✅ Прошли капчу: <b>{c['pass']}</b>",
-                  f"🚪 Кикнуто: <b>{c['kick'] + c['ban'] + c['raid']}</b>"
-                  f" (не ответили или ошиблись — {c['kick']}, бан на сутки за 3 кика подряд — {c['ban']}, во время рейда — {c['raid']})",
-                  f"⏳ Проходят проверку сейчас: {c['waiting']}"]
     await message.answer("\n".join(lines))
 
 
@@ -108,11 +99,6 @@ async def run(web_only: bool) -> None:
         # модерация чата фермеров (группа); всё игровое — в роутере private (только личка)
         mod = moderation.ModDB(db)
         await mod.init()
-        # проверка на робота при входе в чат — до модерации (перехватывает вступления)
-        global CAP
-        CAP = captcha_mod.Captcha(db, CFG.chat_id, CFG.admin_id, game_bot=username or "ferma_deda_bot")
-        await CAP.init()
-        dp.include_router(captcha_mod.make_router(CAP, mod))
         dp.include_router(moderation.make_router(mod, CFG.chat_id, CFG.admin_id))
         private.include_router(make_router(shop, CFG.admin_id, CFG.channel_url))
         global SUB
@@ -137,7 +123,6 @@ async def run(web_only: bool) -> None:
     await web.TCPSite(runner, CFG.host, CFG.port).start()
     log.info("Веб-сервер: http://%s:%s (игра из %s)", CFG.host, CFG.port, CFG.webapp_dir)
     weekly = asyncio.create_task(weekly_loop(db, shop, bot, CFG.admin_id))
-    cap_task = asyncio.create_task(CAP.run(bot)) if bot and CAP else None
     try:
         if bot:
             await bot_main(bot)   # 2) потом бот — с повторами, пока Telegram не ответит
@@ -145,8 +130,6 @@ async def run(web_only: bool) -> None:
             await asyncio.Event().wait()
     finally:
         weekly.cancel()
-        if cap_task:
-            cap_task.cancel()
         await runner.cleanup()
         await db.close()
         if bot:
@@ -183,8 +166,6 @@ async def bot_main(bot: Bot) -> None:
             log.warning("Telegram недоступен при запуске бота (%s) — повтор через %s с; игра работает", e, pause)
             await asyncio.sleep(pause)
             pause = min(pause * 2, 300)
-    if CAP and username:
-        CAP.game_bot = username
     log.info("Бот @%s запущен%s", username, " (ТЕСТОВЫЕ ЦЕНЫ: всё по 1 ⭐)" if CFG.test_prices else "")
     await dp.start_polling(bot)  # дальше сетевые сбои aiogram переживает сам (переподключается)
 
