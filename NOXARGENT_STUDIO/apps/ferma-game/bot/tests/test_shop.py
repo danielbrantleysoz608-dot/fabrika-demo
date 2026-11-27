@@ -185,9 +185,9 @@ async def test_month_results_and_dry_run(env):
 async def test_month_tab_timer_prizes_and_anticheat(env):
     h = {"X-Telegram-Init-Data": init_data(42)}
     await env.c.post("/api/score", json={"capital": 50_000}, headers=h)
-    # мгновенный «прыжок» до триллиона — сервер не верит и принимает только правдоподобный рост
+    # резкий скачок: рейтинг = капитал из игры (как в шапке), скачок только записан в anticheat для проверки
     r = await (await env.c.post("/api/score", json={"capital": 10**12}, headers=h)).json()
-    assert r["rating"] < 200_000
+    assert r["rating"] == 10**12
     async with env.db.conn.execute("SELECT COUNT(*) c FROM anticheat") as cur:
         assert (await cur.fetchone())["c"] == 1
     m = await (await env.c.get("/api/leaderboard?period=month", headers=h)).json()
@@ -270,3 +270,12 @@ async def test_blank_name_and_single_player_month(env):
     m = await (await env.c.get("/api/leaderboard?period=month", headers=h)).json()
     assert m["total"] == 1 and m["top"][0]["name"] == "Фермер #1234" and m["top"][0]["me"] is True
     assert m["me"]["name"] == "Фермер #1234"
+
+
+async def test_save_updates_rating_with_same_capital(env):
+    """Рейтинг обновляется при каждом сохранении тем же капиталом, что в шапке игры."""
+    h = {"X-Telegram-Init-Data": init_data(77)}
+    for cap in (1_000_000, 98_460_000, 287_600_000):
+        await env.c.put("/api/save", json={"game": {"v": 2}, "score": {"capital": cap, "tier": 2, "year": 1}}, headers=h)
+        all_ = await (await env.c.get(f"/api/leaderboard?period=all&value={cap}", headers=h)).json()
+        assert all_["me"]["value"] == cap

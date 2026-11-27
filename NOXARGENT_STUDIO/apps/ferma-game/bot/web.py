@@ -148,6 +148,14 @@ async def put_save(request: web.Request) -> web.Response:
         await request.app[DBK].put_save(user["id"], data)
     except ValueError as e:
         raise web.HTTPRequestEntityTooLarge(max_size=0, actual_size=0, text=str(e))
+    # рейтинг обновляется при каждом сохранении: капитал считает игра (та же функция, что в шапке)
+    score = data.get("score")
+    if isinstance(score, dict) and "capital" in score:
+        try:
+            key, name, _ = player_identity(request)
+            await request.app[DBK].submit_score(key, name, int(score["capital"]), 0, int(score.get("tier", 0)), int(score.get("year", 1)))
+        except (ValueError, TypeError) as e:
+            log.warning("рейтинг из сохранения: %s", e)
     return web.Response(status=204)
 
 

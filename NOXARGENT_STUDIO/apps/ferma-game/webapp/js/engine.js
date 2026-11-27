@@ -3,7 +3,7 @@
 import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
-  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_MISS_CD_MIN, STEEP, FISH_REWARD_K, FAIR, LATE_MIN, LOC_INC, PRICE_MIN, CAPITAL_PAID, SETTLE, upkeepShare, DYN, LOCATIONS, CATCHUP_AFTER_MS, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  FISH_SPOTS, FISH, FISH_BITE_MS, FISH_MISS_CD_MIN, FISH_REWARD_K, FAIR, LATE_MIN, LOC_INC, PRICE_MIN, CAPITAL_PAID, SETTLE, upkeepShare, DYN, LOCATIONS, CATCHUP_AFTER_MS, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -51,7 +51,7 @@ export function newGame(seed = (Math.random() * 2 ** 31) | 0, now = Date.now()) 
     monthIncome: 0, history: [{ m: 0, t: 'Получили в наследство ферму деда и 10 000 ₽.' }],
     ledger: [], taps: 0, offline: 0,
     daily: null, login: null, tzOff: 0,
-    xp: 0, xpV2: 1, econV: 4, lvlSeen: 1,                       // опыт фермы (🎖) и последний показанный уровень
+    xp: 0, xpV2: 1, econV: 5, lvlSeen: 1,                       // опыт фермы (🎖) и последний показанный уровень
     orders: [], big: null,                   // доска заказов: 3 обычных + большой заказ дня
     house: 0,                                // сколько этапов ремонта дома деда сделано (0…5)
   };
@@ -115,7 +115,15 @@ export const subMax = (st) => subCfg(st).max;
 export const subPct = (st) => Math.round(subCfg(st).gain * 100);
 export const subDone = (st, id) => st.sub?.[id] || 0;
 export const subLeft = (st, id) => (BUILDINGS[id]?.kind === 'prod' && level(st, id) > 0 ? Math.max(0, subMax(st) - subDone(st, id)) : 0);
-export const subPrice = (st, id) => Math.round(costAt(BUILDINGS[id], level(st, id)) * locK(st, id) * subCfg(st).price);
+// цена доработки — от её прибавки: окупается в SUB_PAYBACK раз быстрее следующего уровня (никогда не дольше уровня),
+// но не дороже прежней доли от цены уровня (¼, после 10 млн — 10%)
+export const SUB_PAYBACK = 0.8;
+export function subPrice(st, id) {
+  const b = BUILDINGS[id], L = level(st, id), next = costAt(b, L) * locK(st, id);
+  const dLevel = incOf(st, id, L + 1) - incOf(st, id, L);
+  const byGain = dLevel > 0 ? next * (subInc(st, id) / dLevel) * SUB_PAYBACK : Infinity;
+  return Math.max(1, Math.round(Math.min(next * subCfg(st).price, byGain)));
+}
 export const subInc = (st, id) => (incOf(st, id, level(st, id)) - (st.subInc?.[id] || 0)) * subCfg(st).gain; // +10% (после 10 млн +5%) дохода уровня (без прошлых доработок), ₽/мин
 export const subPayback = (st, id) => { const d = realGain(st, id, subInc(st, id)); return d > 0 ? subPrice(st, id) / d : Infinity; };
 export function canSub(st, id) {
@@ -881,9 +889,8 @@ export function declineOrder(st, i, now = Date.now()) {
 // множитель цены уровня: ×1.6 (у прилавка и марки — свой)
 export const levelMult = (b) => b.costMult || LEVEL_COST_MULT;
 // цена перехода с уровня L на L+1
-// цена перехода с уровня L на L+1. У построек после 1 млн (steep) уровни 1–3 дешёвые (окупаются за 1,5–3 ч),
-// с 4-го каждый следующий дороже ещё в STEEP.k раз — быстрый старт на новой локации, дальше рост медленнее
-export function costAt(b, L) { return b.cost * levelMult(b) ** L * (b.steep ? STEEP.k ** Math.max(0, L - STEEP.from + 1) : 1); }
+// цена перехода с уровня L на L+1: каждый следующий уровень дороже предыдущего ровно в costMult раз (1,6–2)
+export function costAt(b, L) { return b.cost * levelMult(b) ** L; }
 // постоянный доход фермы (без счастливого часа, бустеров, щенка и событий месяца)
 export const steadyRate = (st) => PRODUCERS.reduce((a, id) => a + incOf(st, id, level(st, id)) * workerMult(st, id) * (st.perm?.[id] ?? 1), 0) * globalMult(st, false);
 // доход «чистыми» — после расходов на содержание (корм, свет, налоги): из него игрок копит на покупки
@@ -1007,7 +1014,8 @@ export function seasonWait(st, id) {
 /* ---------- Капитал, цели, рейтинг ---------- */
 export const capital = (st) => Math.round(st.money - st.debt + buildingsValue(st));
 // В рейтинг идёт капитал БЕЗ монет, купленных за Telegram Stars
-export const ratingCapital = (st) => Math.max(0, capital(st) - (st.paid?.coins || 0));
+// один капитал для всего: шапка, цели, сосед и рейтинг (купленные за ⭐ деньги тоже считаются)
+export const ratingCapital = (st) => capital(st);
 export const goal = (st) => goalOf(st.tier);
 // цель: капитал есть, а уровня фермы не хватает
 export const goalNeedsLevel = (st) => ratingCapital(st) >= goal(st) && farmLevel(st) < goalLevel(st.tier);
@@ -1245,6 +1253,10 @@ export function tasks(st) {
 const V3_INC = { honeyfield: [600, 1.35], cowshed: [400, 1.35], cheese: [530, 1.35], mill: [470, 1.35], shop: [1200, 1.35], cafe: [1800, 1.35],
   tractor: [5000, 1.35], elevator: [8000, 1.35] };
 const V3_MULT = 1.7; // множитель цены уровня этих построек в v3
+// они же в v4: доход 1-го уровня, рост дохода, множитель цены (+ ×2,5 за каждый уровень с 4-го)
+const V4_ECON = { honeyfield: [45000, 1.45, 1.6], cowshed: [18000, 1.45, 1.6], cheese: [29000, 1.45, 1.6], mill: [28500, 1.45, 1.6],
+  shop: [132000, 1.45, 1.6], cafe: [192000, 1.45, 1.6], tractor: [1070000, 1.45, 1.6], elevator: [840000, 1.45, 1.6],
+  factory: [2083333, 1.3, 2] }; // завод: в v4 — общие рост 1.3 и множитель цены 2
 // постройки по правилам до экономики v3: доход 1-го уровня и рост за уровень, цена 1-го уровня и множитель — для миграции
 const OLD_ECON = { coop: [33.4, 1.37, 420, 1.6], garden: [108.5, 1.37, 1900, 1.6], cabbage: [70, 1.37, 1400, 1.6], carrot: [100, 1.37, 2200, 1.6],
   greenhouse: [66.2, 1.37, 1000, 1.6], apiary: [181, 1.37, 3400, 1.6], cow: [625.6, 1.37, 18000, 1.6],
@@ -1302,6 +1314,22 @@ export function migrate(save) {
     }
   }
   if ((save.econV || 0) < 4) save.econV = 4;
+  // экономика v5: без добавочного ×2,5 за уровень с 4-го (цены росли до сотен миллиардов). Уже построенное не меняется:
+  // доход уровней — как был (поправка incBonus), капитал — как был, меняются только цены следующих улучшений
+  if (econFrom === 4) {
+    for (const [id, [inc, g, mult]] of Object.entries(V4_ECON)) {
+      const L = save.lv?.[id] || 0; if (!(L > 0)) continue;
+      const k = save.locKi?.[BUILDINGS[id].loc] || save.locK?.[BUILDINGS[id].loc] || 1;
+      save.incBonus ||= {};
+      save.incBonus[id] = (save.incBonus[id] || 0) + inc * (g ** L - 1) / (g - 1) * k - baseIncome(id, L) * k;
+      // вложенное (капитал) не меняется: если множитель цены стал другим (завод), фиксируем прежнюю «книжную» стоимость
+      if (mult !== (BUILDINGS[id].costMult || LEVEL_COST_MULT) && save.bpaid?.[id] === undefined) {
+        let v = 0, p = BUILDINGS[id].cost * k; for (let i = 0; i < L; i++) { v += p; p *= mult; }
+        (save.bpaid ||= {})[id] = Math.round(v);
+      }
+    }
+  }
+  if ((save.econV || 0) < 5) save.econV = 5;
   delete save.skippedMs;
   // награда за соседа уже получена на этой ступени — повторно не платим
   if (save.nb && (save.nb.wins || 0) > 0 && !save.nb.paid) save.nb.paid = [save.tier || 0];

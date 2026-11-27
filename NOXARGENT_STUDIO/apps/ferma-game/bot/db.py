@@ -246,9 +246,11 @@ class DB:
             prev = await cur.fetchone()
         bought = await self.bought_money(player_key, prev["updated_at"] if prev else 0)
         limit = allowed_capital(prev["capital"] if prev else None, (now - prev["updated_at"]) / 60 if prev else 0, bought)
-        rating = min(claimed, limit)
+        # рейтинг = капитал из игры, как в шапке (раньше урезали «неправдоподобный» рост — и рейтинг отставал от шапки).
+        # Подозрительные скачки только записываем в anticheat для проверки вручную.
+        rating = claimed
         if claimed > limit:
-            await self.conn.execute("INSERT INTO anticheat(player_key, at, claimed, accepted) VALUES(?,?,?,?)", (player_key, now, claimed, rating))
+            await self.conn.execute("INSERT INTO anticheat(player_key, at, claimed, accepted) VALUES(?,?,?,?)", (player_key, now, claimed, limit))
         default = default_name(player_key)
         await self.conn.execute(
             """INSERT INTO players(player_key, name, created_at, last_seen) VALUES(?,?,?,?)
