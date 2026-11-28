@@ -429,6 +429,17 @@ loop.every(1000, () => {
   if (!E.monthReady(st)) tickReady.done = false;
 });
 loop.every(10000, () => profile.game && st.phase !== 'clean' && persist());
+// компенсации после обновления баланса: проверяем при входе и раз в 2 минуты, применяем один раз и сразу сохраняем
+async function checkGrants() {
+  if (!st || !profile.game || st.phase === 'clean') return;
+  const list = await api.grants();
+  const got = list.map(g => E.applyGrant(st, g)).filter(Boolean);
+  if (!got.length && !list.length) return;
+  render(); persist(true);
+  if (got.length) say(`🛠 После обновления вернули: <b>${got.join('; ')}</b>. Извини за неудобство!`, 'happy', 9000);
+}
+setTimeout(checkGrants, 4000);
+loop.every(120000, checkGrants);
 
 // Вернулся в игру — показать, сколько накопилось за время отсутствия
 function welcomeBack() {

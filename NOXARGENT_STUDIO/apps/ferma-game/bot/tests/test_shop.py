@@ -279,3 +279,21 @@ async def test_save_updates_rating_with_same_capital(env):
         await env.c.put("/api/save", json={"game": {"v": 2}, "score": {"capital": cap, "tier": 2, "year": 1}}, headers=h)
         all_ = await (await env.c.get(f"/api/leaderboard?period=all&value={cap}", headers=h)).json()
         assert all_["me"]["value"] == cap
+
+
+async def test_level_never_drops_and_grants_once(env):
+    """Сохранение той же фермы с меньшим опытом не понижает уровень; компенсация выдаётся один раз."""
+    h = {"X-Telegram-Init-Data": init_data(55)}
+    await env.c.put("/api/save", json={"game": {"startedAt": 1, "xp": 5000, "money": 10}}, headers=h)
+    await env.c.put("/api/save", json={"game": {"startedAt": 1, "xp": 4000, "money": 20}}, headers=h)
+    saved = await (await env.c.get("/api/save", headers=h)).json()
+    assert saved["game"]["xp"] == 5000 and saved["game"]["money"] == 20
+    # «Начать заново» (другая ферма) — опыт с нуля можно
+    await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 0}}, headers=h)
+    assert (await (await env.c.get("/api/save", headers=h)).json())["game"]["xp"] == 0
+    await env.db.conn.execute("INSERT INTO grants(user_id, xp_min, money, reason, created_at) VALUES(55, 9000, 1000000, 'тест', 1)")
+    await env.db.conn.commit()
+    g = (await (await env.c.get("/api/grants", headers=h)).json())["grants"]
+    assert len(g) == 1 and g[0]["money"] == 1000000
+    await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 9000, "grants": [g[0]["id"]]}}, headers=h)
+    assert (await (await env.c.get("/api/grants", headers=h)).json())["grants"] == []

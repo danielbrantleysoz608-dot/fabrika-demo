@@ -136,6 +136,12 @@ async def get_save(request: web.Request) -> web.Response:
     return web.json_response(data)
 
 
+async def get_grants(request: web.Request) -> web.Response:
+    """Компенсации после обновления баланса (уровень/капитал вернуть) — игра применяет их сама один раз."""
+    user = current_user(request)
+    return web.json_response({"grants": await request.app[DBK].pending_grants(user["id"])})
+
+
 async def put_save(request: web.Request) -> web.Response:
     user = current_user(request)
     try:
@@ -203,6 +209,7 @@ def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None, s
     app.router.add_get("/health", health)
     app.router.add_get("/api/save", get_save)
     app.router.add_put("/api/save", put_save)
+    app.router.add_get("/api/grants", get_grants)
     app.router.add_post("/api/result", post_result)
     app.router.add_post("/api/score", post_score)
     app.router.add_get("/api/leaderboard", get_leaderboard)

@@ -1263,6 +1263,21 @@ const OLD_ECON = { coop: [33.4, 1.37, 420, 1.6], garden: [108.5, 1.37, 1900, 1.6
   honeyfield: [60000, 1.6, 3e6, 2.5], cowshed: [25000, 1.6, 1.2e6, 2.5], cheese: [30000, 1.6, 1.5e6, 2.5], mill: [40000, 1.6, 2e6, 2.5],
   shop: [41667, 1.37, 15e6, 1.6], cafe: [59524, 1.37, 25e6, 1.6], market: [0, 1, 20e6, 2], tractor: [208333, 1.37, 150e6, 1.6],
   elevator: [297619, 1.37, 250e6, 1.6], brand: [0, 1, 400e6, 2.5], factory: [2083333, 1.37, 2e9, 1.6] };
+// компенсация после обновления баланса (с сервера): вернуть уровень (опыт не ниже xpMin) и капитал (деньгами). Один раз.
+export function applyGrant(st, g) {
+  st.grants ||= [];
+  if (!g || st.grants.includes(g.id)) return null;
+  st.grants.push(g.id);
+  const lvl0 = farmLevel(st);
+  if ((g.xp_min || 0) > (st.xp || 0)) st.xp = g.xp_min;
+  if ((g.money || 0) > 0) st.money += g.money;
+  const parts = [];
+  if (farmLevel(st) > lvl0) parts.push(`уровень ${lvl0} → ${farmLevel(st)}`);
+  if (g.money > 0) parts.push(`+${fmt(g.money)}`);
+  addHistory(st, { m: st.month, t: `🛠 Вернули после обновления: ${parts.join(', ') || 'проверено'}.` });
+  checkGoals(st);
+  return parts.join(', ');
+}
 export function migrate(save) {
   if (!save || typeof save !== 'object' || save.v !== SCHEMA_VERSION) return null;
   // новые поля для старых сохранений (прогресс не трогаем)

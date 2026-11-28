@@ -15,6 +15,16 @@ CREATE TABLE IF NOT EXISTS users (
     created_at  INTEGER NOT NULL,
     last_seen   INTEGER NOT NULL
 );
+-- Компенсации после обновлений баланса: игра забирает их сама (GET /api/grants) и подтверждает сохранением
+CREATE TABLE IF NOT EXISTS grants (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    xp_min       INTEGER NOT NULL DEFAULT 0,
+    money        INTEGER NOT NULL DEFAULT 0,
+    reason       TEXT,
+    created_at   INTEGER NOT NULL,
+    confirmed_at INTEGER
+);
 CREATE TABLE IF NOT EXISTS saves (
     user_id     INTEGER PRIMARY KEY REFERENCES users(user_id),
     data        TEXT NOT NULL,
@@ -187,6 +197,23 @@ class DB:
         return json.loads(row["data"]) if row else None
 
     async def put_save(self, user_id: int, data: dict) -> None:
+        game = data.get("game") if isinstance(data.get("game"), dict) else None
+        if game is not None:
+            # уровень фермы никогда не уменьшается: та же ферма (startedAt) не может прийти с меньшим опытом
+            async with self.conn.execute("SELECT data FROM saves WHERE user_id=?", (user_id,)) as cur:
+                row = await cur.fetchone()
+            if row:
+                try:
+                    old = (json.loads(row["data"]) or {}).get("game") or {}
+                except ValueError:
+                    old = {}
+                if old.get("startedAt") and old.get("startedAt") == game.get("startedAt") and (game.get("xp") or 0) < (old.get("xp") or 0):
+                    game["xp"] = old["xp"]
+            # игра применила компенсации — отмечаем, чтобы не выдать повторно
+            ids = [int(x) for x in (game.get("grants") or []) if isinstance(x, (int, float))]
+            if ids:
+                await self.conn.execute(f"UPDATE grants SET confirmed_at=? WHERE user_id=? AND confirmed_at IS NULL AND id IN ({','.join('?' * len(ids))})",
+                                        (int(time.time()), user_id, *ids))
         raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         if len(raw.encode()) > MAX_SAVE_BYTES:
             raise ValueError("save too large")
@@ -196,6 +223,11 @@ class DB:
             (user_id, raw, int(time.time())),
         )
         await self.conn.commit()
+
+    async def pending_grants(self, user_id: int) -> list[dict]:
+        async with self.conn.execute("SELECT id, xp_min, money, reason FROM grants WHERE user_id=? AND confirmed_at IS NULL ORDER BY id",
+                                     (user_id,)) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
     async def add_result(self, user_id: int, r: dict) -> None:
         if r.get("ending") not in ENDINGS:

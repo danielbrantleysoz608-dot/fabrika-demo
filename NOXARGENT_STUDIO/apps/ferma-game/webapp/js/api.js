@@ -75,6 +75,12 @@ export async function flush() {
   try { await request('PUT', '/api/save', body); } catch (e) { console.warn('save failed', e); pending = pending || body; }
 }
 
+// Компенсации после обновления баланса: [{id, xp_min, money, reason}]
+export async function grants() {
+  if (!online) return [];
+  try { return (await request('GET', '/api/grants')).grants || []; } catch { return []; }
+}
+
 // Итог забега — для будущего рейтинга (сервер хранит, но пока не показывает)
 export async function reportResult(result) {
   if (!online) return;
