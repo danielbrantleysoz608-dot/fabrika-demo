@@ -28,6 +28,7 @@ class Config:
     chat_id: str = "@predstav_chat"  # чат фермеров (обязательно вступить); пусто — только канал
     chat_url: str = "https://t.me/predstav_chat"
     bot_username: str = "ferma_deda_bot"  # имя бота для ссылок в игре (известно до связи с Telegram)
+    village_dir: Path = BASE / "data" / "village"  # экспорт сериала «Деревня деда»: village_map.png + villagers.json
 
 
 def load() -> Config:
@@ -53,4 +54,5 @@ def load() -> Config:
         chat_id=os.getenv("CHAT_ID", "@predstav_chat"),
         chat_url=os.getenv("CHAT_URL", "https://t.me/predstav_chat"),
         bot_username=os.getenv("BOT_USERNAME", "ferma_deda_bot").lstrip("@"),
+        village_dir=path("VILLAGE_DIR", "data/village"),
     )

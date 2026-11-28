@@ -107,6 +107,7 @@ def capital_raw(s: dict) -> int:
     dec = s.get("decor") or {}
     v += sum(DECOR.get(k, 0) for k, x in dec.items() if x is True)
     v += s.get("subPaid") or 0
+    v += s.get("vhomePaid") or 0  # «Мой дом в посёлке»
     v += sum((w or {}).get("spent") or 0 for w in (s.get("workers") or {}).values())
     v += sum(0 if x is True else (x or 0) for x in dec.values())
     bpaid, lock = s.get("bpaid") or {}, s.get("locK") or {}

@@ -4,6 +4,7 @@ import {
   SCHEMA_VERSION, START_MONEY, SCRAP_BONUS, MONTH_MS, OFFLINE_CAP_MS, STORAGE_MIN, LEVEL_COST_MULT, UPKEEP_SHARE,
   LOAN_RATE, INC_GROWTH, PRODUCTS, CLIENTS, ORDER_SLOTS, ORDER_REFILL_MIN, ORDER_DECLINE_MIN, xpForLevel, XP, HOUSE_STAGES, HOUSE_BONUS, FRESH_MIN, FRESH_BONUS, DAILY_REWARD, LOGIN_REWARD, LOGIN_DAYS, BUILDINGS, PRODUCERS, TRASH, FIELD_WEEDS, monthOf, yearOf, isWinter, goalOf, goalAchievement, maxLevel,
   FISH_SPOTS, FISH, FISH_BITE_MS, FISH_MISS_CD_MIN, FISH_REWARD_K, FAIR, LATE_MIN, LOC_INC, PRICE_MIN, CAPITAL_PAID, SETTLE, upkeepShare, DYN, LOCATIONS, CATCHUP_AFTER_MS, GOODS, SUPPLY_MIN, TRUST, PREMIUM_CLIENTS, SMALL_CLIENT, ORDER_DUE, HAPPY_HOUR, NEWBIE_MONTHS, NEWBIE_BONUS, BOOSTERS, goalLevel, DECOR, DECOR_BONUS, WORKER_UP_MULT, WORKER_MAX, DOG_PET_MS, DOG_BOOST_MS, DOG_BONUS, WORKERS, WORKER_ORDER,
+  VHOME,
 } from './data.js';
 import { EVENTS, EVENT_BY_ID } from './events.js';
 
@@ -155,6 +156,7 @@ export function globalMult(st, withMods = true) {
   k *= 1 + HOUSE_BONUS * (st.house || 0);  // ремонт дома деда: +3% за этап
   if (hired(st, 'seller')) k *= 1 + WORKERS.seller.all * wLv(st, 'seller'); // продавец на прилавке (+10% за уровень)
   k *= 1 + DECOR_BONUS * decorCount(st);    // украшения фермы
+  k *= 1 + VHOME.bonus * (st.vhome || 0);   // «Мой дом в посёлке»: +1% за уровень
   if (st.paid?.samovar) k *= 1.03;          // «Дедов самовар» (за звёзды)
   if ((st.month || 0) < NEWBIE_MONTHS) k *= NEWBIE_BONUS; // первые 3 месяца — доход ×1.5
   if (withMods) {
@@ -533,6 +535,33 @@ export function applyPurchase(st, p, now = Date.now()) {
 }
 // сколько денег даст пакет: N минут дохода фермы, но не меньше минимума
 export const packAmount = (st, minutes, min) => nice(Math.max(min, perMin(st) * minutes));
+
+/* ---------- «Мой дом в посёлке» (сериал «Деревня деда») ---------- */
+export const vhomeLevel = (st) => st.vhome || 0;
+export const vhomeNext = (st) => VHOME.levels[vhomeLevel(st)] || null;
+export const vhomePrice = (st) => vhomeNext(st)?.price ?? null;
+export const vhomeOptionsLeft = (st) => VHOME.options.filter(o => !(st.vhomeOpts || []).includes(o.name));
+export function canVhome(st, opt) {
+  const next = vhomeNext(st);
+  if (st.phase === 'clean') return 'сначала уборка';
+  if (!next) return 'дом построен полностью';
+  if (next.pick && !vhomeOptionsLeft(st).some(o => o.id === opt)) return 'выбери, что пристроить';
+  if (st.money < next.price) return 'не хватает ' + fmt(next.price - st.money);
+  return null;
+}
+export function buyVhome(st, opt) {
+  const why = canVhome(st, opt); if (why) return why;
+  const next = vhomeNext(st), o = VHOME.options.find(x => x.id === opt);
+  st.money -= next.price;
+  st.vhome = vhomeLevel(st) + 1;
+  st.vhomePaid = (st.vhomePaid || 0) + next.price;   // в капитал — рейтинг не падает
+  if (next.pick && o) (st.vhomeOpts ||= []).push(o.name);
+  dailyProgress(st, 'build', 1);
+  addXp(st, XP.build[0]);
+  addHistory(st, { m: st.month, t: `🏡 Мой дом в посёлке: ${next.name.toLowerCase()}${o && next.pick ? ` + ${o.name}` : ''} (ур. ${st.vhome}, ${fmt(next.price)}).` });
+  checkGoals(st);
+  return null;
+}
 
 /* ---------- Украшения фермы ---------- */
 export const hasDecor = (st, id) => !!st.decor?.[id];
@@ -926,6 +955,7 @@ export function buildingsValue(st) {
   for (let i = 0; i < (st.house || 0); i++) v += HOUSE_STAGES[i].cost;
   for (const d of DECOR) if (st.decor?.[d.id] === true) v += d.cost; // старые сохранения
   v += st.subPaid || 0;                                                     // доработки построек
+  v += st.vhomePaid || 0;                                                   // «Мой дом в посёлке» — тоже вложения (капитал не падает)
   for (const w of Object.values(st.workers || {})) v += w.spent || 0; // наём и улучшения работников — тоже вложения в ферму
   if (CAPITAL_PAID.on) v += st.bvExtra || 0;                                                // доплата сверх «книжной» цены — тоже вложено в ферму
   for (const id of Object.keys(st.decor || {})) v += st.decor[id] === true ? 0 : st.decor[id]; // украшения — по цене покупки

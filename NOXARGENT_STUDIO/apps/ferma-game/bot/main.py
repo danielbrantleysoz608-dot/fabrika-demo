@@ -18,6 +18,7 @@ import config
 from db import DB
 from shop import ShopDB, make_router, weekly_loop
 import moderation
+import village as village_mod
 import tgnet
 import sub as subscription
 from web import make_app
@@ -47,6 +48,8 @@ def play_keyboard() -> InlineKeyboardMarkup:
 
 SUB: subscription.SubChecker | None = None
 DBH: DB | None = None
+VDB: village_mod.VillageDB | None = None
+VDATA = village_mod.VillageData(CFG.village_dir)
 
 
 @private.message(Command("stats"))
@@ -62,10 +65,20 @@ async def stats(message: Message) -> None:
     await message.answer("\n".join(lines))
 
 
+async def ask_nick_once(message: Message, uid: int) -> bool:
+    """Первый вход (или старый игрок, которого ещё не спрашивали): «Откуда ты нас смотришь? Напиши свой ник»."""
+    if VDB and await village_mod.needs_ask(VDB, uid):
+        await village_mod.ask_first(message, VDB, uid)
+        return True
+    return False
+
+
 @private.message(CommandStart())
 async def start(message: Message) -> None:
     if SUB and not await subscription.gate(message, SUB, CFG.channel_url):
         return  # сначала подписка на канал
+    if await ask_nick_once(message, message.from_user.id):
+        return
     await message.answer(WELCOME, reply_markup=play_keyboard())
 
 
@@ -81,8 +94,10 @@ async def help_(message: Message) -> None:
 async def run(web_only: bool) -> None:
     db = DB(CFG.db_path)
     await db.open()
-    global DBH
+    global DBH, VDB
     DBH = db
+    VDB = village_mod.VillageDB(db)
+    await VDB.init()
     shop = ShopDB(db)
     await shop.init()
     from shop import init_awards
@@ -104,7 +119,8 @@ async def run(web_only: bool) -> None:
         global SUB
         SUB = subscription.SubChecker(bot, subscription.default_needs(CFG.channel_id, CFG.channel_url, CFG.chat_id, CFG.chat_url),
                                       CFG.require_sub, CFG.admin_id)
-        private.include_router(subscription.make_router(SUB, CFG.channel_url, WELCOME, play_keyboard))
+        private.include_router(subscription.make_router(SUB, CFG.channel_url, WELCOME, play_keyboard, after_ok=ask_nick_once))
+        private.include_router(village_mod.make_router(VDB, VDATA, CFG.admin_id, play_keyboard, WELCOME))
 
         # «Жми Играть» — последним, чтобы не перехватывать команды (/myid, /paysupport, /test_results…)
         fallback = Router(name="fallback")
@@ -117,7 +133,7 @@ async def run(web_only: bool) -> None:
 
     # 1) сначала игра: веб-сервер поднимается сразу, без Telegram
     app = make_app(CFG, db, username, shop=shop, bot=bot,
-                   sub=SUB or subscription.SubChecker(None, CFG.channel_id, False))
+                   sub=SUB or subscription.SubChecker(None, CFG.channel_id, False), village=(VDB, VDATA))
     runner = web.AppRunner(app)
     await runner.setup()
     await web.TCPSite(runner, CFG.host, CFG.port).start()
@@ -143,6 +159,8 @@ async def bot_setup(bot: Bot) -> str:
         ("кнопка меню", lambda: bot.set_chat_menu_button(menu_button=MenuButtonWebApp(text="🌾 Играть", web_app=WebAppInfo(url=CFG.webapp_url + "/")))),
         ("команды", lambda: bot.set_my_commands([BotCommand(command="start", description="Играть в «Ферму деда»"),
                                                  BotCommand(command="myid", description="Мой Telegram id"),
+                                                 BotCommand(command="home", description="🏡 Мой дом в посёлке"),
+                                                 BotCommand(command="nick", description="Мой ник в соцсетях"),
                                                  BotCommand(command="help", description="Как играть"),
                                                  BotCommand(command="paysupport", description="Вопросы по оплате")])),
         ("команды модерации", lambda: bot.set_my_commands(moderation.ADMIN_COMMANDS, scope=BotCommandScopeChatAdministrators(chat_id=CFG.chat_id))

@@ -2,7 +2,7 @@
 import * as E from './engine.js';
 import {
   PRODUCTS, HOUSE_STAGES, LETTERS, BUILDINGS, BUILD_ORDER, TRASH, SEASON_ICON, SCRAP_BONUS, ACHIEVEMENTS, ACHIEVEMENT_ORDER,
-  monthOf, yearOf, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, FISH_BITE_MS, FISH_MISS_CD_MIN, WORKERS, WORKER_ORDER, BOOSTERS, TRUST, GOODS, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
+  monthOf, yearOf, VHOME, goalLabel, maxLevel, MONTH_MS, LOCATIONS, locOf, FISH_SPOTS, FISH, FISH_BITE_MS, FISH_MISS_CD_MIN, WORKERS, WORKER_ORDER, BOOSTERS, TRUST, GOODS, HAPPY_HOUR, CHEST_EVERY_MIN, CHEST_IDLE_MIN, NEWBIE_MONTHS, goalLevel, DECOR, WORKER_MAX, xpForLevel,
 } from './data.js';
 import { EVENT_BY_ID } from './events.js';
 import { renderScene, floatText, puff, SLOT_POS, READY_POSITIONS, prewarmBg } from './scene.js';
@@ -732,6 +732,10 @@ const ACTIONS = {
   saveName: () => { const v = layer.querySelector('#setName')?.value.trim().slice(0, 24) || ''; setPlayerName(v); submitScore(st, profile, true); toast(v ? `Имя в рейтинге: ${v}` : 'Имя сброшено'); },
   rules: () => openRules(),
   settings: () => openSettings(),
+  vhome: () => openVHome(),
+  vhomeBuy: (opt, el) => { if (el.dataset.lock) { haptic('rigid'); sfx.error(); return toast(el.dataset.lock); } buyVHome(opt); },
+  vnickSave: () => saveVNick(),
+  vwishSave: () => saveVWish(),
   menu: () => { persist(true); showSplash(); },
 };
 
@@ -880,9 +884,12 @@ function openBuild(focus, keep = false) {
   const nr = E.nextRepair(st);
   const houseCard = nr ? `<div class="card house-card"><h3>🏠 Дом деда: ${nr.name.toLowerCase()}</h3><div class="price">${short(nr.cost)}</div>
       <p>Ремонт по этапам: каждый +3% ко всему доходу и новое письмо деда.</p><button class="btn primary go" data-act="house">Открыть дом деда</button></div>` : '';
+  const vh = E.vhomeLevel(st), vn = E.vhomeNext(st);
+  const vhomeCard = `<div class="card house-card"><h3>🏡 Мой дом в посёлке${vh ? ` · ур. ${vh}` : ''}</h3><div class="price">${vn ? short(vn.price) : ''}</div>
+      <p>Свой дом в посёлке из сериала «Деревня деда»: 10 уровней, каждый +1% к доходу. ${vn ? `Дальше: ${vn.name.toLowerCase()}.` : 'Особняк построен!'}</p><button class="btn primary go" data-act="vhome">Открыть «Мой дом»</button></div>`;
   sheet('Стройка', `<div class="money-line">В кармане: <b>${short(st.money)}</b>${st.debt ? ` · долг ${short(st.debt)}` : ''} · доход чистыми <b>${short(E.netNow(st))}/мин</b></div>
     ${tut ? card('coop').replace('class="card ', 'class="card tut-hl ') : ''}
-    ${st.tier >= 1 && E.farmLevel(st) < goalLevel(st.tier) ? fairCard() : ''}${houseCard}${workersCard()}${goodsCard()}${decorCard()}${(tut ? open.slice(1) : open).map(card).join('')}${st.tier >= 1 && E.farmLevel(st) >= goalLevel(st.tier) ? fairCard() : ''}
+    ${st.tier >= 1 && E.farmLevel(st) < goalLevel(st.tier) ? fairCard() : ''}${houseCard}${vhomeCard}${workersCard()}${goodsCard()}${decorCard()}${(tut ? open.slice(1) : open).map(card).join('')}${st.tier >= 1 && E.farmLevel(st) >= goalLevel(st.tier) ? fairCard() : ''}
     ${soon.length ? `<div class="sub">После цели ${goalLabel(st.tier)}</div>${soon.map(card).join('')}` : ''}`, 'build');
 }
 // перерисовать шторку, не сбрасывая прокрутку: та же карточка остаётся на том же месте экрана
@@ -1852,6 +1859,7 @@ const QUICK_HTML = `<button class="lvl-pill" data-q="level" aria-label="Уров
       <button class="qbtn" data-q="rating" aria-label="Рейтинг"><span>🏆</span><small>Рейтинг</small></button>
       <button class="qbtn" data-q="map" aria-label="Карта"><span>🗺</span><small>Карта</small></button>
       <button class="qbtn" data-q="workers" aria-label="Работники"><span>👷</span><small>Работники</small></button>
+      <button class="qbtn" data-q="vhome" aria-label="Мой дом"><span>🏡</span><small>Мой дом</small></button>
       <button class="qbtn" data-q="settings" aria-label="Настройки"><span>⚙️</span><small>Настройки</small></button>
       <button class="qbtn" data-q="shop" aria-label="Магазин"><span>⭐</span><small>Магазин</small></button>`;
 fastTap($('#quick'), (e) => {
@@ -1864,11 +1872,80 @@ fastTap($('#quick'), (e) => {
   if (q === 'map') return openMap();
   if (q === 'workers') return openWorkers();
   if (q === 'settings') return openSettings();
+  if (q === 'vhome') return openVHome();
   if (q === 'menu') return ACTIONS.menu();
   if (q === 'shop') return openShop();
   if (q === 'lvlplus') return openBoard(); // опыт — за заказы
   if (q === 'level') return openLevelHelp();
 });
+
+/* ================= «Мой дом в посёлке» (сериал «Деревня деда») ================= */
+let vinfo = null; // {nick, platform, villager, mapReady, wish} с сервера
+const PLAT = { instagram: 'Instagram', youtube: 'YouTube', tiktok: 'TikTok' };
+// рисунок дома по уровню (если дома на карте посёлка ещё нет): домик растёт, у 7–10 — выбранные пристройки
+function vhomeSVG(lvl, opts = []) {
+  const w = 60 + Math.min(lvl, 6) * 14, h = 40 + Math.min(lvl, 6) * 8, floors = lvl >= 5 ? 2 : 1, x = 180 - w / 2, base = 190;
+  const wood = lvl <= 3, wall = wood ? '#c8894f' : lvl <= 4 ? '#c96a4b' : '#f2e3c6', roof = lvl >= 6 ? '#4a6fa5' : '#b5402e';
+  const fh = h * floors, extra = opts.length + (opts.includes('ещё этаж') ? 1 : 0);
+  const ico = opts.map((o, i) => `<text x="${40 + i * 70}" y="235" font-size="30">${(VHOME.options.find(v => v.name === o) || {}).e || ''}</text>`).join('');
+  return `<svg viewBox="0 0 360 250" class="vh-art" role="img" aria-label="Мой дом, уровень ${lvl}"><rect width="360" height="250" rx="16" fill="#bfe3f7"/>
+    <rect y="190" width="360" height="60" fill="#7cc36b"/>${lvl ? `
+    <rect x="${x}" y="${base - fh - (extra > 1 ? h * 0.5 : 0)}" width="${w}" height="${fh + (extra > 1 ? h * 0.5 : 0)}" fill="${wall}" stroke="#3b2a1f" stroke-width="3"/>
+    <path d="M${x - 12} ${base - fh - (extra > 1 ? h * 0.5 : 0)} L180 ${base - fh - 46 - (extra > 1 ? h * 0.5 : 0)} L${x + w + 12} ${base - fh - (extra > 1 ? h * 0.5 : 0)} Z" fill="${roof}" stroke="#3b2a1f" stroke-width="3"/>
+    <rect x="172" y="${base - 30}" width="16" height="30" fill="#7a4a2a" stroke="#3b2a1f" stroke-width="2"/>
+    ${Array.from({ length: floors }, (_, f) => `<rect x="${x + 10}" y="${base - h * (f + 1) + 10}" width="14" height="14" fill="#ffe9a8" stroke="#3b2a1f" stroke-width="2"/><rect x="${x + w - 24}" y="${base - h * (f + 1) + 10}" width="14" height="14" fill="#ffe9a8" stroke="#3b2a1f" stroke-width="2"/>`).join('')}
+    ${lvl >= 3 ? `<rect x="${x - 18}" y="${base - 14}" width="${w + 36}" height="14" fill="#a8743f" stroke="#3b2a1f" stroke-width="2"/>` : ''}` : `<text x="180" y="130" text-anchor="middle" font-size="18" font-weight="800" fill="#3b2a1f">Участок пока пустой</text>`}
+    ${ico}</svg>`;
+}
+async function openVHome() {
+  const lvl = E.vhomeLevel(st), next = E.vhomeNext(st), opts = st.vhomeOpts || [];
+  const why = next && !next.pick ? E.canVhome(st) : null;
+  const buy = !next ? '<div class="tag ok">🏰 Особняк построен — дом готов полностью!</div>'
+    : next.pick ? `<div class="sub">Ур. ${lvl + 1} · ${next.name} — что пристроить? · ${short(next.price)}</div><div class="vh-opts">${E.vhomeOptionsLeft(st).map(o =>
+      `<button class="btn ${st.money >= next.price ? 'primary' : ''}" data-act="vhomeBuy" data-id="${o.id}" ${st.money < next.price ? `data-lock="Не хватает ${short(next.price - st.money)}"` : ''}>${o.e} ${o.name}</button>`).join('')}</div>`
+      : `<button class="btn primary go" data-act="vhomeBuy" data-id="" ${why ? `data-lock="${cap1(why)}"` : ''}>${lvl ? `Улучшить до «${next.name}»` : `Построить: ${next.name.toLowerCase()}`} · ${short(next.price)}</button>`;
+  const list = VHOME.levels.map((l, i) => `<li class="${i < lvl ? 'ok' : ''}"><span class="box">${i < lvl ? '✓' : i + 1}</span>${l.name}${l.pick ? ' + на выбор' : ''} — ${short(l.price)}</li>`).join('');
+  sheet('🏡 Мой дом в посёлке', `<div class="vh-pic" id="vhPic">${vhomeSVG(lvl, opts)}</div>
+    <div class="money-line">Уровень <b>${lvl}/10</b>${lvl ? ` · ${VHOME.levels[lvl - 1].name}` : ''} · бонус <b>+${lvl}%</b> к доходу · в кармане <b>${short(st.money)}</b></div>
+    ${opts.length ? `<p class="note">Пристройки: ${opts.join(', ')}.</p>` : ''}
+    ${buy}
+    <div id="vhNick" class="vh-nick"><p class="note">${api.online ? 'Загружаем посёлок…' : 'Ник и дом на карте посёлка — в игре через Telegram.'}</p></div>
+    <p class="note">Стоимость дома входит в капитал фермы — покупка не уменьшает место в рейтинге.</p>
+    <ul class="todo vh-levels">${list}</ul>`, 'vhome');
+  if (!api.online) return;
+  try { vinfo = await api.village.me(); } catch { vinfo = null; }
+  if (layer.dataset.kind !== 'vhome') return;
+  const box = $('#vhNick');
+  if (!vinfo) { box.innerHTML = '<p class="note">Посёлок не ответил — попробуй позже.</p>'; return; }
+  const v = vinfo.villager;
+  box.innerHTML = `${v ? `<p class="vh-found">🏡 Ты житель посёлка! Житель №${v.number} · появился в выпуске ${v.episode}${v.special ? ` · ✨ ${escH(v.special)}` : ''}</p>`
+      : vinfo.nick ? `<p class="note">Тебя пока нет в посёлке 😢 Какой дом хочешь? Напиши — построю в следующем выпуске!</p>
+        <div class="r-name"><input id="vWish" maxlength="100" placeholder="Например: дом у пруда с баней" value="${escH(vinfo.wish || '')}"><button class="btn primary" data-act="vwishSave">${vinfo.wish ? 'Изменить' : 'Отправить'}</button></div>` : ''}
+    <div class="sub">Мой ник</div>
+    <div class="r-name vh-nickrow"><select id="vPlat" aria-label="Площадка">${['instagram', 'youtube', 'tiktok', 'none'].map(p => `<option value="${p}" ${vinfo.platform === p ? 'selected' : ''}>${PLAT[p] || 'Нет аккаунта'}</option>`).join('')}</select>
+      <input id="vNick" maxlength="30" placeholder="ник без @" value="${escH(vinfo.nick || '')}"><button class="btn primary" data-act="vnickSave">ОК</button></div>`;
+  if (v) {
+    const url = await api.village.homeImage(lvl);
+    if (url && layer.dataset.kind === 'vhome') $('#vhPic').innerHTML = `<img src="${url}" alt="Мой дом на карте посёлка" class="vh-map">`;
+  }
+}
+function buyVHome(opt) {
+  const err = E.buyVhome(st, opt || undefined);
+  if (err) { haptic('rigid'); sfx.error(); return toast(cap1(err)); }
+  notify('success'); sfx.build(); render(); persist(true);
+  toast(`🏡 Мой дом: уровень ${E.vhomeLevel(st)}! Доход +${E.vhomeLevel(st)}%`);
+  openVHome();
+}
+async function saveVNick() {
+  const nick = $('#vNick')?.value || '', platform = $('#vPlat')?.value || 'none';
+  try { vinfo = await api.village.setProfile(nick, platform); toast(vinfo.villager ? '🏡 Нашли твой дом в посёлке!' : 'Ник сохранён'); openVHome(); }
+  catch { toast('Ник — латиницей, цифры, точка или _ (2–30 символов)'); }
+}
+async function saveVWish() {
+  const wish = ($('#vWish')?.value || '').trim();
+  if (!wish) return toast('Напиши, какой дом хочешь');
+  try { await api.village.wish(wish); toast('📝 Записал! Постараюсь построить в следующем выпуске'); } catch { toast('До 100 символов'); }
+}
 
 function openSettings() {
   const sw = (id, on) => `<button class="switch ${on ? 'on' : ''}" data-act="pref" data-id="${id}" aria-label="переключить"></button>`;
@@ -1881,6 +1958,7 @@ function openSettings() {
       <li><span>🧑‍🌾 Подсказки фермера<small>${prefs.hints ? 'вкл — важное фермер расскажет по центру экрана' : 'выкл — тапни по фермеру, и он подскажет'}</small></span>${sw('hints', prefs.hints)}</li>
       <li><span>🔋 Экономия батареи<small>${prefs.eco ? 'вкл — меньше анимаций, до 30 кадров в секунду' : 'выкл — все анимации фермы'}</small></span>${sw('eco', !!prefs.eco)}</li>
       <li><span>🎬 Сценки после решений<small>${prefs.scenes !== false ? 'вкл — короткий мультик 3–6 секунд, один раз' : 'выкл — только итог выбора'}</small></span>${sw('scenes', prefs.scenes !== false)}</li>
+      <li><span>🏡 Ник в соцсетях<small>${api.online ? 'для «Найди свой дом» в сериале «Деревня деда»' : 'работает в Telegram'}</small></span><button class="btn" data-act="vhome">Изменить</button></li>
       <li><span>🏆 Имя в рейтинге<small>${tgUser ? 'берётся из Telegram: ' + tgUser : 'как тебя видят другие игроки'}</small></span></li>
     </ul>
     ${tgUser ? '' : `<div class="r-name"><input id="setName" maxlength="24" placeholder="Твоё имя" value="${(playerName() || '').replace(/"/g, '&quot;')}"><button class="btn primary" data-act="saveName">ОК</button></div>`}

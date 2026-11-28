@@ -79,6 +79,18 @@ export async function flush() {
   try { await request('PUT', '/api/save', body); } catch (e) { console.warn('save failed', e); pending = pending || body; }
 }
 
+// «Мой дом в посёлке» (сериал «Деревня деда»): ник, заявка, картинка дома на карте посёлка
+export const village = {
+  me: () => request('GET', '/api/village/me'),
+  setProfile: (nick, platform) => request('PUT', '/api/village/profile', { nick, platform }),
+  wish: (wish) => request('POST', '/api/village/wish', { wish }),
+  async homeImage(level) { // картинка — с подписью initData, поэтому через fetch, а не <img src>
+    const res = await fetch(API + `/api/village/home.png?level=${level}`, { headers: { 'X-Telegram-Init-Data': initData } });
+    if (!res.ok) return null;
+    return URL.createObjectURL(await res.blob());
+  },
+};
+
 // Компенсации после обновления баланса: [{id, xp_min, money, reason}]
 export async function grants() {
   if (!online) return [];

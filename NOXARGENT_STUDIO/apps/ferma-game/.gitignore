@@ -1,5 +1,7 @@
 bot/.env
-bot/data/
+bot/data/*
+!bot/data/village/
+bot/data/village/cache/
 bot/.venv/
 __pycache__/
 .pytest_cache/

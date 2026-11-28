@@ -837,3 +837,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes tutGlow { 50% { box-shadow: 0 0 0 8px rgba(242,182,50,.2), 0 4px 0 rgba(59,42,31,.2); } }
 /* подсказка фермера не замирает вместе с игрой: облачко всегда видно (пауза игры не останавливает его появление) */
 #app.paused #coach, #app.paused #coach .coach-dim, #app.paused #coach .coach-bubble { animation-play-state: running !important; }
+
+/* ===== «Мой дом в посёлке» ===== */
+.vh-pic { border: 3px solid var(--line); border-radius: 16px; overflow: hidden; background: #bfe3f7; margin-bottom: 8px; }
+.vh-pic svg, .vh-map { display: block; width: 100%; height: auto; }
+.vh-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 6px 0 4px; }
+.vh-opts .btn { min-height: 46px; font-size: 15px; }
+.vh-opts .btn[data-lock] { opacity: .6; }
+.vh-found { background: #e8f6df; border: 2px solid #6fae66; border-radius: 12px; padding: 8px 10px; font-weight: 800; color: #2f6a2c; margin: 8px 0; }
+.vh-nick .sub { margin-top: 10px; }
+.vh-nickrow select { border: 2.5px solid var(--line); border-radius: 12px; padding: 8px; font: inherit; font-weight: 700; background: #fff; color: var(--brown); }
+.vh-levels li.ok { opacity: .6; }
+@media (max-width: 400px) { .qbtn { width: 46px; } .qbtn small { font-size: 8px; letter-spacing: -.02em; } }

@@ -117,7 +117,8 @@ def sub_message(items: list[dict]) -> tuple[str, InlineKeyboardMarkup]:
     return SUB_TEXT + "\n\n" + "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=kb)
 
 
-def make_router(sub: SubChecker, channel_url: str, welcome: str, play_keyboard) -> Router:
+def make_router(sub: SubChecker, channel_url: str, welcome: str, play_keyboard, after_ok=None) -> Router:
+    """after_ok(message, user_id) -> True, если сам ответил (например, спросил ник при первом входе)."""
     r = Router()
 
     @r.callback_query(F.data == "check_sub")
@@ -125,6 +126,8 @@ def make_router(sub: SubChecker, channel_url: str, welcome: str, play_keyboard) 
         st = await sub.status(cb.from_user.id, fresh=True)
         if st["ok"]:
             await cb.answer("Всё на месте — добро пожаловать на ферму! 🌾")
+            if after_ok and await after_ok(cb.message, cb.from_user.id):
+                return
             try:
                 await cb.message.edit_text(welcome, reply_markup=play_keyboard())
             except Exception:  # noqa: BLE001

@@ -202,7 +202,7 @@ async def no_cache_js(request: web.Request, handler):
     return resp
 
 
-def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None, sub=None) -> web.Application:
+def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None, sub=None, village=None) -> web.Application:
     app = web.Application(middlewares=[no_cache_js], client_max_size=512 * 1024)
     app[CFG] = cfg
     app[DBK] = db
@@ -213,6 +213,9 @@ def make_app(cfg: Config, db: DB, bot_username: str = "", shop=None, bot=None, s
     app.router.add_get("/api/save", get_save)
     app.router.add_put("/api/save", put_save)
     app.router.add_get("/api/grants", get_grants)
+    if village:  # «Мой дом в посёлке», ник, заявки (сериал «Деревня деда»)
+        from village import setup_api as village_api
+        village_api(app, *village, current_user)
     app.router.add_post("/api/result", post_result)
     app.router.add_post("/api/score", post_score)
     app.router.add_get("/api/leaderboard", get_leaderboard)

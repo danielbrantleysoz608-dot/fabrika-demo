@@ -276,6 +276,27 @@ export const DECOR = [
   { id: 'arch',      name: 'Арка «Ферма деда»',  emoji: '⛩️', cost: 60000000, tier: 3, desc: 'Ворота с вывеской — видно с трассы.' },
 ];
 export const DECOR_BONUS = 0.02;
+// «Мой дом в посёлке» (сериал «Деревня деда»): 10 уровней за деньги фермы, от ~1 млн до триллионов; +1% к доходу за уровень.
+// Уровни 7–10 — по выбору (каждое улучшение один раз). Стоимость дома входит в капитал (покупка рейтинг не уменьшает).
+export const VHOME = {
+  bonus: 0.01,
+  levels: [
+    { name: 'Деревянный домик', price: 1e6 },
+    { name: 'Крепкая изба', price: 5e6 },
+    { name: 'Изба с верандой', price: 28e6 },
+    { name: 'Кирпичный дом', price: 150e6 },
+    { name: 'Двухэтажный дом', price: 800e6 },
+    { name: 'Коттедж', price: 4e9 },
+    { name: 'Коттедж+', price: 22e9, pick: true },
+    { name: 'Усадьба', price: 115e9, pick: true },
+    { name: 'Большая усадьба', price: 600e9, pick: true },
+    { name: 'Особняк', price: 3.2e12, pick: true },
+  ],
+  options: [
+    { id: 'floor', e: '🏢', name: 'ещё этаж' }, { id: 'pool', e: '🏊', name: 'бассейн' }, { id: 'banya', e: '🧖', name: 'баня' },
+    { id: 'garage', e: '🚗', name: 'гараж' }, { id: 'garden', e: '🌳', name: 'сад' }, { id: 'orangery', e: '🌺', name: 'оранжерея' },
+  ],
+};
 // Улучшение работника: 3 уровня, цена ×4 к найму за каждый
 export const WORKER_UP_MULT = 4;
 export const WORKER_MAX = 3;
