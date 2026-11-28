@@ -1,0 +1,48 @@
+// Иконки для карточек событий (плоский вектор, тёмный контур)
+const O = 'stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"';
+const wrap = (inner) => `<svg viewBox="0 0 84 64" aria-hidden="true">${inner}</svg>`;
+
+export const ICONS = {
+  hive: wrap(`<g ${O}><rect x="20" y="14" width="44" height="8" fill="#d6463a"/><rect x="24" y="22" width="36" height="16" fill="#f2c84b"/><rect x="24" y="38" width="36" height="16" fill="#f2c84b"/></g><rect x="38" y="48" width="9" height="3" fill="#3b2a1f"/><circle cx="68" cy="16" r="3" fill="#2b2b2b"/><circle cx="14" cy="30" r="3" fill="#2b2b2b"/>`),
+  no: wrap(`<circle cx="42" cy="32" r="22" fill="#fbf3e3" stroke="#8a7f72" stroke-width="4"/><path d="M32 22 L52 42 M52 22 L32 42" stroke="#8a7f72" stroke-width="5" stroke-linecap="round"/>`),
+  cow: wrap(`<g ${O}><rect x="10" y="22" width="44" height="22" rx="9" fill="#fff"/><rect x="14" y="40" width="5" height="14" fill="#fff"/><rect x="44" y="40" width="5" height="14" fill="#fff"/><rect x="50" y="10" width="20" height="18" rx="7" fill="#fff"/><ellipse cx="68" cy="24" rx="7" ry="5" fill="#f4a3b4"/></g><circle cx="22" cy="30" r="5" fill="#222"/><circle cx="40" cy="36" r="4" fill="#222"/><circle cx="58" cy="17" r="2" fill="#222"/>`),
+  stove: wrap(`<g ${O}><rect x="38" y="2" width="7" height="20" fill="#5b6168"/><rect x="24" y="20" width="36" height="32" rx="5" fill="#5b6168"/><rect x="31" y="27" width="22" height="16" fill="#3b2a1f"/></g><path d="M35 43 l5 -10 l3 5 l3 -7 l4 12z" fill="#f28c28"/><path d="M12 44 v-10 M18 46 v-12 M66 44 v-10 M72 46 v-12" stroke="#3fae4f" stroke-width="5" stroke-linecap="round"/>`),
+  trap: wrap(`<path d="M14 40 h56 v8 h-56z" fill="#757d85" ${O}/><path d="M18 40 q24 -36 48 0" fill="none" stroke="#3b2a1f" stroke-width="3"/><path d="M22 40 l4 -6 l4 6 l4 -6 l4 6 l4 -6 l4 6 l4 -6 l4 6 l4 -6 l4 6" fill="none" stroke="#9aa3a8" stroke-width="2"/>`),
+  blanket: wrap(`<path d="M10 48 q32 -40 64 0z" fill="#dfe9f0" ${O}/><path d="M20 48 v-6 M32 48 v-14 M44 48 v-16 M56 48 v-12 M66 48 v-4" stroke="#b7c7d3" stroke-width="2"/><path d="M40 10 v10 M35 13 l10 4 M45 13 l-10 4" stroke="#4a90d9" stroke-width="2.4" stroke-linecap="round"/>`),
+  dice: wrap(`<rect x="22" y="12" width="40" height="40" rx="8" fill="#fff" ${O}/><circle cx="32" cy="22" r="3.5" fill="#d8392d"/><circle cx="42" cy="32" r="3.5" fill="#d8392d"/><circle cx="52" cy="42" r="3.5" fill="#d8392d"/>`),
+  money: wrap(`<g ${O}><rect x="14" y="20" width="44" height="26" rx="4" fill="#9bd27f" transform="rotate(-10 36 33)"/><rect x="24" y="22" width="44" height="26" rx="4" fill="#9bd27f"/></g><circle cx="46" cy="35" r="7" fill="#5fae4f"/><circle cx="66" cy="16" r="8" fill="#ffd23f" ${O}/>`),
+  cafe: wrap(`<g ${O}><path d="M20 26 h36 v14 q0 12 -18 12 q-18 0 -18 -12z" fill="#fff"/><path d="M56 30 q12 0 10 8 q-2 6 -10 4" fill="none"/></g><path d="M30 8 q4 6 0 12 M40 6 q4 6 0 12" stroke="#b9a07c" stroke-width="3" fill="none" stroke-linecap="round"/><rect x="14" y="54" width="52" height="4" rx="2" fill="#8a5a3c"/>`),
+  stall: wrap(`<rect x="14" y="10" width="56" height="16" rx="3" fill="#f8efd9" ${O}/><rect x="18" y="32" width="48" height="20" fill="#d8392d" ${O}/><path d="M26 32 v20 M38 32 v20 M50 32 v20 M62 32 v20" stroke="#fff" stroke-width="5"/><text x="42" y="22" text-anchor="middle" font-family="Rubik" font-weight="800" font-size="10" fill="#c8362b">ЯЙЦА</text>`),
+  water: wrap(`<path d="M42 8 q18 22 18 32 a18 18 0 0 1 -36 0 q0 -10 18 -32z" fill="#6fb6ec" ${O}/><path d="M34 40 a8 8 0 0 0 8 8" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/>`),
+  camera: wrap(`<rect x="14" y="20" width="56" height="34" rx="6" fill="#5b6168" ${O}/><rect x="30" y="12" width="20" height="10" rx="3" fill="#5b6168" ${O}/><circle cx="42" cy="37" r="11" fill="#cfe9f6" ${O}/><circle cx="62" cy="27" r="3" fill="#d8392d"/>`),
+  bank: wrap(`<path d="M12 24 l30 -14 l30 14z" fill="#e5d3a8" ${O}/><g fill="#fbf3e3" ${O}><rect x="18" y="26" width="8" height="22"/><rect x="38" y="26" width="8" height="22"/><rect x="58" y="26" width="8" height="22"/></g><rect x="12" y="48" width="60" height="8" fill="#e5d3a8" ${O}/>`),
+  truck: wrap(`<g ${O}><rect x="8" y="18" width="40" height="26" fill="#3f78c9"/><path d="M48 26 h14 l10 10 v8 h-24z" fill="#e2403a"/></g><g ${O} fill="#2f2f33"><circle cx="20" cy="46" r="6"/><circle cx="60" cy="46" r="6"/></g><rect x="14" y="10" width="10" height="8" fill="#f08a24" ${O}/><rect x="26" y="12" width="10" height="6" fill="#e5322b" ${O}/>`),
+  tools: wrap(`<path d="M24 50 l26 -26" stroke="#b9844f" stroke-width="8" stroke-linecap="round"/><path d="M48 14 l10 -4 l12 12 l-4 10 z" fill="#757d85" ${O}/><path d="M18 18 l32 32" stroke="#757d85" stroke-width="6" stroke-linecap="round"/><circle cx="16" cy="16" r="7" fill="none" stroke="#757d85" stroke-width="5"/>`),
+  bucket: wrap(`<path d="M24 22 h36 l-5 32 h-26z" fill="#9aa3a8" ${O}/><path d="M24 22 q18 -20 36 0" fill="none" stroke="#3b2a1f" stroke-width="2.4"/><path d="M28 30 h28" stroke="#6fb6ec" stroke-width="4"/>`),
+  gift: wrap(`<g ${O}><rect x="18" y="26" width="48" height="28" fill="#e2403a"/><rect x="14" y="18" width="56" height="10" fill="#d0352f"/></g><path d="M42 18 v36" stroke="#ffd23f" stroke-width="6"/><path d="M42 18 q-14 -14 -16 -2 q4 4 16 2 q12 2 16 -2 q-2 -12 -16 2" fill="#ffd23f" ${O}/>`),
+  heart: wrap(`<path d="M42 54 q-26 -16 -26 -32 a12 12 0 0 1 26 -4 a12 12 0 0 1 26 4 q0 16 -26 32z" fill="#e2403a" ${O}/><circle cx="30" cy="22" r="4" fill="#f59a92"/>`),
+  boy: wrap(`<rect x="28" y="38" width="28" height="22" rx="6" fill="#3f78c9" ${O}/><circle cx="42" cy="26" r="13" fill="#f3c8a2" ${O}/><path d="M29 22 q13 -16 26 0 q-6 -4 -13 -3 q-7 -1 -13 3z" fill="#e0a33a" ${O}/><circle cx="37" cy="27" r="1.8" fill="#222"/><circle cx="47" cy="27" r="1.8" fill="#222"/><path d="M37 33 q5 4 10 0" stroke="#222" stroke-width="2" fill="none"/>`),
+};
+
+// Иллюстрации для открыток-концовок
+export const POSTCARD_ART = {
+  millionaire: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#7fc4f2"/><circle cx="160" cy="30" r="16" fill="#ffe24a" stroke="#f3c534" stroke-width="3"/><rect y="84" width="200" height="36" fill="#5ebd46"/>
+    <g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round"><path d="M70 90 q-6 -40 30 -44 q36 4 30 44z" fill="#c9a36a"/><path d="M88 46 l12 -12 l12 12" fill="#c9a36a"/></g>
+    <text x="100" y="80" text-anchor="middle" font-family="Rubik" font-weight="900" font-size="24" fill="#3b2a1f">₽</text>
+    <g stroke="#3b2a1f" stroke-width="2"><circle cx="48" cy="92" r="10" fill="#ffd23f"/><circle cx="150" cy="96" r="9" fill="#ffd23f"/><circle cx="160" cy="84" r="8" fill="#ffd23f"/></g></svg>`,
+  alive: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#8fd0f5"/><circle cx="40" cy="30" r="15" fill="#ffe24a" stroke="#f3c534" stroke-width="3"/><path d="M0 86 q100 -20 200 0 v34 h-200z" fill="#5ebd46"/>
+    <g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round"><rect x="74" y="58" width="56" height="34" fill="#f4e5c4"/><path d="M66 60 l36 -26 l36 26z" fill="#d6463a"/><rect x="96" y="70" width="12" height="22" fill="#a8693c"/></g>
+    <g stroke="#3b2a1f" stroke-width="1.6"><ellipse cx="150" cy="96" rx="8" ry="6" fill="#fff"/><ellipse cx="166" cy="100" rx="8" ry="6" fill="#c8763e"/></g></svg>`,
+  sold: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#b9d6e8"/><rect y="84" width="200" height="36" fill="#9cc96b"/>
+    <g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round"><rect x="96" y="44" width="6" height="50" fill="#7b5236"/><rect x="52" y="30" width="96" height="30" rx="4" fill="#f8efd9" stroke="#8a5a3c" stroke-width="3"/></g>
+    <text x="100" y="52" text-anchor="middle" font-family="Rubik" font-weight="900" font-size="17" fill="#c8362b">ПРОДАНО</text></svg>`,
+  frozen: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#a9c3d8"/><path d="M0 84 q100 -14 200 0 v36 h-200z" fill="#eef3f7"/>
+    <g stroke="#3b2a1f" stroke-width="2.2" stroke-linejoin="round"><rect x="72" y="56" width="56" height="34" fill="#d9d3c4"/><path d="M64 58 l36 -26 l36 26z" fill="#8a603f"/><path d="M68 56 l32 -22 l32 22 l-8 0 l-24 -16 l-24 16z" fill="#fff"/><rect x="94" y="68" width="12" height="22" fill="#6b5a4a"/></g>
+    <path d="M150 20 v24 M139 26 l22 12 M139 38 l22 -12" stroke="#fff" stroke-width="3" stroke-linecap="round"/></svg>`,
+  patron: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#f8d9e3"/><path d="M100 98 q-44 -26 -44 -52 a22 22 0 0 1 44 -6 a22 22 0 0 1 44 6 q0 26 -44 52z" fill="#e2403a" stroke="#3b2a1f" stroke-width="3"/>
+    <circle cx="80" cy="44" r="6" fill="#f59a92"/><path d="M30 30 l4 -8 4 8 -8 -5 h8z M162 24 l4 -8 4 8 -8 -5 h8z" fill="#f2c84b"/></svg>`,
+  chest: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#7fc4f2"/><path d="M0 70 q100 -12 200 0 v50 h-200z" fill="#4d9be0"/><path d="M20 84 q15 -6 30 0 M140 92 q15 -6 30 0" stroke="#a9d8f6" stroke-width="3" fill="none"/>
+    <g stroke="#3b2a1f" stroke-width="2.4" stroke-linejoin="round"><rect x="66" y="56" width="68" height="40" rx="4" fill="#a8693c"/><path d="M66 60 q34 -26 68 0z" fill="#8b5a36"/><rect x="94" y="62" width="12" height="14" fill="#f2c84b"/></g>
+    <path d="M70 70 h60 M70 86 h60" stroke="#6b4426" stroke-width="2"/><circle cx="150" cy="40" r="5" fill="#ffe24a"/><circle cx="52" cy="44" r="3" fill="#ffe24a"/></svg>`,
+  locked: `<svg viewBox="0 0 200 120"><rect width="200" height="120" fill="#e9dcc2"/><text x="100" y="78" text-anchor="middle" font-family="Rubik" font-weight="900" font-size="50" fill="#c8b48e">?</text></svg>`,
+};
