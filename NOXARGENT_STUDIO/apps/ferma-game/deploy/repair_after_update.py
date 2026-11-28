@@ -81,6 +81,7 @@ def main() -> None:
     ap.add_argument("--negatives", action="store_true", help="игроки с отрицательным капиталом")
     ap.add_argument("--fix", action="store_true", help="вернуть уровень/капитал/ферму")
     ap.add_argument("--fix-debt", action="store_true", help="с --negatives: списать долг, набежавший из-за расходов месяца")
+    ap.add_argument("--cancel", default="", help="отменить ещё не полученные компенсации игрока (имя или Telegram id)")
     a = ap.parse_args()
     cfg = load()
     now_db = read_db(cfg.db_path)
@@ -130,6 +131,16 @@ def main() -> None:
             con.execute(f"ALTER TABLE grants ADD COLUMN {col}")
         except sqlite3.OperationalError:
             pass
+    if a.cancel:  # отменить ещё не полученные компенсации (уже полученные отменить нельзя — они в ферме игрока)
+        q = norm(a.cancel)
+        uids = [int(a.cancel)] if a.cancel.isdigit() else [uid for uid, ns in names.items() if any(q in norm(n) for n in ns)]
+        for uid in uids:
+            got = con.execute("SELECT COUNT(*) FROM grants WHERE user_id=? AND confirmed_at IS NOT NULL", (uid,)).fetchone()[0]
+            n = con.execute("DELETE FROM grants WHERE user_id=? AND confirmed_at IS NULL", (uid,)).rowcount
+            print(f"{label(uid)}: отменено компенсаций {n}" + (f"; уже получено игроком раньше: {got}" if got else ""))
+        con.commit()
+        con.close()
+        return
     pending = {r[0] for r in con.execute("SELECT DISTINCT user_id FROM grants WHERE confirmed_at IS NULL")}
 
     # --- отрицательный капитал ---
