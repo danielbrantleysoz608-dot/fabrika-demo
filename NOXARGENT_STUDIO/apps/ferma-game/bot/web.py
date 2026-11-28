@@ -154,6 +154,9 @@ async def put_save(request: web.Request) -> web.Response:
         await request.app[DBK].put_save(user["id"], data)
     except ValueError as e:
         raise web.HTTPRequestEntityTooLarge(max_size=0, actual_size=0, text=str(e))
+    except PermissionError as e:
+        log.warning("сохранение отклонено (user %s): %s", user["id"], e)
+        raise web.HTTPConflict(text=str(e))
     # рейтинг обновляется при каждом сохранении: капитал считает игра (та же функция, что в шапке)
     score = data.get("score")
     if isinstance(score, dict) and "capital" in score:

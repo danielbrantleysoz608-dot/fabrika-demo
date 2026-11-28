@@ -433,10 +433,21 @@ loop.every(10000, () => profile.game && st.phase !== 'clean' && persist());
 async function checkGrants() {
   if (!st || !profile.game || st.phase === 'clean') return;
   const list = await api.grants();
-  const got = list.map(g => E.applyGrant(st, g)).filter(Boolean);
-  if (!got.length && !list.length) return;
-  render(); persist(true);
-  if (got.length) say(`🛠 После обновления вернули: <b>${got.join('; ')}</b>. Извини за неудобство!`, 'happy', 9000);
+  const got = [];
+  let restored = false;
+  for (const g of list) {
+    if (g.game) { // вернуть прежнюю ферму целиком (из копии базы до обновления)
+      const ng = E.migrate(structuredClone(g.game));
+      if (!ng) continue;
+      got.push(E.applyGrant(ng, { ...g, game: null }) ? 'ферму как была до обновления' : '');
+      st = ng; profile.game = st; restored = true;
+    } else got.push(E.applyGrant(st, g));
+  }
+  if (!list.length) return;
+  if (restored) enterGame(); else render();
+  persist(true);
+  const txt = got.filter(Boolean);
+  if (txt.length) say(`🛠 После обновления вернули: <b>${txt.join('; ')}</b>. Извини за неудобство!`, 'happy', 9000);
 }
 setTimeout(checkGrants, 4000);
 loop.every(120000, checkGrants);
@@ -770,6 +781,7 @@ function showIntro(i) {
 function newGame() {
   st = E.newGame();
   profile.game = st;
+  profile.restartAt = st.startedAt; // игрок сам начал заново — сервер разрешит заменить прежнюю ферму этой
   persist(true);
   enterGame();
   important('Дед оставил нам ферму… и <b>бурьян</b> по пояс.<br>Тапай по хламу и бурьяну — всё, по чему можно тапать, обведено <b>кружком</b>.', 'wink');
@@ -1964,7 +1976,14 @@ async function boot() {
     tg.disableVerticalSwipes?.();
     tg.enableClosingConfirmation?.();
   }
-  const saved = await api.loadSave();
+  let saved;
+  try { saved = await api.loadSave(); } catch {
+    // нет связи с сервером при входе: ждём и пробуем снова, новую ферму не создаём
+    openLayer(`<div class="dialog"><h3>📡 Нет связи с фермой</h3><p>Не получилось загрузить твою ферму с сервера. Прогресс цел — проверь интернет и попробуй ещё раз.</p>
+      <div class="row"><button class="btn primary wide" id="retryLoad">Повторить</button></div></div>`, 'screen dim', false);
+    $('#retryLoad').onclick = () => location.reload();
+    return;
+  }
   if (saved) profile = { album: {}, introSeen: false, ...saved, game: E.migrate(saved.game) };
   st = profile.game || E.newGame();
   st.tzOff = new Date().getTimezoneOffset();

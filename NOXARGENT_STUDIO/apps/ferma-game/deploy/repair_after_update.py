@@ -1,18 +1,23 @@
-"""Кто потерял уровень или капитал после обновлений — и вернуть (запуск на сервере от пользователя ferma):
-    sudo -u ferma /opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/bot/.venv/bin/python \
-        /opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/deploy/repair_after_update.py [--hours 120] [--player Викуша] [--fix]
+"""Кто потерял уровень или капитал после обновлений — найти и вернуть (запуск на сервере от пользователя ferma):
+    PY=/opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/bot/.venv/bin/python
+    R=/opt/ferma/repo/NOXARGENT_STUDIO/apps/ferma-game/deploy/repair_after_update.py
+    sudo -u ferma $PY $R --find Викуша                    # найти игрока по имени (чат, Telegram, рейтинг) и показать по копиям
+    sudo -u ferma $PY $R --backup 20261127-0100 --backup 20261126-0100            # все, у кого упало, — только показ
+    sudo -u ferma $PY $R --backup 20261127-0100 --backup 20261126-0100 --fix      # вернуть
+    sudo -u ferma $PY $R --negatives [--fix-debt]          # у кого капитал меньше нуля и откуда (и списать долг)
 
-Сравнивает каждого игрока сейчас с копиями базы за последние --hours часов (/opt/ferma/backups, их делает
-update.sh перед каждым обновлением и таймер раз в сутки). Для каждой фермы берётся лучшее, что было в копиях
-(тот же startedAt — если игрок сам начал заново, не трогаем). Уровень и капитал считаются так же, как в игре
-(farm_capital.py = engine.js). Без --fix только показывает.
---fix: каждому, у кого упало, — компенсация: опыт не ниже прежнего (уровень вернётся) и разница капитала деньгами.
-Игра забирает её сама при входе (или в течение 2 минут, если открыта) и пишет игроку «Вернули после обновления».
-Рейтинг «Всё время» сразу поднимается до прежнего капитала. Ничего не отнимается. Повторный запуск не дублирует.
+Сравнивает текущую базу с копиями (/opt/ferma/backups; --backup — только копии с этим текстом в имени, иначе за --hours).
+Уровень и капитал считаются так же, как в игре (farm_capital.py = engine.js).
+- Та же ферма, а опыт/капитал меньше → компенсация: опыт не ниже прежнего (уровень вернётся) + разница капитала деньгами.
+- Сейчас ДРУГАЯ ферма (startedAt другой), а прежняя была больше → это не «Начать заново», а новая ферма с устройства,
+  которое не загрузило настоящую: возвращаем прежнюю ферму целиком из копии.
+Компенсацию игра забирает сама (при входе или в течение 2 минут) и пишет игроку «Вернули после обновления»;
+рейтинг сразу поднимается до прежнего капитала. Ничего не отнимается. Повторный запуск не дублирует.
 """
 import argparse
 import gzip
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -26,119 +31,181 @@ sys.path.insert(0, str(HERE.parent / "bot"))
 import farm_capital as fc  # noqa: E402
 from config import load  # noqa: E402
 
-BACKUPS = Path(__import__("os").environ.get("FERMA_BACKUPS", "/opt/ferma/backups"))
+BACKUPS = Path(os.environ.get("FERMA_BACKUPS", "/opt/ferma/backups"))
+GRANTS = """CREATE TABLE IF NOT EXISTS grants (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
+    xp_min INTEGER NOT NULL DEFAULT 0, money INTEGER NOT NULL DEFAULT 0, reason TEXT, created_at INTEGER NOT NULL, confirmed_at INTEGER);"""
 
 
-def saves_of(db_path: Path) -> dict:
-    con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    out = {}
-    for uid, data, upd in con.execute("SELECT user_id, data, updated_at FROM saves"):
+def read_db(path: Path) -> dict:
+    """{'saves': {uid: game}, 'names': {uid: set(имён)}} — имена из рейтинга, Telegram и чата фермы."""
+    con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    saves, names = {}, {}
+    for uid, data in con.execute("SELECT user_id, data FROM saves"):
         try:
             g = (json.loads(data) or {}).get("game") or {}
         except ValueError:
             continue
-        if g.get("phase") == "clean" or "money" not in g:
-            continue
-        out[uid] = {"game": g, "updated": upd}
+        if "money" in g:
+            saves[uid] = g
+    queries = ["SELECT CAST(substr(player_key, 4) AS INTEGER), name FROM players WHERE player_key LIKE 'tg:%'",
+               "SELECT user_id, first_name FROM users", "SELECT user_id, '@' || username FROM users WHERE username IS NOT NULL",
+               "SELECT user_id, name FROM mod_users", "SELECT user_id, '@' || username FROM mod_users WHERE username IS NOT NULL"]
+    for q in queries:
+        try:
+            for uid, nm in con.execute(q):
+                if nm:
+                    names.setdefault(uid, set()).add(str(nm))
+        except sqlite3.OperationalError:
+            pass  # таблицы нет в старой копии
     con.close()
-    return out
+    return {"saves": saves, "names": names}
 
 
-def stats(g: dict) -> dict:
+def st(g: dict) -> dict:
     m = fc.migrate(g)
-    return {"lvl": fc.level(g), "cap": fc.capital(g), "xp": m.get("xp") or 0, "month": g.get("month") or 0, "started": g.get("startedAt")}
+    return {"lvl": fc.level(g), "cap": fc.capital(g), "xp": m.get("xp") or 0, "month": g.get("month") or 0, "started": g.get("startedAt"),
+            "money": m.get("money") or 0, "debt": m.get("debt") or 0, "debtAuto": m.get("debtAuto") or 0, "phase": g.get("phase")}
+
+
+def norm(s: str) -> str:
+    tr = str.maketrans("abvgdeziklmnoprstufhcy", "абвгдезиклмнопрстуфхцы")
+    return s.lower().replace("ё", "е").translate(tr)
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=float, default=120)
-    ap.add_argument("--player", default="")
-    ap.add_argument("--fix", action="store_true")
+    ap.add_argument("--backup", action="append", default=[], help="часть имени копии, напр. 20261127-0100")
+    ap.add_argument("--find", default="", help="найти игрока по имени (чат, Telegram, рейтинг)")
+    ap.add_argument("--user", type=int, default=0, help="только этот Telegram id")
+    ap.add_argument("--negatives", action="store_true", help="игроки с отрицательным капиталом")
+    ap.add_argument("--fix", action="store_true", help="вернуть уровень/капитал/ферму")
+    ap.add_argument("--fix-debt", action="store_true", help="с --negatives: списать долг, набежавший из-за расходов месяца")
     a = ap.parse_args()
     cfg = load()
-    cur = saves_of(cfg.db_path)
-    names = {}
-    con = sqlite3.connect(cfg.db_path)
-    for key, name in con.execute("SELECT player_key, name FROM players"):
-        if key.startswith("tg:"):
-            names[int(key[3:])] = name
-    con.close()
+    now_db = read_db(cfg.db_path)
+    cur = now_db["saves"]
 
-    since = time.time() - a.hours * 3600
-    files = sorted(p for p in BACKUPS.glob("ferma-2*.sqlite3.gz") if p.stat().st_mtime >= since)
-    print(f"Копии базы за последние {a.hours:.0f} ч: {len(files)}")
-    for p in files:
-        print("  ", p.name)
-    best = {}   # uid -> лучшее состояние той же фермы в копиях
-    history = {}
+    files = sorted(BACKUPS.glob("ferma-2*.sqlite3.gz"))
+    files = [p for p in files if any(b in p.name for b in a.backup)] if a.backup else [p for p in files if p.stat().st_mtime >= time.time() - a.hours * 3600]
+    print("Копии базы для сравнения:", ", ".join(p.name for p in files) or "НЕТ (проверьте --backup / /opt/ferma/backups)")
+    backups = []
     with tempfile.TemporaryDirectory() as tmp:
         for p in files:
-            db = Path(tmp) / "b.sqlite3"
+            db = Path(tmp) / p.name.replace(".gz", "")
             with gzip.open(p, "rb") as src, open(db, "wb") as dst:
                 shutil.copyfileobj(src, dst)
-            for uid, s in saves_of(db).items():
-                st = stats(s["game"])
-                st["file"] = p.name
-                history.setdefault(uid, []).append(st)
-                if uid not in cur or st["started"] != stats(cur[uid]["game"])["started"]:
-                    continue
-                b = best.setdefault(uid, {"lvl": 0, "cap": 0, "xp": 0, "month": 0, "file_lvl": "", "file_cap": ""})
-                if st["xp"] > b["xp"]:
-                    b.update(xp=st["xp"], lvl=st["lvl"], month=max(b["month"], st["month"]), file_lvl=p.name)
-                if st["cap"] > b["cap"]:
-                    b.update(cap=st["cap"], file_cap=p.name)
-                b["month"] = max(b["month"], st["month"])
+            backups.append((p.name, read_db(db)))
+    names = {}
+    for _, b in backups + [("now", now_db)]:
+        for uid, ns in b["names"].items():
+            names.setdefault(uid, set()).update(ns)
+    label = lambda uid: " / ".join(sorted(names.get(uid, {f'id {uid}'})))[:40]  # noqa: E731
+
+    # --- поиск игрока ---
+    if a.find:
+        q = norm(a.find)
+        keys = {q, q[:4], q[:3]} if len(q) >= 4 else {q}
+        hits = [uid for uid, ns in names.items() if any(k in norm(n) for n in ns for k in keys)]
+        print(f"\nПоиск «{a.find}»: найдено {len(hits)}")
+        for uid in hits:
+            print(f"\n=== id {uid}: {label(uid)} ===")
+            for fname, b in backups:
+                if uid in b["saves"]:
+                    s = st(b["saves"][uid])
+                    print(f"  {fname}: уровень {s['lvl']}, опыт {s['xp']}, капитал {fc.fmt(s['cap'])}, месяц {s['month']}, ферма начата {s['started']}")
+            if uid in cur:
+                s = st(cur[uid])
+                print(f"  СЕЙЧАС: уровень {s['lvl']}, опыт {s['xp']}, капитал {fc.fmt(s['cap'])}, месяц {s['month']}, ферма начата {s['started']}"
+                      f"{' (уборка — новая ферма)' if s['phase'] == 'clean' else ''}")
+            else:
+                print("  СЕЙЧАС: сохранения нет")
+        if not a.fix:
+            return
 
     con = sqlite3.connect(cfg.db_path)
-    con.executescript("""CREATE TABLE IF NOT EXISTS grants (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
-        xp_min INTEGER NOT NULL DEFAULT 0, money INTEGER NOT NULL DEFAULT 0, reason TEXT, created_at INTEGER NOT NULL, confirmed_at INTEGER);""")
+    con.executescript(GRANTS)
+    for col in ("debt_off INTEGER NOT NULL DEFAULT 0", "game TEXT"):
+        try:
+            con.execute(f"ALTER TABLE grants ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     pending = {r[0] for r in con.execute("SELECT DISTINCT user_id FROM grants WHERE confirmed_at IS NULL")}
+
+    # --- отрицательный капитал ---
+    if a.negatives:
+        neg = [(uid, st(g)) for uid, g in cur.items() if (a.user in (0, uid)) and st(g)["cap"] < 0]
+        print(f"\nКапитал меньше нуля: {len(neg)} игрок(ов)")
+        print(f"{'Игрок':<40} {'капитал':>14} {'деньги':>12} {'долг':>14} {'из них на зарплаты':>20}  в копиях")
+        for uid, s in sorted(neg, key=lambda x: x[1]["cap"]):
+            was = [f"{fn[6:19]}: {fc.fmt(st(b['saves'][uid])['cap'])}" for fn, b in backups if uid in b["saves"]]
+            print(f"{label(uid):<40} {fc.fmt(s['cap']):>14} {fc.fmt(s['money']):>12} {fc.fmt(s['debt']):>14} {fc.fmt(s['debtAuto']):>20}  {'; '.join(was)}")
+            if a.fix_debt and s["debtAuto"] > 0 and uid not in pending:
+                con.execute("INSERT INTO grants(user_id, debt_off, reason, created_at) VALUES(?,?,?,?)",
+                            (uid, int(s["debtAuto"]), "долг из-за старых расходов месяца", int(time.time())))
+                con.execute("UPDATE scores SET capital=MAX(capital, ?) WHERE player_key=?", (int(s["cap"] + s["debtAuto"]), f"tg:{uid}"))
+                print("    → долг на зарплаты будет списан при входе в игру")
+        con.commit()
+        con.close()
+        return
+
+    # --- кто потерял уровень или капитал ---
     rows = []
-    for uid, s in cur.items():
-        now, b = stats(s["game"]), best.get(uid)
-        if not b:
+    for uid, g in cur.items():
+        if a.user and uid != a.user:
             continue
-        lvl_drop, cap_drop = b["lvl"] > now["lvl"], b["cap"] > now["cap"] * 1.001 + 1000
+        now = st(g)
+        best = None
+        for fname, b in backups:
+            og = b["saves"].get(uid)
+            if not og or og.get("phase") == "clean":
+                continue
+            o = st(og)
+            o.update(file=fname, game=og)
+            if best is None or (o["xp"], o["cap"]) > (best["xp"], best["cap"]):
+                best = o
+        if not best:
+            continue
+        same = best["started"] == now["started"]
+        if not same and best["xp"] <= now["xp"]:
+            continue  # новая ферма уже сильнее прежней — это законное «Начать заново», не трогаем
+        lvl_drop, cap_drop = best["lvl"] > now["lvl"], best["cap"] > now["cap"] * 1.001 + 1000
         if not (lvl_drop or cap_drop):
             continue
-        cause = ("загрузилась старая копия фермы (откат)" if b["month"] > now["month"] or b["xp"] > now["xp"]
-                 else "стоимость построек / цены после обновления")
-        rows.append((uid, now, b, lvl_drop, cap_drop, cause))
+        if not same:
+            cause = "другая ферма вместо прежней (устройство не загрузило настоящую)"
+        elif best["xp"] > now["xp"] or best["month"] > now["month"]:
+            cause = "загрузилась старая копия фермы (откат)"
+        else:
+            cause = "стоимость построек / цены после обновления"
+        rows.append((uid, now, best, same, lvl_drop, cap_drop, cause))
 
-    if a.player:
-        q = a.player.lower()
-        for uid, nm in names.items():
-            if q in (nm or "").lower():
-                print(f"\n=== {nm} (id {uid}) — по копиям базы ===")
-                for h in history.get(uid, []):
-                    print(f"  {h['file']}: уровень {h['lvl']}, капитал {fc.fmt(h['cap'])}, месяц {h['month']}, ферма начата {h['started']}")
-                if uid in cur:
-                    n = stats(cur[uid]["game"])
-                    print(f"  СЕЙЧАС: уровень {n['lvl']}, капитал {fc.fmt(n['cap'])}, месяц {n['month']}, ферма начата {n['started']}")
-
-    print(f"\nУ кого упало: {len(rows)}")
-    print(f"{'Игрок':<18} {'уровень было→стало':>20} {'капитал было→стало':>32}  причина / вернул")
+    print(f"\nУ кого упал уровень или капитал: {len(rows)}  (уровень упал у {sum(1 for r in rows if r[4])})")
+    print(f"{'Игрок':<40} {'уровень было→стало':>18} {'капитал было→стало':>30}  причина / вернул")
     fixed = 0
-    for uid, now, b, lvl_drop, cap_drop, cause in sorted(rows, key=lambda r: -(r[2]['cap'] - r[1]['cap'])):
-        nm = (names.get(uid) or f"id {uid}")[:18]
-        give_xp = b["xp"] if lvl_drop else 0
-        give_money = max(0, b["cap"] - now["cap"]) if cap_drop else 0
-        note = cause
+    for uid, now, b, same, lvl_drop, cap_drop, cause in sorted(rows, key=lambda r: (-int(r[4]), -(r[2]['cap'] - r[1]['cap']))):
+        note = cause + f" (копия {b['file'][6:19]})"
         if a.fix:
             if uid in pending:
                 note += " · компенсация уже ждёт игрока"
             else:
-                con.execute("INSERT INTO grants(user_id, xp_min, money, reason, created_at) VALUES(?,?,?,?,?)",
-                            (uid, int(give_xp), int(give_money), cause, int(time.time())))
+                if same:
+                    give_money = max(0, b["cap"] - now["cap"]) if cap_drop else 0
+                    con.execute("INSERT INTO grants(user_id, xp_min, money, reason, created_at) VALUES(?,?,?,?,?)",
+                                (uid, int(b["xp"]) if lvl_drop else 0, int(give_money), cause, int(time.time())))
+                    note += f" · вернул: {('уровень ' + str(b['lvl'])) if lvl_drop else ''}{', ' if lvl_drop and cap_drop else ''}{('+' + fc.fmt(give_money)) if cap_drop else ''}"
+                else:
+                    con.execute("INSERT INTO grants(user_id, game, reason, created_at) VALUES(?,?,?,?)",
+                                (uid, json.dumps(b["game"], ensure_ascii=False), cause, int(time.time())))
+                    note += f" · вернул прежнюю ферму целиком (уровень {b['lvl']}, капитал {fc.fmt(b['cap'])})"
                 con.execute("UPDATE scores SET capital=MAX(capital, ?) WHERE player_key=?", (int(b["cap"]), f"tg:{uid}"))
                 fixed += 1
-                note += f" · вернул: {'уровень ' + str(b['lvl']) if lvl_drop else ''}{', ' if lvl_drop and cap_drop else ''}{'+' + fc.fmt(give_money) if cap_drop else ''}"
-        print(f"{nm:<18} {str(b['lvl']) + ' → ' + str(now['lvl']):>20} {fc.fmt(b['cap']) + ' → ' + fc.fmt(now['cap']):>32}  {note}")
+        print(f"{label(uid):<40} {str(b['lvl']) + ' → ' + str(now['lvl']):>18} {fc.fmt(b['cap']) + ' → ' + fc.fmt(now['cap']):>30}  {note}")
     if a.fix:
         con.commit()
         print(f"\nКомпенсаций создано: {fixed}. Игроки получат их при входе в игру (рейтинг уже обновлён).")
     else:
-        print("\nНичего не изменено. Чтобы вернуть — запустите с --fix.")
+        print("\nНичего не изменено. Чтобы вернуть — тот же запуск с --fix.")
     con.close()
 
 

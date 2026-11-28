@@ -55,8 +55,12 @@ export async function loadSave() {
     if (!remote) return local && local.owner === TG_UID ? local : null;
     if (local && local.owner === TG_UID && (local.updatedAt || 0) > (remote.updatedAt || 0)) return local;
     return remote;
-  } catch (e) { console.warn('load failed', e); }
-  return local && local.owner === TG_UID ? local : null;
+  } catch (e) {
+    console.warn('load failed', e);
+    if (local && local.owner === TG_UID) return local;
+    // сервер не ответил, своей копии на устройстве нет — НЕ начинаем новую ферму (она затёрла бы настоящую)
+    throw new Error('offline');
+  }
 }
 
 let timer = null, pending = null;

@@ -289,7 +289,7 @@ async def test_level_never_drops_and_grants_once(env):
     saved = await (await env.c.get("/api/save", headers=h)).json()
     assert saved["game"]["xp"] == 5000 and saved["game"]["money"] == 20
     # «Начать заново» (другая ферма) — опыт с нуля можно
-    await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 0}}, headers=h)
+    await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 0}, "restartAt": 2}, headers=h)
     assert (await (await env.c.get("/api/save", headers=h)).json())["game"]["xp"] == 0
     await env.db.conn.execute("INSERT INTO grants(user_id, xp_min, money, reason, created_at) VALUES(55, 9000, 1000000, 'тест', 1)")
     await env.db.conn.commit()
@@ -297,3 +297,14 @@ async def test_level_never_drops_and_grants_once(env):
     assert len(g) == 1 and g[0]["money"] == 1000000
     await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 9000, "grants": [g[0]["id"]]}}, headers=h)
     assert (await (await env.c.get("/api/grants", headers=h)).json())["grants"] == []
+
+
+async def test_new_farm_does_not_overwrite_without_restart(env):
+    """Устройство, не загрузившее ферму, не затирает её новой; «Начать заново» — можно."""
+    h = {"X-Telegram-Init-Data": init_data(66)}
+    await env.c.put("/api/save", json={"game": {"startedAt": 1, "xp": 50000, "money": 7}}, headers=h)
+    r = await env.c.put("/api/save", json={"game": {"startedAt": 2, "xp": 10}}, headers=h)
+    assert r.status == 409
+    assert (await (await env.c.get("/api/save", headers=h)).json())["game"]["xp"] == 50000
+    r = await env.c.put("/api/save", json={"game": {"startedAt": 3, "xp": 0}, "restartAt": 3}, headers=h)
+    assert r.status == 204 and (await (await env.c.get("/api/save", headers=h)).json())["game"]["startedAt"] == 3

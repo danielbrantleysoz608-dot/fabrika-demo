@@ -1271,9 +1271,15 @@ export function applyGrant(st, g) {
   const lvl0 = farmLevel(st);
   if ((g.xp_min || 0) > (st.xp || 0)) st.xp = g.xp_min;
   if ((g.money || 0) > 0) st.money += g.money;
+  if ((g.debt_off || 0) > 0 && st.debt > 0) { // списать долг (тот, что набежал из-за старых расходов месяца)
+    const d = Math.min(st.debt, g.debt_off);
+    st.debt -= d; st.debtAuto = Math.max(0, (st.debtAuto || 0) - d);
+    g.debtDone = d;
+  }
   const parts = [];
   if (farmLevel(st) > lvl0) parts.push(`уровень ${lvl0} → ${farmLevel(st)}`);
   if (g.money > 0) parts.push(`+${fmt(g.money)}`);
+  if (g.debtDone > 0) parts.push(`долг списан ${fmt(g.debtDone)}`);
   addHistory(st, { m: st.month, t: `🛠 Вернули после обновления: ${parts.join(', ') || 'проверено'}.` });
   checkGoals(st);
   return parts.join(', ');

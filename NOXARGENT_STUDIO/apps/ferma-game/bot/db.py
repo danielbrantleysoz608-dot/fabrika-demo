@@ -176,6 +176,11 @@ class DB:
         self.conn = await aiosqlite.connect(self.path)
         self.conn.row_factory = aiosqlite.Row
         await self.conn.executescript(SCHEMA)
+        for col in ("debt_off INTEGER NOT NULL DEFAULT 0", "game TEXT"):  # поля компенсаций, добавленные позже
+            try:
+                await self.conn.execute(f"ALTER TABLE grants ADD COLUMN {col}")
+            except Exception:  # noqa: BLE001 — колонка уже есть
+                pass
         await self.conn.commit()
 
     async def close(self) -> None:
@@ -209,6 +214,11 @@ class DB:
                     old = {}
                 if old.get("startedAt") and old.get("startedAt") == game.get("startedAt") and (game.get("xp") or 0) < (old.get("xp") or 0):
                     game["xp"] = old["xp"]
+                # другая ферма вместо прежней — только если игрок сам нажал «Начать заново» (restartAt = её startedAt).
+                # Иначе это новая ферма с устройства, которое не смогло загрузить настоящую, — не затираем.
+                if (old.get("startedAt") and game.get("startedAt") and old.get("startedAt") != game.get("startedAt")
+                        and data.get("restartAt") != game.get("startedAt") and (old.get("xp") or 0) > (game.get("xp") or 0)):
+                    raise PermissionError("другая ферма без «Начать заново»")
             # игра применила компенсации — отмечаем, чтобы не выдать повторно
             ids = [int(x) for x in (game.get("grants") or []) if isinstance(x, (int, float))]
             if ids:
@@ -225,9 +235,12 @@ class DB:
         await self.conn.commit()
 
     async def pending_grants(self, user_id: int) -> list[dict]:
-        async with self.conn.execute("SELECT id, xp_min, money, reason FROM grants WHERE user_id=? AND confirmed_at IS NULL ORDER BY id",
+        async with self.conn.execute("SELECT id, xp_min, money, debt_off, game, reason FROM grants WHERE user_id=? AND confirmed_at IS NULL ORDER BY id",
                                      (user_id,)) as cur:
-            return [dict(r) for r in await cur.fetchall()]
+            out = [dict(r) for r in await cur.fetchall()]
+        for g in out:
+            g["game"] = json.loads(g["game"]) if g.get("game") else None
+        return out
 
     async def add_result(self, user_id: int, r: dict) -> None:
         if r.get("ending") not in ENDINGS:

@@ -43,4 +43,6 @@ h "5. Рейтинг = шапка (5 последних игроков)"
 sudo -u ferma "$PY" "$APP/deploy/rating_check.py" 5
 
 h "6. Кто потерял уровень или капитал после обновлений (только показ)"
-sudo -u ferma "$PY" "$APP/deploy/repair_after_update.py" --player "Викуша"
+sudo -u ferma "$PY" "$APP/deploy/repair_after_update.py" --find "Викуша"
+sudo -u ferma "$PY" "$APP/deploy/repair_after_update.py"
+sudo -u ferma "$PY" "$APP/deploy/repair_after_update.py" --negatives

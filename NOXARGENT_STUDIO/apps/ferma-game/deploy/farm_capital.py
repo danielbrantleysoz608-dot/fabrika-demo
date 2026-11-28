@@ -93,8 +93,10 @@ def migrate(game: dict) -> dict:
                     p *= mult
                 bpaid[bid] = round(v)
     s["bpaid"] = bpaid
-    if (s.get("money") or 0) < 0:
-        s["debt"] = (s.get("debt") or 0) + round(-s["money"])
+    if (s.get("money") or 0) < 0:  # как в игре: минус на счёте → долг «на зарплаты» (гасится из дохода)
+        n = round(-s["money"])
+        s["debt"] = (s.get("debt") or 0) + n
+        s["debtAuto"] = (s.get("debtAuto") or 0) + n
         s["money"] = 0
     return s
 
